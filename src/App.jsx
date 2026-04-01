@@ -218,10 +218,10 @@ function PublicSite({ openAuth }) {
           <div className="flex justify-between h-20 items-center">
             <div className="flex items-center cursor-pointer gap-3" onClick={() => navigateTo('home')}>
               <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-500/20">
-                PM
+                PB
               </div>
               <div>
-                <div className="text-lg font-bold text-slate-950 tracking-tight leading-none mb-0.5">PM Finance</div>
+                <div className="text-lg font-bold text-slate-950 tracking-tight leading-none mb-0.5">PB Finance</div>
               </div>
             </div>
 
@@ -587,7 +587,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
             <div>
               <FadeIn>
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 leading-tight">Ready to scale your finance team?</h2>
-                <p className="text-xl text-slate-400 mb-10 leading-relaxed">Join industry leaders who rely on PM Finance for seamless, secure, and highly skilled outsourcing.</p>
+                <p className="text-xl text-slate-400 mb-10 leading-relaxed">Join industry leaders who rely on PB Finance for seamless, secure, and highly skilled outsourcing.</p>
                 <ul className="space-y-5 mb-10">
                   {["Rigorously tested accounting fundamentals", "Communication and culture-fit screening", "Bank-level data security protocols"].map((point, i) =>(
                     <li key={i} className="flex items-center text-slate-300 font-medium">
@@ -872,8 +872,8 @@ function PublicFooter({ navigateTo, openAuth }) {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16 border-b border-slate-800 pb-16">
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">PM</div>
-              <div className="font-bold text-xl tracking-tight">PM Finance</div>
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">PB</div>
+              <div className="font-bold text-xl tracking-tight">PB Finance</div>
             </div>
             <p className="max-w-md text-slate-400 text-lg leading-relaxed">
               Elevating global finance outsourcing. Rigorously vetted CPAs and analysts from the Philippines, integrated seamlessly into your operations.
@@ -897,7 +897,7 @@ function PublicFooter({ navigateTo, openAuth }) {
           </div>
         </div>
         <div className="text-slate-500 font-medium text-sm flex flex-col md:flex-row justify-between items-center">
-          <p>&copy; {new Date().getFullYear()} PM Finance Global. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} PB Finance Global. All rights reserved.</p>
           <div className="flex space-x-8 mt-4 md:mt-0">
             <button className="hover:text-white transition-colors">Privacy</button>
             <button className="hover:text-white transition-colors">Terms</button>
@@ -923,7 +923,7 @@ function ClientPortal({ user, onLogout }) {
             {/* App Logo */}
             <div className="flex items-center gap-4">
               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm shadow-inner">
-                PM
+                PB
               </div>
               <span className="font-bold tracking-tight">Client Portal</span>
               
@@ -1565,7 +1565,7 @@ function ProfessionalPortal({ user, onLogout }) {
             {/* App Logo */}
             <div className="flex items-center gap-4">
               <div className="w-8 h-8 bg-cyan-600 rounded-lg flex items-center justify-center font-bold text-sm shadow-inner">
-                PM
+                PB
               </div>
               <span className="font-bold tracking-tight">Talent</span>
             </div>
