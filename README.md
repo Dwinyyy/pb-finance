@@ -44,4 +44,13 @@ UPSTASH_REDIS_REST_URL=your-upstash-url
 UPSTASH_REDIS_REST_TOKEN=your-upstash-token
 ```
 
-If Upstash is not configured, the auth API falls back to an in-memory store for local/dev testing. That fallback is not durable across server restarts or serverless instances.
+The auth store also accepts Vercel KV-style variables if your integration exposes those instead:
+
+```bash
+KV_REST_API_URL=your-upstash-url
+KV_REST_API_TOKEN=your-upstash-token
+```
+
+If Upstash is not configured, the auth API falls back to an in-memory store for local/dev testing. That fallback is not durable across server restarts or serverless instances. Production deployments require Redis-backed storage.
+
+User account records are stored in Upstash Redis under keys shaped like `pb:auth:user:<email>`. Vercel stores the environment variables and function logs, but it is not the account database. Passwords are stored as hashes and salts, never as plaintext credentials.

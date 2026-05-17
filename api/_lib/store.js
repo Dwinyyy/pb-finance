@@ -1,14 +1,14 @@
 const memoryUsers = globalThis.__pbFinanceAuthUsers || new Map();
 globalThis.__pbFinanceAuthUsers = memoryUsers;
 
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, '');
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const redisUrl = (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL)?.replace(/\/$/, '');
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 
 const isRedisConfigured = () => Boolean(redisUrl && redisToken);
 
 const assertProductionStore = () => {
   if (process.env.NODE_ENV === 'production' && !isRedisConfigured()) {
-    throw new Error('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for production auth.');
+    throw new Error('Configure Upstash Redis env vars for production auth.');
   }
 };
 
