@@ -21,6 +21,8 @@ Copy `.env.example` to `.env.local` and set your Supabase project URL plus an an
 
 The frontend API boundary lives in `src/services/api.js`. It defaults to the same-project Vercel backend at `/api`.
 
+The API is deployed through one Vercel Serverless Function (`api/index.js`) and Vercel rewrites `/api/*` requests into that router. This keeps the project inside the Hobby plan function limit.
+
 Implemented endpoints:
 
 - `POST /api/auth/login`

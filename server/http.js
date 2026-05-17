@@ -45,12 +45,20 @@ export const readJson = async (req) => {
   return raw ? JSON.parse(raw) : {};
 };
 
-export const requireMethod = (req, res, methods) => {
-  if (methods.includes(req.method)) {
-    return true;
+export const getRoutePath = (req) => {
+  const queryPath = Array.isArray(req.query?.path) ? req.query.path.join('/') : req.query?.path;
+
+  if (queryPath) {
+    return `/${String(queryPath).replace(/^\/+/, '').replace(/\/+$/, '')}`;
   }
 
-  res.setHeader('Allow', methods.join(', '));
-  sendError(res, 405, 'Method not allowed.');
-  return false;
+  const url = new URL(req.url || '/api', `https://${req.headers.host || 'localhost'}`);
+  const searchPath = url.searchParams.get('path');
+
+  if (searchPath) {
+    return `/${searchPath.replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  }
+
+  const withoutApiPrefix = url.pathname.replace(/^\/api/, '') || '/';
+  return withoutApiPrefix.replace(/\/+$/, '') || '/';
 };
