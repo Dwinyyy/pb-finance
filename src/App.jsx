@@ -4,7 +4,7 @@ import { ShieldCheck, X } from 'lucide-react';
 import { PublicSite } from './pages/PublicPages';
 import { ClientPortal } from './pages/ClientPages';
 import { ProfessionalPortal } from './pages/ProfessionalPages';
-import { backendApi, isBackendConfigured } from './services/api';
+import { backendApi, clearAuthSession, isBackendConfigured, storeAuthSession } from './services/api';
 
 const getDisplayNameFromEmail = (email) => {
   if (!email) return 'PB Finance User';
@@ -80,9 +80,16 @@ export default function App() {
           ? await backendApi.auth.login(credentials)
           : await backendApi.auth.register(payload);
 
-        if (result?.token) {
-          localStorage.setItem('pb_auth_token', result.token);
+        if (result?.requiresEmailConfirmation) {
+          setAuthError(result.message || 'Check your email to confirm your account before signing in.');
+          return;
         }
+
+        if (!result?.token) {
+          throw new Error('Authentication did not return a session. Please try again.');
+        }
+
+        storeAuthSession(result);
 
         userData = {
           ...userData,
@@ -102,9 +109,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (isBackendConfigured()) {
+      backendApi.auth.logout().catch(() => {});
+    }
+
     setUser(null);
     localStorage.removeItem('pb_user');
-    localStorage.removeItem('pb_auth_token');
+    clearAuthSession();
   };
 
   return (

@@ -1,18 +1,21 @@
-import { getBearerToken, publicUser, verifyToken } from './auth.js';
-import { getUserByEmail } from './store.js';
+import { getBearerToken, getSupabaseUser, publicUser } from './supabase.js';
 
 export const getSessionUser = async (req) => {
-  const payload = verifyToken(getBearerToken(req));
+  const token = getBearerToken(req);
 
-  if (!payload?.email) {
+  if (!token) {
     return null;
   }
 
-  const user = await getUserByEmail(payload.email);
+  try {
+    const user = await getSupabaseUser(token);
 
-  if (!user) {
+    if (!user) {
+      return null;
+    }
+
+    return publicUser(user);
+  } catch {
     return null;
   }
-
-  return publicUser(user);
 };
