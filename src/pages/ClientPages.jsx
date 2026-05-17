@@ -10,9 +10,34 @@ import {
   ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
-import { REVIEWS, TALENT_PROFILES, AGENCIES, SERVICE_CARDS, PROCESS_STEPS, FAQ_DATA } from '../data/mockData';
 import FadeIn from '../components/FadeIn';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
+import { useBackendResource } from '../hooks/useBackendResource';
+import { backendApi, isBackendConfigured } from '../services/api';
+
+const EMPTY_LIST = Object.freeze([]);
+const EMPTY_BILLING = Object.freeze({
+  contracts: EMPTY_LIST,
+  invoices: EMPTY_LIST,
+  paymentMethods: EMPTY_LIST,
+});
+
+const asList = (value) => (Array.isArray(value) ? value : []);
+const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
+
+function EmptyState({ icon, title, description }) {
+  const emptyIcon = icon || FileText;
+
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-10 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center mx-auto mb-5 text-slate-500">
+        {React.createElement(emptyIcon, { size: 24 })}
+      </div>
+      <h3 className="text-lg font-bold text-slate-950 dark:text-white mb-2">{title}</h3>
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">{description}</p>
+    </div>
+  );
+}
 
 // ==========================================
 // 2. CLIENT PORTAL (LOGGED IN EXPERIENCE)
@@ -77,7 +102,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
               {[
                 { id: 'discover', label: 'Discover Talent' },
                 { id: 'agencies', label: 'Discover Agencies' },
-                { id: 'shortlist', label: 'My Shortlist', count: 3 },
+                { id: 'shortlist', label: 'My Shortlist' },
                 { id: 'interviews', label: 'Interviews' },
                 { id: 'billing', label: 'Billing & Contracts' },
               ].map(tab => (
@@ -126,7 +151,7 @@ function AITalentMatchmaker() {
     }
   }, [messages, isTyping, isOpen]);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
     if (!inputMsg.trim()) return;
 
@@ -135,38 +160,36 @@ function AITalentMatchmaker() {
     setInputMsg('');
     setIsTyping(true);
 
-    // Simulate AI processing
-    setTimeout(() => {
-      let responseText = "Based on your needs, I've found a great match for you.";
-      let matchType = null;
-      let matchData = null;
-
-      const lowerMsg = userMsg.toLowerCase();
-
-      if (lowerMsg.includes('tax')) {
-        matchType = 'talent';
-        matchData = TALENT_PROFILES.find(p => p.name === 'Natasha Romanoff, CPA');
-      } else if (lowerMsg.includes('bookkeep') || lowerMsg.includes('reconciliation')) {
-        matchType = 'talent';
-        matchData = TALENT_PROFILES.find(p => p.name === 'Steve Rogers');
-      } else if (lowerMsg.includes('agency') || lowerMsg.includes('team') || lowerMsg.includes('pod')) {
-        matchType = 'agency';
-        matchData = AGENCIES.find(a => a.name === 'Precision Financials BPO');
-        responseText = "If you're looking for a structured team approach, this agency pod is a perfect fit.";
-      } else {
-        matchType = 'talent';
-        matchData = TALENT_PROFILES.find(p => p.name === 'Bruce Banner, CPA');
-      }
-
-      setMessages(prev => [...prev, { 
-        id: Date.now() + 1, 
-        sender: 'ai', 
-        text: responseText,
-        type: matchType,
-        matchData: matchData
+    if (!isBackendConfigured()) {
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        sender: 'ai',
+        text: 'Request captured. Matching suggestions will appear here once recommendations are available.',
       }]);
       setIsTyping(false);
-    }, 1500);
+      return;
+    }
+
+    try {
+      const result = await backendApi.matchmaker.suggestMatches({ message: userMsg });
+      const matchData = result?.match || result?.matches?.[0] || null;
+
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        sender: 'ai',
+        text: result?.message || result?.text || 'Matching suggestions are ready.',
+        type: result?.type || matchData?.type || 'talent',
+        matchData,
+      }]);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        sender: 'ai',
+        text: error.message || 'Unable to load matching suggestions right now.',
+      }]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -180,7 +203,7 @@ function AITalentMatchmaker() {
       </button>
 
       {/* AI Chat Window */}
-      <motion.div drag dragMomentum={false} className={`fixed bottom-8 right-8 w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}>
+      <Motion.div drag dragMomentum={false} className={`fixed bottom-8 right-8 w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}>
         
         {/* Chat Header */}
         <div className="bg-slate-950 p-4 rounded-t-3xl flex justify-between items-center shrink-0 relative overflow-hidden">
@@ -211,16 +234,16 @@ function AITalentMatchmaker() {
                   <div className="mt-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm cursor-pointer hover:border-primary-300 transition-colors group">
                     <div className="flex items-center gap-3 mb-3">
                        <div className="w-10 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full flex items-center justify-center text-slate-600 dark:text-slate-400 font-bold shrink-0 group-hover:text-primary-600 transition-colors">
-                          {msg.type === 'agency' ? <Building size={16}/> : msg.matchData.name.charAt(0)}
+                          {msg.type === 'agency' ? <Building size={16}/> : (msg.matchData.name || msg.matchData.fullName || '?').charAt(0)}
                        </div>
                        <div>
-                         <div className="font-bold text-slate-950 dark:text-white text-sm leading-tight">{msg.matchData.name}</div>
-                         <div className="text-xs text-slate-500 font-medium">{msg.type === 'agency' ? msg.matchData.specialty : msg.matchData.role}</div>
+                         <div className="font-bold text-slate-950 dark:text-white text-sm leading-tight">{msg.matchData.name || msg.matchData.fullName || 'Recommended match'}</div>
+                         <div className="text-xs text-slate-500 font-medium">{msg.type === 'agency' ? msg.matchData.specialty : (msg.matchData.role || msg.matchData.title || 'Role pending')}</div>
                        </div>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-800">
                       <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">Match!</div>
-                      <div className="font-bold text-slate-950 dark:text-white text-sm">{msg.matchData.rate}</div>
+                      <div className="font-bold text-slate-950 dark:text-white text-sm">{formatMoney(msg.matchData.rate || msg.matchData.hourlyRate)}</div>
                     </div>
                   </div>
                 )}
@@ -258,7 +281,7 @@ function AITalentMatchmaker() {
             </button>
           </form>
         </div>
-      </motion.div>
+      </Motion.div>
     </>
   );
 }
@@ -266,14 +289,18 @@ function AITalentMatchmaker() {
 // Sub-views for Client Portal
 function AppDiscoverView() {
   const [activeFilter, setActiveFilter] = useState('All');
+  const { data: profiles, error, isConfigured, isLoading } = useBackendResource(backendApi.talent.listProfiles, EMPTY_LIST);
   
   const filteredProfiles = useMemo(() => {
-    if (activeFilter === 'All') return TALENT_PROFILES;
-    return TALENT_PROFILES.filter(p => 
-      p.role.includes(activeFilter) || 
-      p.tools.some(t => t.includes(activeFilter))
-    );
-  }, [activeFilter]);
+    const profileList = asList(profiles);
+    if (activeFilter === 'All') return profileList;
+
+    return profileList.filter((profile) => {
+      const role = profile.role || profile.title || '';
+      const tools = asList(profile.tools || profile.skills);
+      return role.includes(activeFilter) || tools.some((tool) => String(tool).includes(activeFilter));
+    });
+  }, [activeFilter, profiles]);
   
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in">
@@ -341,10 +368,23 @@ function AppDiscoverView() {
             ))}
           </div>
           <div className="hidden sm:block text-sm font-bold text-slate-500">
-            Showing {filteredProfiles.length} profiles
+            {isLoading ? 'Loading profiles' : `Showing ${filteredProfiles.length} profiles`}
           </div>
         </div>
 
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+            {error.message}
+          </div>
+        )}
+
+        {filteredProfiles.length === 0 ? (
+          <EmptyState
+            icon={User}
+            title={isConfigured ? 'No talent profiles yet' : 'Talent directory is empty'}
+            description="Approved profiles will appear here once they are available."
+          />
+        ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
           {filteredProfiles.map((profile, idx) => (
             <FadeIn key={profile.id} delay={(idx % 6) * 50} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-xl hover:border-primary-200 transition-all duration-300 group flex flex-col h-full">
@@ -352,11 +392,11 @@ function AppDiscoverView() {
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-xl border border-slate-200 dark:border-slate-800">
-                    {profile.name.charAt(0)}
+                    {(profile.name || profile.fullName || '?').charAt(0)}
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg text-slate-950 dark:text-white group-hover:text-primary-700 transition-colors leading-tight mb-1">{profile.name}</h3>
-                    <p className="text-sm font-semibold text-slate-500">{profile.role}</p>
+                    <h3 className="font-bold text-lg text-slate-950 dark:text-white group-hover:text-primary-700 transition-colors leading-tight mb-1">{profile.name || profile.fullName || 'Unnamed profile'}</h3>
+                    <p className="text-sm font-semibold text-slate-500">{profile.role || profile.title || 'Role pending'}</p>
                   </div>
                 </div>
                 <button className="text-slate-300 hover:text-primary-600 transition-colors p-1" title="Save to Shortlist">
@@ -367,17 +407,17 @@ function AppDiscoverView() {
               <div className="grid grid-cols-2 gap-3 mb-6 flex-grow">
                 <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
                    <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">Experience</div>
-                   <div className="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center"><Briefcase size={14} className="mr-1.5 text-slate-400"/> {profile.exp}</div>
+                   <div className="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center"><Briefcase size={14} className="mr-1.5 text-slate-400"/> {profile.exp || profile.experience || 'Pending'}</div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
                    <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">Availability</div>
-                   <div className="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center"><Calendar size={14} className="mr-1.5 text-slate-400"/> {profile.available}</div>
+                   <div className="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center"><Calendar size={14} className="mr-1.5 text-slate-400"/> {profile.available || profile.availability || 'Pending'}</div>
                 </div>
               </div>
 
               <div className="mb-6">
                 <div className="flex flex-wrap gap-2">
-                  {profile.tools.map(tool => (
+                  {asList(profile.tools || profile.skills).map(tool => (
                     <span key={tool} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-xs px-3 py-1.5 rounded-lg font-bold shadow-sm">
                       {tool}
                     </span>
@@ -387,7 +427,7 @@ function AppDiscoverView() {
 
               <div className="flex items-center justify-between pt-5 border-t border-slate-100 dark:border-slate-800 mt-auto">
                 <div className="flex items-baseline">
-                  <span className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{profile.rate}</span>
+                  <span className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</span>
                 </div>
                 <button className="bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform hover:-translate-y-0.5">
                    Message <MessageSquare size={16} className="ml-2" />
@@ -396,12 +436,16 @@ function AppDiscoverView() {
             </FadeIn>
           ))}
         </div>
+        )}
       </div>
     </div>
   );
 }
 
 function AppAgenciesView() {
+  const { data: agencies, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listAgencies, EMPTY_LIST);
+  const agencyList = asList(agencies);
+
   return (
     <div className="portal-fade-in">
       <div className="mb-8">
@@ -409,34 +453,47 @@ function AppAgenciesView() {
         <p className="text-slate-600 dark:text-slate-400">Browse fully-managed pods and BPO firms for large-scale financial operations.</p>
       </div>
 
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {error.message}
+        </div>
+      )}
+
+      {agencyList.length === 0 ? (
+        <EmptyState
+          icon={Building}
+          title={isLoading ? 'Loading agencies' : isConfigured ? 'No agencies yet' : 'Agency directory is empty'}
+          description="Approved agency records will appear here once they are available."
+        />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {AGENCIES.map((agency, idx) => (
+        {agencyList.map((agency, idx) => (
           <FadeIn key={agency.id} delay={idx * 100} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 hover:shadow-xl hover:border-primary-200 transition-all duration-300 flex flex-col h-full">
             <div className="flex items-start justify-between mb-6">
               <div className="w-16 h-16 bg-slate-950 rounded-2xl flex items-center justify-center shadow-md border border-slate-800">
                 <Building size={28} className="text-white" />
               </div>
               <div className="flex items-center bg-amber-50 text-amber-700 text-xs font-bold px-2 py-1 rounded-md">
-                <Star size={12} className="mr-1 fill-current" /> {agency.rating}
+                <Star size={12} className="mr-1 fill-current" /> {agency.rating || 'New'}
               </div>
             </div>
             
-            <h3 className="font-bold text-2xl text-slate-950 dark:text-white mb-2 leading-tight">{agency.name}</h3>
-            <p className="text-sm font-bold text-primary-600 mb-6">{agency.specialty}</p>
+            <h3 className="font-bold text-2xl text-slate-950 dark:text-white mb-2 leading-tight">{agency.name || 'Unnamed agency'}</h3>
+            <p className="text-sm font-bold text-primary-600 mb-6">{agency.specialty || 'Specialty pending'}</p>
 
             <div className="space-y-4 mb-8 flex-grow">
               <div className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400">
-                <MapPin size={16} className="mr-3 text-slate-400" /> {agency.location}
+                <MapPin size={16} className="mr-3 text-slate-400" /> {agency.location || 'Location pending'}
               </div>
               <div className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400">
-                <User size={16} className="mr-3 text-slate-400" /> {agency.size}
+                <User size={16} className="mr-3 text-slate-400" /> {agency.size || 'Team size pending'}
               </div>
             </div>
 
             <div className="mb-8">
               <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-3">Certifications</div>
               <div className="flex flex-wrap gap-2">
-                {agency.certs.map(cert => (
+                {asList(agency.certs || agency.certifications).map(cert => (
                   <span key={cert} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs px-3 py-1.5 rounded-lg font-bold shadow-sm">
                     {cert}
                   </span>
@@ -447,7 +504,7 @@ function AppAgenciesView() {
             <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between mt-auto">
               <div>
                 <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Pricing</div>
-                <div className="font-bold text-slate-950 dark:text-white">{agency.rate}</div>
+                <div className="font-bold text-slate-950 dark:text-white">{formatMoney(agency.rate || agency.monthlyRate)}</div>
               </div>
               <button className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-slate-950 text-slate-950 dark:text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">
                 View Firm
@@ -456,12 +513,14 @@ function AppAgenciesView() {
           </FadeIn>
         ))}
       </div>
+      )}
     </div>
   );
 }
 
 function AppShortlistView() {
-  const shortlisted = TALENT_PROFILES.filter(p => [1, 3, 6].includes(p.id));
+  const { data: shortlisted, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST);
+  const shortlist = asList(shortlisted);
 
   return (
     <div className="portal-fade-in max-w-6xl">
@@ -470,29 +529,42 @@ function AppShortlistView() {
         <p className="text-slate-600 dark:text-slate-400">Review and schedule interviews with your saved candidates.</p>
       </div>
 
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {error.message}
+        </div>
+      )}
+
+      {shortlist.length === 0 ? (
+        <EmptyState
+          icon={Bookmark}
+          title={isLoading ? 'Loading shortlist' : isConfigured ? 'No saved candidates yet' : 'Shortlist is empty'}
+          description="Saved profiles will appear here when clients add them to a shortlist."
+        />
+      ) : (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {shortlisted.map((profile, idx) => (
+        {shortlist.map((profile, idx) => (
           <FadeIn key={profile.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col sm:flex-row gap-6 hover:shadow-lg transition-shadow">
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-primary-100 to-cyan-50 rounded-full flex items-center justify-center font-bold text-primary-700 text-2xl border border-primary-200">
-                  {profile.name.charAt(0)}
+                  {(profile.name || profile.fullName || '?').charAt(0)}
                 </div>
                 <div>
-                  <h3 className="font-bold text-xl text-slate-950 dark:text-white leading-tight mb-1">{profile.name}</h3>
-                  <p className="text-sm font-semibold text-primary-600">{profile.role}</p>
+                  <h3 className="font-bold text-xl text-slate-950 dark:text-white leading-tight mb-1">{profile.name || profile.fullName || 'Unnamed profile'}</h3>
+                  <p className="text-sm font-semibold text-primary-600">{profile.role || profile.title || 'Role pending'}</p>
                 </div>
               </div>
               <div className="space-y-2 mb-4">
                 <div className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400">
-                  <Briefcase size={16} className="mr-2 text-slate-400"/> {profile.exp} • Highly rated ({profile.rating})
+                  <Briefcase size={16} className="mr-2 text-slate-400"/> {profile.exp || profile.experience || 'Experience pending'}
                 </div>
                 <div className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400">
-                  <Calendar size={16} className="mr-2 text-slate-400"/> Available: {profile.available}
+                  <Calendar size={16} className="mr-2 text-slate-400"/> Available: {profile.available || profile.availability || 'Pending'}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                  {profile.tools.slice(0,3).map(tool => (
+                  {asList(profile.tools || profile.skills).slice(0,3).map(tool => (
                     <span key={tool} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md">
                       {tool}
                     </span>
@@ -502,7 +574,7 @@ function AppShortlistView() {
             <div className="sm:border-l sm:border-slate-100 dark:border-slate-800 sm:pl-6 flex flex-col justify-between sm:w-48">
               <div className="text-right sm:text-left mb-4 sm:mb-0">
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Hourly Rate</div>
-                <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">{profile.rate}</div>
+                <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</div>
               </div>
               <div className="space-y-2">
                 <button className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md">
@@ -516,15 +588,14 @@ function AppShortlistView() {
           </FadeIn>
         ))}
       </div>
+      )}
     </div>
   );
 }
 
 function AppInterviewsView() {
-  const interviews = [
-    { id: 1, name: "Natasha Romanoff, CPA", role: "Senior Tax Accountant", date: "Tomorrow, Oct 24", time: "10:00 AM EST", status: "Upcoming" },
-    { id: 2, name: "Bruce Banner, CPA", role: "Financial Analyst", date: "Friday, Oct 26", time: "2:30 PM EST", status: "Upcoming" }
-  ];
+  const { data: interviews, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listInterviews, EMPTY_LIST);
+  const interviewList = asList(interviews);
 
   return (
     <div className="portal-fade-in max-w-4xl">
@@ -538,19 +609,32 @@ function AppInterviewsView() {
         </button>
       </div>
 
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {error.message}
+        </div>
+      )}
+
+      {interviewList.length === 0 ? (
+        <EmptyState
+          icon={Calendar}
+          title={isLoading ? 'Loading interviews' : isConfigured ? 'No interviews scheduled' : 'Interview schedule is empty'}
+          description="Upcoming screenings will appear here once they are scheduled."
+        />
+      ) : (
       <div className="space-y-4">
-        {interviews.map((interview, idx) => (
+        {interviewList.map((interview, idx) => (
           <FadeIn key={interview.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col sm:flex-row justify-between items-center gap-6 shadow-sm hover:border-primary-300 transition-colors">
             <div className="flex items-center gap-6 w-full sm:w-auto">
               <div className="w-16 h-16 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-slate-400 uppercase">Oct</span>
-                <span className="text-xl font-black text-slate-900 dark:text-slate-50">{interview.date.split(' ')[2]}</span>
+                <span className="text-xs font-bold text-slate-400 uppercase">{interview.month || 'TBD'}</span>
+                <span className="text-xl font-black text-slate-900 dark:text-slate-50">{interview.day || '--'}</span>
               </div>
               <div>
-                <h3 className="font-bold text-lg text-slate-950 dark:text-white leading-tight mb-1">{interview.name}</h3>
-                <p className="text-sm font-medium text-slate-500 mb-2">Interview for {interview.role}</p>
+                <h3 className="font-bold text-lg text-slate-950 dark:text-white leading-tight mb-1">{interview.name || interview.candidateName || 'Candidate pending'}</h3>
+                <p className="text-sm font-medium text-slate-500 mb-2">Interview for {interview.role || interview.title || 'Role pending'}</p>
                 <div className="flex items-center text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-2 py-1 rounded-md w-fit">
-                  <Clock3 size={12} className="mr-1.5" /> {interview.time}
+                  <Clock3 size={12} className="mr-1.5" /> {interview.time || interview.scheduledFor || 'Time pending'}
                 </div>
               </div>
             </div>
@@ -565,17 +649,31 @@ function AppInterviewsView() {
           </FadeIn>
         ))}
       </div>
+      )}
     </div>
   );
 }
 
 function AppBillingView() {
+  const { data: billing, error, isConfigured, isLoading } = useBackendResource(backendApi.client.getBilling, EMPTY_BILLING);
+  const contracts = asList(billing.contracts);
+  const invoices = asList(billing.invoices);
+  const paymentMethods = asList(billing.paymentMethods);
+  const primaryContract = contracts[0] || {};
+  const primaryPaymentMethod = paymentMethods[0] || {};
+
   return (
     <div className="portal-fade-in max-w-6xl">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-slate-950 dark:text-white mb-2">Billing & Contracts</h2>
         <p className="text-slate-600 dark:text-slate-400">Manage your active pods, embedded hires, and payment methods.</p>
       </div>
+
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {error.message}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Active Contracts */}
@@ -585,26 +683,22 @@ function AppBillingView() {
             <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-slate-800 pb-6">
               <div>
                 <div className="inline-flex items-center bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md mb-3">
-                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> Active
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> {primaryContract.status || (isLoading ? 'Loading' : 'Pending')}
                 </div>
-                <h4 className="text-xl font-bold text-slate-950 dark:text-white mb-1">Managed Pod: Tax Season</h4>
-                <p className="text-sm font-medium text-slate-500">Started on Jan 15, 2026</p>
+                <h4 className="text-xl font-bold text-slate-950 dark:text-white mb-1">{primaryContract.name || primaryContract.title || (isConfigured ? 'No active contract yet' : 'Contracts will appear here')}</h4>
+                <p className="text-sm font-medium text-slate-500">{primaryContract.startDate || 'Start date pending'}</p>
               </div>
               <div className="text-right">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">$3,600</div>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Per Month</div>
+                <div className="text-3xl font-black text-slate-950 dark:text-white">{formatMoney(primaryContract.amount || primaryContract.monthlyAmount)}</div>
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{primaryContract.billingInterval || 'Billing'}</div>
               </div>
             </div>
             
             <div className="space-y-4 mb-8">
-              <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Assigned Talent (3)</h5>
+              <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Assigned Talent</h5>
               <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-400">NR</div>
-                <div><p className="text-sm font-bold text-slate-900 dark:text-slate-50">Natasha Romanoff</p><p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wide">Senior Tax Accountant</p></div>
-              </div>
-              <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-400">CB</div>
-                <div><p className="text-sm font-bold text-slate-900 dark:text-slate-50">Clint Barton</p><p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wide">Tax Preparer</p></div>
+                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-400">--</div>
+                <div><p className="text-sm font-bold text-slate-900 dark:text-slate-50">No assignments loaded</p><p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wide">Contract talent will appear after assignment</p></div>
               </div>
             </div>
 
@@ -622,15 +716,15 @@ function AppBillingView() {
             <div className="bg-slate-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/20 blur-[30px] rounded-full"></div>
               <CreditCard className="text-primary-400 w-8 h-8 mb-8" />
-              <div className="font-mono text-lg tracking-widest mb-2">•••• •••• •••• 1234</div>
+              <div className="font-mono text-lg tracking-widest mb-2">{primaryPaymentMethod.last4 ? `Card ending ${primaryPaymentMethod.last4}` : 'No payment method on file'}</div>
               <div className="flex justify-between items-end">
                 <div>
                   <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Cardholder</div>
-                  <div className="text-sm font-bold">Stark Industries</div>
+                  <div className="text-sm font-bold">{primaryPaymentMethod.holderName || 'Billing profile pending'}</div>
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Expires</div>
-                  <div className="text-sm font-bold">12/28</div>
+                  <div className="text-sm font-bold">{primaryPaymentMethod.expires || 'Pending'}</div>
                 </div>
               </div>
             </div>
@@ -640,21 +734,20 @@ function AppBillingView() {
           <FadeIn delay={300}>
             <h3 className="font-bold text-slate-900 dark:text-slate-50 text-lg mb-6">Recent Invoices</h3>
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-              {[
-                { id: "INV-2026-03", date: "Mar 1, 2026", amount: "$3,600.00" },
-                { id: "INV-2026-02", date: "Feb 1, 2026", amount: "$3,600.00" },
-                { id: "INV-2026-01", date: "Jan 15, 2026", amount: "$1,800.00" },
-              ].map((inv, i) => (
-                <div key={inv.id} className={`flex items-center justify-between p-4 ${i !== 2 ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
+              {invoices.length === 0 && (
+                <div className="p-6 text-sm font-medium text-slate-500">No invoices loaded yet.</div>
+              )}
+              {invoices.map((inv, i) => (
+                <div key={inv.id || i} className={`flex items-center justify-between p-4 ${i !== invoices.length - 1 ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
                   <div className="flex items-center gap-3">
                     <div className="bg-slate-50 dark:bg-slate-950 p-2 rounded-lg"><Receipt size={16} className="text-slate-500"/></div>
                     <div>
-                      <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{inv.id}</div>
-                      <div className="text-xs font-medium text-slate-500">{inv.date}</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{inv.number || inv.id || 'Invoice'}</div>
+                      <div className="text-xs font-medium text-slate-500">{inv.date || 'Date pending'}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-sm font-black text-slate-900 dark:text-slate-50">{inv.amount}</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-slate-50">{formatMoney(inv.amount)}</span>
                     <button className="text-slate-400 hover:text-primary-600 transition-colors"><Download size={16}/></button>
                   </div>
                 </div>
@@ -669,4 +762,3 @@ function AppBillingView() {
     </div>
   );
 }
-

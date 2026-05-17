@@ -1,22 +1,40 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-  Search, MapPin, Building, Star, Filter, 
-  CheckCircle, ArrowRight, User, Briefcase, 
-  Menu, X, Calculator, PieChart, ShieldCheck, 
-  Mail, Lock, LogOut, Sparkles, Layers3, 
-  BarChart3, BadgeCheck, Clock3, Handshake, 
-  Globe2, TrendingDown, ChevronDown, ChevronUp,
-  Bookmark, MessageSquare, Bell, SlidersHorizontal,
-  ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
-  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
-} from 'lucide-react';
-
-import { REVIEWS, TALENT_PROFILES, AGENCIES, SERVICE_CARDS, PROCESS_STEPS, FAQ_DATA } from './data/mockData';
-import FadeIn from './components/FadeIn';
+import React, { useState } from 'react';
+import { ShieldCheck, X } from 'lucide-react';
 
 import { PublicSite } from './pages/PublicPages';
 import { ClientPortal } from './pages/ClientPages';
 import { ProfessionalPortal } from './pages/ProfessionalPages';
+import { backendApi, isBackendConfigured } from './services/api';
+
+const getDisplayNameFromEmail = (email) => {
+  if (!email) return 'PB Finance User';
+  return email.split('@')[0].replace(/[._-]+/g, ' ') || 'PB Finance User';
+};
+
+const createLocalSessionUser = (formData, role) => {
+  const email = String(formData.get('email') || '').trim();
+  const fullName = String(formData.get('fullName') || '').trim();
+  const company = String(formData.get('company') || '').trim();
+  const name = fullName || getDisplayNameFromEmail(email);
+
+  if (role === 'professional') {
+    return {
+      email,
+      name,
+      role: 'professional',
+      title: 'Complete your profile',
+      location: 'Add location',
+      rating: null,
+    };
+  }
+
+  return {
+    company: company || 'Company profile pending',
+    email,
+    name,
+    role: 'client',
+  };
+};
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
@@ -27,6 +45,7 @@ export default function App() {
     } catch { return null; }
   });
   const [authModal, setAuthModal] = useState({ isOpen: false, view: 'login' });
+  const [authError, setAuthError] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
 
   const toggleDarkMode = () => {
@@ -34,17 +53,48 @@ export default function App() {
     setIsDarkMode(!isDarkMode);
   };
 
-  const openAuth = (view = 'login') => setAuthModal({ isOpen: true, view });
+  const openAuth = (view = 'login') => {
+    setAuthError('');
+    setAuthModal({ isOpen: true, view });
+  };
   const closeAuth = () => setAuthModal({ isOpen: false, view: 'login' });
 
-  const handleAuthSubmit = (e, role = 'client') => {
+  const handleAuthSubmit = async (e, role = 'client', view = 'login') => {
     e.preventDefault();
-    let userData = null;
-    if (role === 'professional') {
-      userData = { name: 'Peter Parker', role: 'professional', title: 'Payroll Specialist', location: 'Manila, PH', rating: 4.9 };
-    } else {
-      userData = { name: 'Tony Stark', role: 'client', company: 'Stark Industries' };
+    const formData = new FormData(e.currentTarget);
+    let userData = createLocalSessionUser(formData, role);
+
+    if (isBackendConfigured()) {
+      try {
+        const credentials = {
+          email: String(formData.get('email') || '').trim(),
+          password: String(formData.get('password') || ''),
+        };
+        const payload = {
+          ...credentials,
+          company: String(formData.get('company') || '').trim(),
+          fullName: String(formData.get('fullName') || '').trim(),
+          role,
+        };
+        const result = view === 'login'
+          ? await backendApi.auth.login(credentials)
+          : await backendApi.auth.register(payload);
+
+        if (result?.token) {
+          localStorage.setItem('pb_auth_token', result.token);
+        }
+
+        userData = {
+          ...userData,
+          ...(result?.user || {}),
+          role: result?.user?.role || role,
+        };
+      } catch (error) {
+        setAuthError(error.message || 'Unable to authenticate. Please try again.');
+        return;
+      }
     }
+
     setUser(userData);
     localStorage.setItem('pb_user', JSON.stringify(userData));
     closeAuth();
@@ -54,6 +104,7 @@ export default function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('pb_user');
+    localStorage.removeItem('pb_auth_token');
   };
 
   return (
@@ -91,20 +142,32 @@ export default function App() {
                 {authModal.view === 'login' ? 'Enter your details to securely access your portal.' : 'Join the premium network of global finance professionals.'}
               </p>
 
-              <form onSubmit={(e) => handleAuthSubmit(e, authModal.view === 'register_pro' ? 'professional' : 'client')} className="space-y-4">
+              {authError && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={(e) => handleAuthSubmit(e, authModal.view === 'register_pro' ? 'professional' : 'client', authModal.view)} className="space-y-4">
                 {authModal.view !== 'login' && (
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Full Name</label>
-                    <input type="text" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder={authModal.view === 'register_pro' ? "Peter Parker" : "Tony Stark"} />
+                    <input name="fullName" type="text" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="Your full name" />
+                  </div>
+                )}
+                {authModal.view === 'register' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Company</label>
+                    <input name="company" type="text" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="Company name" />
                   </div>
                 )}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Work Email</label>
-                  <input type="email" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="email@example.com" />
+                  <input name="email" type="email" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="email@example.com" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Password</label>
-                  <input type="password" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="••••••••" />
+                  <input name="password" type="password" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="********" />
                 </div>
                 
                 <button type="submit" className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-xl font-semibold transition-all mt-6 shadow-lg shadow-slate-900/10 text-sm">
@@ -126,4 +189,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -11,9 +11,9 @@ import {
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { REVIEWS, TALENT_PROFILES, AGENCIES, SERVICE_CARDS, PROCESS_STEPS, FAQ_DATA } from '../data/mockData';
+import { FAQ_ITEMS, MATCHING_WORKFLOW, PROCESS_STEPS, SERVICE_CARDS } from '../data/staticContent';
 import FadeIn from '../components/FadeIn';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 // ==========================================
 // 1. PUBLIC MARKETING SITE
@@ -58,7 +58,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
 
   return (
     <>
-      <motion.nav initial={{y:0}} animate={{y: isNavVisible ? 0 : '-100%'}} transition={{duration: 0.3}} className="bg-white dark:bg-slate-900/90 backdrop-blur-xl fixed w-full top-0 z-50 border-b border-slate-200 dark:border-slate-800/80 transition-colors text-slate-900">
+      <Motion.nav initial={{y:0}} animate={{y: isNavVisible ? 0 : '-100%'}} transition={{duration: 0.3}} className="bg-white dark:bg-slate-900/90 backdrop-blur-xl fixed w-full top-0 z-50 border-b border-slate-200 dark:border-slate-800/80 transition-colors text-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-20 items-center">
             <div className="flex items-center cursor-pointer gap-3" onClick={() => navigateTo('home')}>
@@ -114,7 +114,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
             </div>
           </div>
         )}
-      </motion.nav>
+      </Motion.nav>
 
       <main className="min-h-screen pt-20">
         <Routes>
@@ -261,7 +261,7 @@ function FAQAccordion() {
 
   return (
     <div className="space-y-3">
-      {FAQ_DATA.map((item, index) => (
+      {FAQ_ITEMS.map((item, index) => (
         <div key={index} className="border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 overflow-hidden shadow-sm transition-all hover:border-slate-300">
           <button 
             className="w-full flex justify-between items-center p-5 text-left focus:outline-none"
@@ -370,36 +370,28 @@ function HomeMarketingView({ navigateTo, openAuth }) {
 
       <ROICalculator />
 
-      {/* Reviews & FAQ Section */}
+      {/* Process & FAQ Section */}
       <section className="py-32 bg-white dark:bg-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-16">
           <div>
             <FadeIn>
               <div className="inline-flex mb-4 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                Proof
+                Process
               </div>
               <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-10">
-                Trusted by scaling businesses
+                Built for structured onboarding
               </h2>
               
-              <div className="space-y-6">
-                {REVIEWS.slice(0, 2).map((review) => (
-                  <div key={review.id} className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 p-8 rounded-[32px] hover:shadow-lg transition-all duration-300">
-                    <div className="flex text-amber-400 mb-4">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} size={18} fill="currentColor" className={i >= review.rating ? "text-slate-200" : ""} />
-                      ))}
-                    </div>
-                    <blockquote className="text-lg font-bold text-slate-900 dark:text-slate-50 leading-relaxed mb-6">
-                      "{review.body}"
-                    </blockquote>
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-bold text-lg mr-4 border border-primary-200">
-                        {review.name.charAt(0)}
+              <div className="space-y-4">
+                {PROCESS_STEPS.map((step, index) => (
+                  <div key={step.title} className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 p-6 rounded-[24px] hover:shadow-lg transition-all duration-300">
+                    <div className="flex gap-5">
+                      <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm font-black text-primary-700 dark:text-primary-300 shrink-0">
+                        {index + 1}
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-950 dark:text-white">{review.name}</p>
-                        <p className="text-xs font-semibold text-slate-500">{review.title}</p>
+                        <h3 className="text-lg font-bold text-slate-950 dark:text-white mb-2">{step.title}</h3>
+                        <p className="text-sm font-medium text-slate-600 dark:text-slate-400 leading-relaxed">{step.text}</p>
                       </div>
                     </div>
                   </div>
@@ -453,22 +445,22 @@ function HomeMarketingView({ navigateTo, openAuth }) {
             <div className="relative">
                <FadeIn delay={200} direction="left">
                  <div className="bg-slate-900 border border-slate-800 p-8 rounded-[32px] shadow-2xl">
-                    <h3 className="text-2xl font-bold text-white mb-8 border-b border-slate-800 pb-4">Top Matches for "Tax Season"</h3>
+                    <h3 className="text-2xl font-bold text-white mb-8 border-b border-slate-800 pb-4">Secure Matching Workflow</h3>
                     <div className="space-y-6">
-                      {TALENT_PROFILES.slice(0,3).map(profile => (
-                        <div key={profile.id} className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 hover:bg-slate-800 transition-colors cursor-pointer">
+                      {MATCHING_WORKFLOW.map((item) => (
+                        <div key={item.title} className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 hover:bg-slate-800 transition-colors">
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-slate-300">
                               <User size={20} />
                             </div>
                             <div>
-                              <div className="font-bold text-white">{profile.name}</div>
-                              <div className="text-sm text-cyan-400">{profile.role}</div>
+                              <div className="font-bold text-white">{item.title}</div>
+                              <div className="text-sm text-cyan-400">Structured and review-ready</div>
                             </div>
                           </div>
                           <div className="text-right">
-                             <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Match</div>
-                             <div className="font-bold text-emerald-400">{profile.match}%</div>
+                             <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Status</div>
+                             <div className="font-bold text-emerald-400">{item.label}</div>
                           </div>
                         </div>
                       ))}
@@ -498,8 +490,8 @@ function PreviewDirectoryView({ openAuth }) {
         <div className="relative">
           <FadeIn delay={200}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 blur-[5px] opacity-60 pointer-events-none select-none overflow-hidden h-[600px]">
-              {TALENT_PROFILES.map((profile) => (
-                <div key={profile.id} className="bg-white dark:bg-slate-900 rounded-[24px] border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+              {Array.from({ length: 6 }, (_, index) => (
+                <div key={index} className="bg-white dark:bg-slate-900 rounded-[24px] border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
                   <div className="flex items-center gap-4 mb-6">
                     <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-full"></div>
                     <div>
@@ -559,13 +551,13 @@ function AgencyMarketingView({ openAuth }) {
             <div className="lg:w-3/5">
               <FadeIn delay={100}>
                 <div className="inline-flex items-center bg-white/5 backdrop-blur-md px-4 py-2 rounded-full text-xs font-bold text-primary-300 border border-white/10 mb-8 tracking-wider uppercase shadow-sm">
-                  <Star className="w-4 h-4 text-amber-400 mr-2 fill-current" /> Premier Enterprise Partner
+                  <Star className="w-4 h-4 text-amber-400 mr-2 fill-current" /> Enterprise Finance Delivery
                 </div>
                 <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-8">
-                  Precision Financials BPO
+                  Managed finance pods
                 </h1>
                 <p className="text-slate-400 text-xl max-w-2xl mb-12 leading-relaxed">
-                  Strategic financial guidance delivered by a dedicated pod of Philippine-based CPAs. We partner with US firms to handle busy-season compression and year-round close optimization.
+                  Strategic finance support delivered by role-based teams with clear capabilities, availability, and engagement history.
                 </p>
 
                 <div className="flex flex-wrap gap-6 mb-12">
@@ -573,14 +565,14 @@ function AgencyMarketingView({ openAuth }) {
                     <MapPin className="text-cyan-400 w-8 h-8 mr-4" />
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Location</p>
-                      <p className="font-bold text-white text-lg">Manila (BGC Hub)</p>
+                      <p className="font-bold text-white text-lg">Philippines Hubs</p>
                     </div>
                   </div>
                   <div className="bg-white/5 backdrop-blur-md p-5 rounded-[24px] flex items-center border border-white/10 min-w-[200px]">
                     <Building className="text-cyan-400 w-8 h-8 mr-4" />
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Specialty</p>
-                      <p className="font-bold text-white text-lg">Tax & Advisory</p>
+                      <p className="font-bold text-white text-lg">Tax, Close, Reporting</p>
                     </div>
                   </div>
                 </div>

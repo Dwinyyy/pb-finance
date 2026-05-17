@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 export default function FadeIn({ children, delay = 0, direction = 'up', className = "", hover = false }) {
   const directions = {
@@ -16,7 +16,7 @@ export default function FadeIn({ children, delay = 0, direction = 'up', classNam
   };
 
   return (
-    <motion.div
+    <Motion.div
       initial={initial}
       whileInView={{ opacity: 1, x: 0, y: 0, scale: 1 }}
       whileHover={hover ? { scale: 1.02, y: -6, rotateX: 2, rotateY: -1, boxShadow: "0px 25px 40px -10px rgba(0,0,0,0.1)" } : undefined}
@@ -29,6 +29,6 @@ export default function FadeIn({ children, delay = 0, direction = 'up', classNam
       className={className}
     >
       {children}
-    </motion.div>
+    </Motion.div>
   );
 }

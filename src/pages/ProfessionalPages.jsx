@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { 
   Search, MapPin, Building, Star, Filter, 
   CheckCircle, ArrowRight, User, Briefcase, 
@@ -10,8 +10,35 @@ import {
   ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
-import { REVIEWS, TALENT_PROFILES, AGENCIES, SERVICE_CARDS, PROCESS_STEPS, FAQ_DATA } from '../data/mockData';
 import FadeIn from '../components/FadeIn';
+import { useBackendResource } from '../hooks/useBackendResource';
+import { backendApi } from '../services/api';
+
+const EMPTY_LIST = Object.freeze([]);
+const EMPTY_PROFILE = Object.freeze({});
+const EMPTY_EARNINGS = Object.freeze({
+  availableToWithdraw: 0,
+  pendingReview: 0,
+  timesheets: EMPTY_LIST,
+  totalEarnedYtd: 0,
+});
+
+const asList = (value) => (Array.isArray(value) ? value : []);
+const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
+
+function EmptyState({ icon, title, description }) {
+  const emptyIcon = icon || FileText;
+
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-10 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center mx-auto mb-5 text-slate-500">
+        {React.createElement(emptyIcon, { size: 24 })}
+      </div>
+      <h3 className="text-lg font-bold text-slate-950 dark:text-white mb-2">{title}</h3>
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">{description}</p>
+    </div>
+  );
+}
 
 // ==========================================
 // 3. PROFESSIONAL PORTAL (TALENT EXPERIENCE)
@@ -45,11 +72,11 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
               
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">
-                  <div className="text-sm font-bold text-white leading-tight">{user.name}</div>
-                  <div className="text-xs text-slate-400 font-medium">{user.title}</div>
+                  <div className="text-sm font-bold text-white leading-tight">{user.name || 'Profile pending'}</div>
+                  <div className="text-xs text-slate-400 font-medium">{user.title || 'Complete your profile'}</div>
                 </div>
                 <div className="w-9 h-9 bg-gradient-to-tr from-cyan-500 to-primary-400 rounded-full flex items-center justify-center font-bold text-white shadow-md cursor-pointer border-2 border-slate-800">
-                  {user.name.charAt(0)}
+                  {(user.name || '?').charAt(0)}
                 </div>
                 <button onClick={onLogout} className="ml-2 text-slate-500 hover:text-red-400 transition-colors">
                   <LogOut size={18} />
@@ -65,7 +92,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
             <div className="flex space-x-8 pt-4">
               {[
                 { id: 'profile', label: 'My Profile' },
-                { id: 'opportunities', label: 'Opportunities', count: 2 },
+                { id: 'opportunities', label: 'Opportunities' },
                 { id: 'earnings', label: 'Timesheets & Earnings' },
               ].map(tab => (
                 <button 
@@ -92,6 +119,13 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
 }
 
 function AppTalentProfileView({ user }) {
+  const { data: profile } = useBackendResource(backendApi.talent.getMyProfile, EMPTY_PROFILE);
+  const displayProfile = {
+    ...user,
+    ...profile,
+  };
+  const skills = asList(displayProfile.tools || displayProfile.skills);
+
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in max-w-6xl">
       {/* Left Column: Quick Profile Card */}
@@ -100,18 +134,18 @@ function AppTalentProfileView({ user }) {
           <div className="bg-slate-950 h-24"></div>
           <div className="p-6 relative">
             <div className="w-20 h-20 bg-gradient-to-br from-cyan-100 to-primary-50 rounded-2xl border-4 border-white flex items-center justify-center font-bold text-cyan-700 text-3xl absolute -top-10 shadow-sm">
-              {user.name.charAt(0)}
+              {(displayProfile.name || '?').charAt(0)}
             </div>
             
             <div className="mt-12 mb-6">
-              <h2 className="text-xl font-bold text-slate-950 dark:text-white leading-tight">{user.name}</h2>
-              <p className="text-sm font-medium text-slate-500 mb-4">{user.title}</p>
+              <h2 className="text-xl font-bold text-slate-950 dark:text-white leading-tight">{displayProfile.name || 'Profile pending'}</h2>
+              <p className="text-sm font-medium text-slate-500 mb-4">{displayProfile.title || displayProfile.role || 'Add your professional title'}</p>
               
               <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mb-2 font-medium">
-                <MapPin size={16} className="text-slate-400" /> {user.location}
+                <MapPin size={16} className="text-slate-400" /> {displayProfile.location || 'Add location'}
               </div>
               <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 font-medium mb-6">
-                <Star size={16} className="text-amber-500 fill-current" /> {user.rating} Average Rating
+                <Star size={16} className="text-amber-500 fill-current" /> {displayProfile.rating ? `${displayProfile.rating} Average Rating` : 'No ratings yet'}
               </div>
 
               <div className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl p-4 mb-6">
@@ -142,9 +176,15 @@ function AppTalentProfileView({ user }) {
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Professional Bio</h3>
               <button className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
-            <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-              Highly detail-oriented Payroll Specialist with 4+ years of experience managing complex payroll cycles using Gusto and ADP for US-based clients. Adept at navigating multi-state compliance, tax withholdings, and benefits administration.
-            </p>
+            {displayProfile.bio ? (
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{displayProfile.bio}</p>
+            ) : (
+              <EmptyState
+                icon={FileText}
+                title="No bio yet"
+                description="Your professional summary will appear here once your profile is completed."
+              />
+            )}
           </div>
         </FadeIn>
 
@@ -158,18 +198,21 @@ function AppTalentProfileView({ user }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
               <div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Current Hourly Rate</div>
-                <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">$9.00 <span className="text-sm font-bold text-slate-400">/hr</span></div>
+                <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(displayProfile.rate || displayProfile.hourlyRate)} <span className="text-sm font-bold text-slate-400">/hr</span></div>
               </div>
               <div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Total Experience</div>
-                <div className="text-lg font-bold text-slate-950 dark:text-white">4 Years</div>
+                <div className="text-lg font-bold text-slate-950 dark:text-white">{displayProfile.experience || displayProfile.exp || 'Pending'}</div>
               </div>
             </div>
 
             <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
               <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-3">Software Stack</div>
               <div className="flex flex-wrap gap-2">
-                {['Gusto', 'ADP', 'QuickBooks Online', 'Excel', 'G-Suite'].map(tool => (
+                {skills.length === 0 && (
+                  <span className="text-sm font-medium text-slate-500">No tools added yet.</span>
+                )}
+                {skills.map(tool => (
                   <span key={tool} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-sm px-3 py-1.5 rounded-lg font-bold">
                     {tool}
                   </span>
@@ -182,8 +225,8 @@ function AppTalentProfileView({ user }) {
         <FadeIn delay={200}>
           <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800 border border-emerald-100 dark:border-slate-700 rounded-3xl p-8 flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-emerald-950 dark:text-emerald-300 text-lg mb-1 flex items-center gap-2"><CheckSquare size={18} className="text-emerald-600 dark:text-emerald-400"/> Profile Approved</h3>
-              <p className="text-emerald-800 dark:text-emerald-400 text-sm font-medium">Your profile has passed screening and is visible to Enterprise clients.</p>
+              <h3 className="font-bold text-emerald-950 dark:text-emerald-300 text-lg mb-1 flex items-center gap-2"><CheckSquare size={18} className="text-emerald-600 dark:text-emerald-400"/> Profile Status</h3>
+              <p className="text-emerald-800 dark:text-emerald-400 text-sm font-medium">{displayProfile.status || 'Complete onboarding to publish your profile.'}</p>
             </div>
             <button className="bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm border border-emerald-200 dark:border-slate-600 hover:bg-emerald-100 dark:hover:bg-slate-600 transition-colors">
               View Public Profile
@@ -196,10 +239,8 @@ function AppTalentProfileView({ user }) {
 }
 
 function AppTalentOpportunitiesView() {
-  const invites = [
-    { id: 1, company: "Stark Industries", role: "Payroll Specialist - Embedded Hire", duration: "Full-Time Ongoing", rate: "$9.00/hr", date: "Received 2 hours ago" },
-    { id: 2, company: "Wayne Enterprises", role: "Managed Pod: Month-End Close", duration: "Part-Time (20hrs/wk)", rate: "$9.00/hr", date: "Received yesterday" }
-  ];
+  const { data: invites, error, isLoading } = useBackendResource(backendApi.talent.listOpportunities, EMPTY_LIST);
+  const opportunities = asList(invites);
 
   return (
     <div className="portal-fade-in max-w-4xl">
@@ -208,25 +249,38 @@ function AppTalentOpportunitiesView() {
         <p className="text-slate-600 dark:text-slate-400">Review invitations to interview and active client matches.</p>
       </div>
 
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {error.message}
+        </div>
+      )}
+
+      {opportunities.length === 0 ? (
+        <EmptyState
+          icon={Briefcase}
+          title={isLoading ? 'Loading opportunities' : 'No opportunities yet'}
+          description="Interview invitations and active client matches will appear here once they are available."
+        />
+      ) : (
       <div className="space-y-6">
-        {invites.map((invite, idx) => (
+        {opportunities.map((invite, idx) => (
           <FadeIn key={invite.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm flex flex-col md:flex-row gap-6 justify-between">
             <div>
               <div className="inline-flex items-center bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md mb-4">
                 Interview Invite
               </div>
-              <h3 className="font-bold text-xl text-slate-950 dark:text-white mb-1">{invite.role}</h3>
+              <h3 className="font-bold text-xl text-slate-950 dark:text-white mb-1">{invite.role || invite.title || 'Opportunity pending'}</h3>
               <p className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-6">
-                <Building size={16}/> {invite.company}
+                <Building size={16}/> {invite.company || invite.clientName || 'Client pending'}
               </p>
               <div className="flex gap-6 text-sm font-bold text-slate-700 dark:text-slate-300">
-                <div className="flex items-center gap-2"><Clock3 size={16} className="text-slate-400"/> {invite.duration}</div>
-                <div className="flex items-center gap-2"><DollarSign size={16} className="text-slate-400"/> {invite.rate}</div>
+                <div className="flex items-center gap-2"><Clock3 size={16} className="text-slate-400"/> {invite.duration || invite.schedule || 'Schedule pending'}</div>
+                <div className="flex items-center gap-2"><DollarSign size={16} className="text-slate-400"/> {formatMoney(invite.rate || invite.hourlyRate)}</div>
               </div>
             </div>
             
             <div className="md:border-l md:border-slate-100 dark:border-slate-800 md:pl-6 flex flex-col justify-center gap-3 md:w-48">
-              <div className="text-xs text-slate-400 font-bold mb-2 text-center md:text-left">{invite.date}</div>
+              <div className="text-xs text-slate-400 font-bold mb-2 text-center md:text-left">{invite.date || invite.receivedAt || 'Date pending'}</div>
               <button className="w-full bg-slate-950 text-white hover:bg-cyan-600 py-3 rounded-xl text-sm font-bold transition-colors shadow-md">
                  Accept Invite
               </button>
@@ -237,11 +291,15 @@ function AppTalentOpportunitiesView() {
           </FadeIn>
         ))}
       </div>
+      )}
     </div>
   );
 }
 
 function AppTalentEarningsView() {
+  const { data: earnings, isLoading } = useBackendResource(backendApi.talent.getEarnings, EMPTY_EARNINGS);
+  const timesheets = asList(earnings.timesheets);
+
   return (
     <div className="portal-fade-in max-w-6xl">
       <div className="mb-8 flex justify-between items-end">
@@ -258,20 +316,20 @@ function AppTalentEarningsView() {
         <FadeIn delay={100}>
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Available to Withdraw</div>
-            <div className="text-4xl font-black text-slate-950 dark:text-white tracking-tight">$720.00</div>
+            <div className="text-4xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(earnings.availableToWithdraw)}</div>
           </div>
         </FadeIn>
         <FadeIn delay={150}>
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Pending (In Review)</div>
-            <div className="text-4xl font-black text-slate-500 dark:text-slate-400 tracking-tight">$360.00</div>
+            <div className="text-4xl font-black text-slate-500 dark:text-slate-400 tracking-tight">{formatMoney(earnings.pendingReview)}</div>
           </div>
         </FadeIn>
         <FadeIn delay={200}>
           <div className="bg-slate-950 text-white rounded-3xl p-6 shadow-xl overflow-hidden relative group">
              <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/20 blur-[30px] rounded-full"></div>
             <div className="text-xs font-bold text-cyan-300 uppercase tracking-wider mb-2 relative z-10">Total Earned (YTD)</div>
-            <div className="text-4xl font-black text-white tracking-tight relative z-10">$12,450.00</div>
+            <div className="text-4xl font-black text-white tracking-tight relative z-10">{formatMoney(earnings.totalEarnedYtd)}</div>
           </div>
         </FadeIn>
       </div>
@@ -281,18 +339,17 @@ function AppTalentEarningsView() {
           <h3 className="font-bold text-slate-950 dark:text-white text-lg">Recent Timesheets</h3>
           <button className="text-sm font-bold text-cyan-600 hover:underline">View All</button>
         </div>
-        {[
-          { period: "Oct 12 - Oct 18, 2025", hours: "40:00", amount: "$360.00", status: "Approved" },
-          { period: "Oct 05 - Oct 11, 2025", hours: "40:00", amount: "$360.00", status: "Paid" },
-          { period: "Sep 28 - Oct 04, 2025", hours: "38:30", amount: "$346.50", status: "Paid" },
-        ].map((sheet, i) => (
-          <div key={i} className={`flex items-center justify-between p-6 ${i !== 2 ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
+        {timesheets.length === 0 && (
+          <div className="p-6 text-sm font-medium text-slate-500">{isLoading ? 'Loading timesheets...' : 'No timesheets loaded yet.'}</div>
+        )}
+        {timesheets.map((sheet, i) => (
+          <div key={sheet.id || i} className={`flex items-center justify-between p-6 ${i !== timesheets.length - 1 ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
             <div>
-              <div className="font-bold text-slate-900 dark:text-slate-50 mb-1">{sheet.period}</div>
-              <div className="text-sm font-medium text-slate-500">{sheet.hours} logged</div>
+              <div className="font-bold text-slate-900 dark:text-slate-50 mb-1">{sheet.period || 'Period pending'}</div>
+              <div className="text-sm font-medium text-slate-500">{sheet.hours || '0:00'} logged</div>
             </div>
             <div className="text-right">
-              <div className="font-black text-lg text-slate-950 dark:text-white">{sheet.amount}</div>
+              <div className="font-black text-lg text-slate-950 dark:text-white">{formatMoney(sheet.amount)}</div>
               <div className={`text-xs font-bold uppercase tracking-wider mt-1 ${sheet.status === 'Paid' ? 'text-emerald-500' : 'text-amber-500'}`}>
                 {sheet.status}
               </div>

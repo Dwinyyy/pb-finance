@@ -1,16 +1,39 @@
-# React + Vite
+# PB Finance
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite frontend for the PB Finance public site, client portal, and talent portal.
 
-Currently, two official plugins are available:
+## Local Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+```
 
-## React Compiler
+Copy `.env.example` to `.env.local` and set:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+VITE_API_BASE_URL=https://your-api-host.com
+```
 
-## Expanding the ESLint configuration
+If `VITE_API_BASE_URL` is not set, portal data surfaces render production-safe empty states instead of mock records.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Backend Handoff
+
+The frontend API boundary lives in `src/services/api.js`. Dynamic views now call that wrapper through `src/hooks/useBackendResource.js`.
+
+Initial endpoints expected by the UI:
+
+- `POST /auth/login`
+- `POST /auth/register`
+- `GET /auth/me`
+- `GET /talent/profiles`
+- `GET /talent/me`
+- `GET /talent/opportunities`
+- `GET /talent/earnings`
+- `GET /agencies`
+- `GET /client/shortlist`
+- `GET /client/interviews`
+- `GET /client/billing`
+- `POST /matchmaker/suggestions`
+
+Authentication tokens should be stored under `pb_auth_token` until the auth flow is fully replaced.
