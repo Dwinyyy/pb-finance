@@ -9,31 +9,39 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and set:
+For the Vite-only frontend server, use `npm run dev`. For the frontend plus Vercel API functions, use:
 
 ```bash
-VITE_API_BASE_URL=https://your-api-host.com
+npx vercel dev
 ```
 
-If `VITE_API_BASE_URL` is not set, portal data surfaces render production-safe empty states instead of mock records.
+Copy `.env.example` to `.env.local` and set a long random `AUTH_SECRET`.
 
-## Backend Handoff
+## Backend
 
-The frontend API boundary lives in `src/services/api.js`. Dynamic views now call that wrapper through `src/hooks/useBackendResource.js`.
+The frontend API boundary lives in `src/services/api.js`. It defaults to the same-project Vercel backend at `/api`.
 
-Initial endpoints expected by the UI:
+Implemented endpoints:
 
-- `POST /auth/login`
-- `POST /auth/register`
-- `GET /auth/me`
-- `GET /talent/profiles`
-- `GET /talent/me`
-- `GET /talent/opportunities`
-- `GET /talent/earnings`
-- `GET /agencies`
-- `GET /client/shortlist`
-- `GET /client/interviews`
-- `GET /client/billing`
-- `POST /matchmaker/suggestions`
+- `POST /api/auth/login`
+- `POST /api/auth/register`
+- `GET /api/auth/me`
+- `GET /api/talent/profiles`
+- `GET /api/talent/me`
+- `GET /api/talent/opportunities`
+- `GET /api/talent/earnings`
+- `GET /api/agencies`
+- `GET /api/client/shortlist`
+- `GET /api/client/interviews`
+- `GET /api/client/billing`
+- `POST /api/matchmaker/suggestions`
 
-Authentication tokens should be stored under `pb_auth_token` until the auth flow is fully replaced.
+Auth uses PBKDF2 password hashing and signed bearer tokens. For persistent production accounts, set:
+
+```bash
+AUTH_SECRET=your-long-random-secret
+UPSTASH_REDIS_REST_URL=your-upstash-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+```
+
+If Upstash is not configured, the auth API falls back to an in-memory store for local/dev testing. That fallback is not durable across server restarts or serverless instances.
