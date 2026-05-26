@@ -145,6 +145,7 @@ export const backendApi = {
     updateMyProfile: (payload) => request('/talent/me', { method: 'PATCH', body: payload }),
     listOpportunities: () => request('/talent/opportunities'),
     updateOpportunity: (payload) => request('/talent/opportunities', { method: 'PATCH', body: payload }),
+    removeOpportunity: (payload) => request('/talent/opportunities', { method: 'DELETE', body: payload }),
     getEarnings: () => request('/talent/earnings'),
   },
   client: {

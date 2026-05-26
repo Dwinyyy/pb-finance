@@ -77,6 +77,16 @@ const run = async () => {
     }
   }
 
+  try {
+    await supabaseRestRequest(
+      '/professional_profiles?select=user_id,pending_profile,review_status,review_submitted_at&limit=1',
+      { useServiceRole: true }
+    );
+    tableChecks.professional_profile_review_columns = { ok: true };
+  } catch (error) {
+    tableChecks.professional_profile_review_columns = { ok: false, error: error.message };
+  }
+
   const summary = { env, tableChecks };
 
   try {

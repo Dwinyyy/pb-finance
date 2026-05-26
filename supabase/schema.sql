@@ -37,9 +37,19 @@ create table if not exists public.professional_profiles (
   industries text[] not null default '{}',
   work_preferences jsonb not null default '{}'::jsonb,
   published_at timestamptz,
+  pending_profile jsonb not null default '{}'::jsonb,
+  review_status text check (review_status is null or review_status in ('pending_review', 'rejected')),
+  review_submitted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.professional_profiles add column if not exists pending_profile jsonb not null default '{}'::jsonb;
+alter table public.professional_profiles add column if not exists review_status text;
+alter table public.professional_profiles add column if not exists review_submitted_at timestamptz;
+alter table public.professional_profiles drop constraint if exists professional_profiles_review_status_check;
+alter table public.professional_profiles add constraint professional_profiles_review_status_check
+  check (review_status is null or review_status in ('pending_review', 'rejected'));
 
 create table if not exists public.client_companies (
   id uuid primary key default gen_random_uuid(),

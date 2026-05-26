@@ -8,7 +8,7 @@ import {
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, SlidersHorizontal,
   ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
-  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
+  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
@@ -132,6 +132,7 @@ function AppTalentProfileView({ user }) {
   );
   const [savedProfile, setSavedProfile] = useState(EMPTY_PROFILE);
   const [isEditing, setIsEditing] = useState(false);
+  const [editingSection, setEditingSection] = useState('profile');
   const [isSaving, setIsSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
@@ -147,21 +148,25 @@ function AppTalentProfileView({ user }) {
   };
   const skills = asList(displayProfile.tools || displayProfile.skills);
 
-  const openEditor = () => {
+  const buildProfileForm = (overrides = {}) => ({
+    availability: availabilityToValue(displayProfile.availability || displayProfile.available),
+    bio: displayProfile.bio || '',
+    certifications: listToText(displayProfile.certifications),
+    fullName: displayProfile.name || displayProfile.fullName || '',
+    hourlyRate: displayProfile.rate || displayProfile.hourlyRate || '',
+    location: displayProfile.location || '',
+    skills: listToText(displayProfile.skills),
+    title: displayProfile.title || displayProfile.role || '',
+    tools: listToText(displayProfile.tools),
+    yearsExperience: displayProfile.yearsExperience || '',
+    ...overrides,
+  });
+
+  const openEditor = (section = 'profile', overrides = {}) => {
     setProfileError('');
     setProfileMessage('');
-    setProfileForm({
-      availability: availabilityToValue(displayProfile.availability || displayProfile.available),
-      bio: displayProfile.bio || '',
-      certifications: listToText(displayProfile.certifications),
-      fullName: displayProfile.name || displayProfile.fullName || '',
-      hourlyRate: displayProfile.rate || displayProfile.hourlyRate || '',
-      location: displayProfile.location || '',
-      skills: listToText(displayProfile.skills),
-      title: displayProfile.title || displayProfile.role || '',
-      tools: listToText(displayProfile.tools),
-      yearsExperience: displayProfile.yearsExperience || '',
-    });
+    setEditingSection(section);
+    setProfileForm(buildProfileForm(overrides));
     setIsEditing(true);
   };
 
@@ -229,8 +234,7 @@ function AppTalentProfileView({ user }) {
                 <select
                   value={availabilityToValue(displayProfile.availability || displayProfile.available)}
                   onChange={(event) => {
-                    openEditor();
-                    handleProfileChange('availability', event.target.value);
+                    openEditor('profile', { availability: event.target.value });
                   }}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-50 text-sm font-bold rounded-lg px-3 py-2 outline-none focus:border-cyan-500"
                 >
@@ -265,10 +269,13 @@ function AppTalentProfileView({ user }) {
           <FadeIn>
             <form onSubmit={handleProfileSubmit} className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 space-y-5">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-bold text-slate-950 dark:text-white">Edit Profile</h3>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white">
+                  {editingSection === 'bio' ? 'Edit Bio' : editingSection === 'rates' ? 'Edit Rates & Skills' : 'Edit Profile'}
+                </h3>
                 <button type="button" onClick={() => setIsEditing(false)} className="text-sm font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
               </div>
 
+              {editingSection === 'profile' && (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
                   Full name
@@ -290,6 +297,11 @@ function AppTalentProfileView({ user }) {
                     <option value="not_available">Not Available</option>
                   </select>
                 </label>
+              </div>
+              )}
+
+              {editingSection === 'rates' && (
+              <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
                   Hourly rate
                   <input type="number" min="0" step="1" value={profileForm.hourlyRate || ''} onChange={(event) => handleProfileChange('hourlyRate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
@@ -299,12 +311,16 @@ function AppTalentProfileView({ user }) {
                   <input type="number" min="0" step="1" value={profileForm.yearsExperience || ''} onChange={(event) => handleProfileChange('yearsExperience', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
                 </label>
               </div>
+              )}
 
+              {editingSection === 'bio' && (
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                 Bio
                 <textarea value={profileForm.bio || ''} onChange={(event) => handleProfileChange('bio', event.target.value)} rows={4} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
               </label>
+              )}
 
+              {editingSection === 'rates' && (
               <div className="grid gap-4 md:grid-cols-3">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
                   Tools
@@ -319,6 +335,7 @@ function AppTalentProfileView({ user }) {
                   <input value={profileForm.certifications || ''} onChange={(event) => handleProfileChange('certifications', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
                 </label>
               </div>
+              )}
 
               <button type="submit" disabled={isSaving} className="bg-slate-950 text-white hover:bg-cyan-600 px-6 py-3 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70">
                 {isSaving ? 'Saving...' : 'Save Profile'}
@@ -331,7 +348,7 @@ function AppTalentProfileView({ user }) {
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Professional Bio</h3>
-              <button onClick={openEditor} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
+              <button onClick={() => openEditor('bio')} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
             {displayProfile.bio ? (
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{displayProfile.bio}</p>
@@ -349,7 +366,7 @@ function AppTalentProfileView({ user }) {
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Rates & Skills</h3>
-              <button onClick={openEditor} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
+              <button onClick={() => openEditor('rates')} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
@@ -429,6 +446,22 @@ function AppTalentOpportunitiesView() {
     }
   };
 
+  const handleRemoveDeclined = async (invite) => {
+    setActionError('');
+    setActionMessage('');
+    setBusyAction(`remove:${invite.id}`);
+
+    try {
+      await backendApi.talent.removeOpportunity({ id: invite.id });
+      setLocalOpportunities((current) => current.filter((item) => item.id !== invite.id));
+      setActionMessage('Declined invite removed.');
+    } catch (removeError) {
+      setActionError(removeError.message || 'Unable to remove this invite.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   return (
     <div className="portal-fade-in max-w-4xl">
       <div className="mb-8">
@@ -495,6 +528,16 @@ function AppTalentOpportunitiesView() {
               >
                 {busyAction === `declined:${invite.id}` ? 'Declining...' : invite.status === 'declined' ? 'Declined' : 'Decline'}
               </button>
+              {invite.status === 'declined' && (
+                <button
+                  onClick={() => handleRemoveDeclined(invite)}
+                  disabled={busyAction === `remove:${invite.id}`}
+                  className="w-full bg-white dark:bg-slate-900 text-red-600 border border-red-100 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-950/30 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-default flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={15} />
+                  {busyAction === `remove:${invite.id}` ? 'Removing...' : 'Remove'}
+                </button>
+              )}
             </div>
           </FadeIn>
           );

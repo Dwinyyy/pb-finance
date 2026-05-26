@@ -183,38 +183,66 @@ const loadProfilesById = async (req, ids) => {
   return new Map(asList(rows).map((profile) => [profile.id, profile]));
 };
 
-const mapTalentProfile = (profile, owner = {}) => {
-  const displayName = owner.full_name || owner.name || 'Unnamed profile';
-  const title = owner.title || 'Finance Professional';
-  const hourlyRate = toNumber(profile.hourly_rate);
-  const years = toNumber(profile.years_experience);
+const hasPendingProfile = (profile) => (
+  profile?.pending_profile && Object.keys(profile.pending_profile).length > 0
+);
+
+const toProfilePatch = (profile) => ({
+  availability: profile.availability,
+  bio: profile.bio,
+  certifications: cleanList(profile.certifications),
+  country: profile.country,
+  hourly_rate: toNumber(profile.hourly_rate),
+  industries: cleanList(profile.industries),
+  location: profile.location,
+  skills: cleanList(profile.skills),
+  tools: cleanList(profile.tools),
+  work_preferences: typeof profile.work_preferences === 'object' && profile.work_preferences !== null
+    ? profile.work_preferences
+    : {},
+  years_experience: toNumber(profile.years_experience),
+});
+
+const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
+  const pending = usePending && profile.pending_profile ? profile.pending_profile : {};
+  const viewProfile = { ...profile, ...pending };
+  const displayName = pending.full_name || owner.full_name || owner.name || 'Unnamed profile';
+  const storedTitle = pending.title || owner.title || '';
+  const title = storedTitle && storedTitle !== 'Complete your profile'
+    ? storedTitle
+    : 'Finance Professional';
+  const hourlyRate = toNumber(viewProfile.hourly_rate);
+  const years = toNumber(viewProfile.years_experience);
+  const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
 
   return {
-    available: availabilityLabels[profile.availability] || 'Availability pending',
-    availability: availabilityLabels[profile.availability] || 'Availability pending',
-    bio: profile.bio || '',
-    certifications: asList(profile.certifications),
+    available: availabilityLabels[viewProfile.availability] || 'Availability pending',
+    availability: availabilityLabels[viewProfile.availability] || 'Availability pending',
+    bio: viewProfile.bio || '',
+    certifications: asList(viewProfile.certifications),
     email: owner.email || '',
     exp: years ? `${years}+ yrs` : '',
     experience: years ? `${years}+ years` : '',
     fullName: displayName,
     id: profile.user_id,
-    industries: asList(profile.industries),
-    location: profile.location || profile.country || '',
+    hasPendingChanges: hasPendingProfile(profile),
+    industries: asList(viewProfile.industries),
+    location: viewProfile.location || viewProfile.country || '',
     name: displayName,
     rate: hourlyRate,
-    rating: toNumber(profile.rating),
+    rating: toNumber(viewProfile.rating),
     reviewCount: profile.review_count || 0,
+    reviewStatus,
     role: title,
-    skills: asList(profile.skills),
-    status: profile.status,
+    skills: asList(viewProfile.skills),
+    status: usePending ? (reviewStatus || profile.status) : profile.status,
     title,
-    tools: asList(profile.tools),
+    tools: asList(viewProfile.tools),
     yearsExperience: years,
   };
 };
 
-const loadTalentProfiles = async (req, { ids, onlyApproved = false } = {}) => {
+const loadTalentProfiles = async (req, { ids, onlyApproved = false, usePending = false } = {}) => {
   if (ids && ids.length === 0) {
     return [];
   }
@@ -237,7 +265,7 @@ const loadTalentProfiles = async (req, { ids, onlyApproved = false } = {}) => {
   const profileRows = asList(rows);
   const owners = await loadProfilesById(req, profileRows.map((row) => row.user_id));
 
-  return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id)));
+  return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id), { usePending }));
 };
 
 const mapAgency = (agency) => ({
@@ -528,7 +556,7 @@ const handlers = {
     const user = await requireAdmin(req, res);
     if (!user) return;
 
-    const profiles = await loadTalentProfiles(req);
+    const profiles = await loadTalentProfiles(req, { usePending: true });
     sendJson(res, 200, profiles);
   },
 
@@ -550,10 +578,55 @@ const handlers = {
       return;
     }
 
-    const payload = {
+    const existingRows = await readRows(
+      req,
+      `/professional_profiles?user_id=eq.${professionalId}&select=*&limit=1`
+    );
+    const existingProfile = asList(existingRows)[0];
+
+    if (!existingProfile) {
+      sendError(res, 404, 'Talent profile not found.');
+      return;
+    }
+
+    const pendingProfile = existingProfile.pending_profile || {};
+    const hasPendingChanges = hasPendingProfile(existingProfile);
+    let payload = {
       status,
       ...(status === 'approved' ? { published_at: new Date().toISOString() } : {}),
     };
+
+    if (status === 'approved' && hasPendingChanges) {
+      await patchRows(req, `/profiles?id=eq.${professionalId}`, {
+        ...(pendingProfile.full_name ? { full_name: pendingProfile.full_name } : {}),
+        ...(pendingProfile.title ? { title: pendingProfile.title } : {}),
+      }, { prefer: 'return=minimal' });
+
+      payload = {
+        ...toProfilePatch(pendingProfile),
+        pending_profile: {},
+        published_at: new Date().toISOString(),
+        review_status: null,
+        review_submitted_at: null,
+        status: 'approved',
+      };
+    } else if (status === 'rejected' && existingProfile.status === 'approved' && hasPendingChanges) {
+      payload = {
+        review_status: 'rejected',
+      };
+    } else if (status === 'pending_review' && existingProfile.status === 'approved' && hasPendingChanges) {
+      payload = {
+        review_status: 'pending_review',
+      };
+    } else if (['hidden', 'rejected'].includes(status)) {
+      payload = {
+        pending_profile: {},
+        review_status: null,
+        review_submitted_at: null,
+        status,
+      };
+    }
+
     const rows = await patchRows(
       req,
       `/professional_profiles?user_id=eq.${professionalId}`,
@@ -568,7 +641,7 @@ const handlers = {
 
     const owners = await loadProfilesById(req, [professionalId]);
     const owner = owners.get(professionalId) || {};
-    const mappedProfile = mapTalentProfile(saved, owner);
+    const mappedProfile = mapTalentProfile(saved, owner, { usePending: true });
 
     if (['approved', 'rejected'].includes(status)) {
       notifyUser({
@@ -1028,7 +1101,7 @@ const handlers = {
         email: user.email,
         full_name: user.name,
         title: user.title,
-      })
+      }, { usePending: true })
       : user);
   },
 
@@ -1039,42 +1112,64 @@ const handlers = {
     const body = await readJson(req);
     const currentProfile = await getProfessionalProfile(req, user.id);
     const fullName = cleanString(body.fullName || body.name || user.name, 160);
-    const title = cleanString(body.title || body.role || user.title || 'Finance Professional', 160);
+    const fallbackTitle = user.title && user.title !== 'Complete your profile' ? user.title : 'Finance Professional';
+    const title = cleanString(body.title || body.role || fallbackTitle, 160);
     const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate);
     const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience);
 
-    await patchRows(req, `/profiles?id=eq.${user.id}`, {
-      full_name: fullName,
-      title,
-    }, { prefer: 'return=minimal' });
-
-    const profileBody = {
+    const profilePayload = {
       availability: normalizeAvailability(body.availability || body.available),
       bio: cleanString(body.bio, 2000),
       certifications: cleanList(body.certifications),
       country: cleanString(body.country || 'Philippines', 100),
+      full_name: fullName,
       hourly_rate: hourlyRate,
       industries: cleanList(body.industries),
       location: cleanString(body.location, 160),
       skills: cleanList(body.skills),
-      status: 'pending_review',
+      title,
       tools: cleanList(body.tools),
-      user_id: user.id,
       work_preferences: typeof body.workPreferences === 'object' && body.workPreferences !== null
         ? body.workPreferences
         : {},
       years_experience: yearsExperience,
     };
+    let rows;
 
-    const rows = await writeRows(
-      req,
-      '/professional_profiles?on_conflict=user_id',
-      profileBody,
-      { prefer: 'resolution=merge-duplicates,return=representation' }
-    );
+    if (currentProfile?.status === 'approved') {
+      rows = await patchRows(
+        req,
+        `/professional_profiles?user_id=eq.${user.id}`,
+        {
+          pending_profile: profilePayload,
+          review_status: 'pending_review',
+          review_submitted_at: new Date().toISOString(),
+        }
+      );
+    } else {
+      await patchRows(req, `/profiles?id=eq.${user.id}`, {
+        full_name: fullName,
+        title,
+      }, { prefer: 'return=minimal' });
+
+      rows = await writeRows(
+        req,
+        '/professional_profiles?on_conflict=user_id',
+        {
+          ...toProfilePatch(profilePayload),
+          pending_profile: {},
+          review_status: null,
+          review_submitted_at: null,
+          status: 'pending_review',
+          user_id: user.id,
+        },
+        { prefer: 'resolution=merge-duplicates,return=representation' }
+      );
+    }
+
     const savedProfile = asList(rows)[0];
     const shouldNotifyAdmins = savedProfile?.status === 'pending_review'
-      && currentProfile?.status !== 'pending_review';
+      || savedProfile?.review_status === 'pending_review';
 
     if (shouldNotifyAdmins) {
       notifyAdmins({
@@ -1094,7 +1189,7 @@ const handlers = {
       email: user.email,
       full_name: fullName,
       title,
-    }));
+    }, { usePending: true }));
   },
 
   'GET /talent/opportunities': async (req, res) => {
@@ -1103,7 +1198,7 @@ const handlers = {
 
     const opportunities = await readRows(
       req,
-      `/opportunities?professional_id=eq.${user.id}&select=*&order=received_at.desc&limit=50`
+      `/opportunities?professional_id=eq.${user.id}&status=neq.closed&select=*&order=received_at.desc&limit=50`
     );
     const clientProfiles = await loadProfilesById(
       req,
@@ -1195,6 +1290,38 @@ const handlers = {
     }).catch(() => {});
 
     sendJson(res, 200, asList(rows)[0] || { ok: true, status });
+  },
+
+  'DELETE /talent/opportunities': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const opportunityId = cleanString(body.id || body.opportunityId || body.opportunity_id, 80);
+
+    if (!isUuid(opportunityId)) {
+      sendError(res, 400, 'A valid opportunity id is required.');
+      return;
+    }
+
+    const existing = await readRows(
+      req,
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=eq.declined&select=*&limit=1`
+    );
+
+    if (!asList(existing)[0]) {
+      sendError(res, 404, 'Declined opportunity not found.');
+      return;
+    }
+
+    await patchRows(
+      req,
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}`,
+      { status: 'closed' },
+      { prefer: 'return=minimal' }
+    );
+
+    sendJson(res, 200, { ok: true });
   },
 
   'GET /talent/profiles': async (req, res) => {
