@@ -89,7 +89,7 @@ const run = async () => {
 
   try {
     await supabaseRestRequest(
-      '/interviews?select=id,cancellation_reason,cancelled_by,cancelled_at&limit=1',
+      '/interviews?select=id,cancellation_reason,cancelled_by,cancelled_at,client_hidden_at,professional_hidden_at&limit=1',
       { useServiceRole: true }
     );
     tableChecks.interview_cancellation_columns = { ok: true };

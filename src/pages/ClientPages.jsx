@@ -7,7 +7,7 @@ import {
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, SlidersHorizontal,
-  ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
+  ChevronLeft, ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
@@ -25,7 +25,7 @@ const EMPTY_BILLING = Object.freeze({
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
-const interviewStatusLabel = (status) => String(status || 'scheduled').replace(/_/g, ' ');
+const interviewStatusLabel = (status) => String(status === 'requested' ? 'requesting' : status || 'scheduled').replace(/_/g, ' ');
 const interviewStatusStyles = {
   accepted: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
   active: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -35,13 +35,31 @@ const interviewStatusStyles = {
   declined: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   invited: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   requested: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  requesting: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   saved: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   scheduled: 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
 };
-const getPromptDateDefault = () => {
+const padTimePart = (value) => String(value).padStart(2, '0');
+const formatLocalDate = (date) => `${date.getFullYear()}-${padTimePart(date.getMonth() + 1)}-${padTimePart(date.getDate())}`;
+const formatLocalTime = (date) => `${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}`;
+const isScheduleDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const isScheduleTime = (value) => /^\d{2}:\d{2}$/.test(value);
+const getScheduleDefault = () => {
   const date = new Date(Date.now() + 24 * 60 * 60 * 1000);
   date.setMinutes(0, 0, 0);
-  return date.toISOString().slice(0, 16);
+  return {
+    date: formatLocalDate(date),
+    time: formatLocalTime(date),
+  };
+};
+const combineScheduleDateTime = ({ date, time }) => {
+  if (!isScheduleDate(date) || !isScheduleTime(time)) return '';
+
+  const parsed = new Date(`${date}T${time}:00`);
+
+  if (Number.isNaN(parsed.getTime())) return '';
+
+  return parsed.toISOString();
 };
 
 function EmptyState({ icon, title, description }) {
@@ -54,6 +72,144 @@ function EmptyState({ icon, title, description }) {
       </div>
       <h3 className="text-lg font-bold text-slate-950 dark:text-white mb-2">{title}</h3>
       <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">{description}</p>
+    </div>
+  );
+}
+
+function PortalModal({ children, onClose, size = 'default', title }) {
+  const widthClass = size === 'wide' ? 'max-w-2xl' : 'max-w-lg';
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className={`w-full ${widthClass} rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900`}>
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const scheduleTimeOptions = Array.from({ length: 23 }, (_, index) => {
+  const hour = 8 + Math.floor(index / 2);
+  const minutes = index % 2 === 0 ? '00' : '30';
+  return `${padTimePart(hour)}:${minutes}`;
+});
+
+function InterviewDateTimePicker({ value, onChange }) {
+  const parsedDate = isScheduleDate(value.date) ? new Date(`${value.date}T00:00:00`) : new Date();
+  const [viewDate, setViewDate] = useState(() => new Date(parsedDate.getFullYear(), parsedDate.getMonth(), 1));
+
+  const monthLabel = useMemo(
+    () => viewDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+    [viewDate]
+  );
+  const calendarDays = useMemo(() => {
+    const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+    const blanks = Array.from({ length: firstDay.getDay() }, () => null);
+    const days = Array.from({ length: daysInMonth }, (_, index) => index + 1);
+    return [...blanks, ...days];
+  }, [viewDate]);
+
+  const updateDate = (date) => {
+    onChange({ ...value, date });
+
+    if (isScheduleDate(date)) {
+      const nextDate = new Date(`${date}T00:00:00`);
+      setViewDate(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+    }
+  };
+
+  const selectDay = (day) => {
+    const selected = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    updateDate(formatLocalDate(selected));
+  };
+
+  const shiftMonth = (amount) => {
+    setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
+  };
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+        <div className="mb-3 flex items-center justify-between">
+          <button type="button" onClick={() => shiftMonth(-1)} className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-950 dark:hover:bg-slate-900 dark:hover:text-white" title="Previous month">
+            <ChevronLeft size={17} />
+          </button>
+          <div className="text-sm font-black text-slate-950 dark:text-white">{monthLabel}</div>
+          <button type="button" onClick={() => shiftMonth(1)} className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-950 dark:hover:bg-slate-900 dark:hover:text-white" title="Next month">
+            <ChevronRight size={17} />
+          </button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {weekdayLabels.map((day) => (
+            <div key={day} className="py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">{day}</div>
+          ))}
+          {calendarDays.map((day, index) => {
+            const dayDate = day ? formatLocalDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), day)) : '';
+            const isSelected = dayDate && dayDate === value.date;
+
+            return day ? (
+              <button
+                key={dayDate}
+                type="button"
+                onClick={() => selectDay(day)}
+                className={`aspect-square rounded-xl text-sm font-bold transition-colors ${
+                  isSelected
+                    ? 'bg-slate-950 text-white shadow-md dark:bg-primary-500'
+                    : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {day}
+              </button>
+            ) : (
+              <div key={`blank-${index}`} />
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+          Time
+          <select
+            value={scheduleTimeOptions.includes(value.time) ? value.time : ''}
+            onChange={(event) => onChange({ ...value, time: event.target.value })}
+            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-primary-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+          >
+            <option value="" disabled>Choose a time</option>
+            {scheduleTimeOptions.map((time) => (
+              <option key={time} value={time}>{time}</option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+            Date
+            <input
+              value={value.date}
+              onChange={(event) => updateDate(event.target.value)}
+              placeholder="YYYY-MM-DD"
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+            />
+          </label>
+          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+            Time
+            <input
+              value={value.time}
+              onChange={(event) => onChange({ ...value, time: event.target.value })}
+              placeholder="HH:MM"
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+            />
+          </label>
+        </div>
+      </div>
     </div>
   );
 }
@@ -605,6 +761,8 @@ function AppShortlistView() {
   const [busyAction, setBusyAction] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [scheduleTarget, setScheduleTarget] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState(getScheduleDefault);
 
   useEffect(() => {
     setLocalShortlist(asList(shortlisted));
@@ -626,41 +784,44 @@ function AppShortlistView() {
     }
   };
 
-  const handleSchedule = async (profile) => {
-    const requestedTime = window.prompt(
-      'Enter interview date/time as YYYY-MM-DDTHH:mm, or leave blank to request scheduling without a fixed time.',
-      getPromptDateDefault()
-    );
+  const openScheduleModal = (profile) => {
+    setActionError('');
+    setActionMessage('');
+    setScheduleTarget(profile);
+    setScheduleForm(getScheduleDefault());
+  };
 
-    if (requestedTime === null) return;
+  const closeScheduleModal = () => {
+    if (busyAction) return;
+    setScheduleTarget(null);
+  };
 
-    const trimmedTime = requestedTime.trim();
-    let scheduledFor = '';
+  const submitSchedule = async (event) => {
+    event.preventDefault();
 
-    if (trimmedTime) {
-      const parsedDate = new Date(trimmedTime);
+    if (!scheduleTarget) return;
 
-      if (Number.isNaN(parsedDate.getTime())) {
-        setActionError('Use a valid date/time like 2026-05-24T09:00.');
-        return;
-      }
+    const scheduledFor = combineScheduleDateTime(scheduleForm);
 
-      scheduledFor = parsedDate.toISOString();
+    if (!scheduledFor) {
+      setActionError('Use a valid date and time, like 2026-05-24 and 09:00.');
+      return;
     }
 
     setActionError('');
     setActionMessage('');
-    setBusyAction(`schedule:${profile.id}`);
+    setBusyAction(`schedule:${scheduleTarget.id}`);
 
     try {
       await backendApi.client.requestInterview({
-        hourlyRate: profile.rate || profile.hourlyRate,
-        professionalId: profile.id,
+        hourlyRate: scheduleTarget.rate || scheduleTarget.hourlyRate,
+        professionalId: scheduleTarget.id,
         scheduledFor,
-        title: profile.role || profile.title || 'Finance interview',
+        title: scheduleTarget.role || scheduleTarget.title || 'Finance interview',
       });
       await refetch();
-      setActionMessage(`Interview request sent to ${profile.name || profile.fullName || 'the candidate'}.`);
+      setScheduleTarget(null);
+      setActionMessage(`Interview request sent to ${scheduleTarget.name || scheduleTarget.fullName || 'the candidate'}.`);
     } catch (scheduleError) {
       setActionError(scheduleError.message || 'Unable to request this interview.');
     } finally {
@@ -702,9 +863,9 @@ function AppShortlistView() {
         {localShortlist.map((profile, idx) => {
           const hasActiveOpportunity = ['accepted', 'active', 'invited'].includes(profile.opportunityStatus);
           const currentStatus = hasActiveOpportunity
-            ? (['requested', 'scheduled'].includes(profile.interviewStatus) ? profile.interviewStatus : profile.opportunityStatus)
+            ? (['requesting', 'requested', 'scheduled'].includes(profile.interviewStatus) ? profile.interviewStatus : profile.opportunityStatus)
             : profile.interviewStatus || profile.opportunityStatus || profile.shortlistStatus;
-          const hasActiveRequest = ['invited', 'accepted', 'active', 'requested', 'scheduled'].includes(currentStatus);
+          const hasActiveRequest = ['invited', 'accepted', 'active', 'requesting', 'requested', 'scheduled'].includes(currentStatus);
 
           return (
           <FadeIn key={profile.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col sm:flex-row gap-6 hover:shadow-lg transition-shadow">
@@ -746,7 +907,7 @@ function AppShortlistView() {
               </div>
               <div className="space-y-2">
                 <button
-                  onClick={() => handleSchedule(profile)}
+                  onClick={() => openScheduleModal(profile)}
                   disabled={busyAction === `schedule:${profile.id}` || hasActiveRequest}
                   className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
                 >
@@ -766,6 +927,29 @@ function AppShortlistView() {
         })}
       </div>
       )}
+
+      {scheduleTarget && (
+        <PortalModal title="Request Interview" onClose={closeScheduleModal} size="wide">
+          <form onSubmit={submitSchedule} className="space-y-5">
+            <div>
+              <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-300">Preferred date and time</div>
+              <InterviewDateTimePicker value={scheduleForm} onChange={setScheduleForm} />
+              <p className="mt-2 text-xs font-medium text-slate-500">Pick a date from the calendar, choose a time, or type both fields manually.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+              {scheduleTarget.name || scheduleTarget.fullName || 'Candidate'} will receive this as a request first. It becomes scheduled after they accept.
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={closeScheduleModal} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                Cancel
+              </button>
+              <button type="submit" disabled={busyAction === `schedule:${scheduleTarget.id}`} className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-primary-600 disabled:opacity-70">
+                {busyAction === `schedule:${scheduleTarget.id}` ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </form>
+        </PortalModal>
+      )}
     </div>
   );
 }
@@ -780,29 +964,58 @@ function AppInterviewsView() {
   const [busyAction, setBusyAction] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [actionMenuId, setActionMenuId] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
 
-  const handleCancelInterview = async (interview) => {
-    const reason = window.prompt('Why do you want to cancel this interview?');
+  const openCancelModal = (interview) => {
+    setActionError('');
+    setActionMessage('');
+    setActionMenuId('');
+    setCancelTarget(interview);
+    setCancelReason('');
+  };
 
-    if (reason === null) return;
+  const submitCancelInterview = async (event) => {
+    event.preventDefault();
 
-    const trimmedReason = reason.trim();
+    if (!cancelTarget) return;
 
-    if (!trimmedReason) {
+    const reason = cancelReason.trim();
+
+    if (!reason) {
       setActionError('Cancellation reason is required.');
       return;
     }
 
     setActionError('');
     setActionMessage('');
-    setBusyAction(`cancel:${interview.id}`);
+    setBusyAction(`cancel:${cancelTarget.id}`);
 
     try {
-      await backendApi.client.cancelInterview({ id: interview.id, reason: trimmedReason });
+      await backendApi.client.cancelInterview({ id: cancelTarget.id, reason });
       await refetch();
+      setCancelTarget(null);
       setActionMessage('Interview cancelled and the professional was notified.');
     } catch (cancelError) {
       setActionError(cancelError.message || 'Unable to cancel this interview.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleRemoveCancelled = async (interview) => {
+    setActionError('');
+    setActionMessage('');
+    setActionMenuId('');
+    setBusyAction(`remove:${interview.id}`);
+
+    try {
+      await backendApi.client.removeInterview({ id: interview.id });
+      await refetch();
+      setActionMessage('Cancelled interview removed.');
+    } catch (removeError) {
+      setActionError(removeError.message || 'Unable to remove this interview.');
     } finally {
       setBusyAction('');
     }
@@ -883,18 +1096,66 @@ function AppInterviewsView() {
                   No link yet <Video size={16} className="ml-2" />
                 </button>
               )}
-              <button
-                onClick={() => handleCancelInterview(interview)}
-                disabled={interview.status === 'cancelled' || busyAction === `cancel:${interview.id}`}
-                className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:text-slate-50 hover:border-red-200 rounded-xl transition-colors disabled:cursor-default disabled:opacity-50"
-                title="Cancel interview"
-              >
-                <SlidersHorizontal size={18} />
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setActionMenuId((current) => (current === interview.id ? '' : interview.id))}
+                  disabled={busyAction === `cancel:${interview.id}` || busyAction === `remove:${interview.id}`}
+                  className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-50 hover:border-slate-300 rounded-xl transition-colors disabled:cursor-default disabled:opacity-50"
+                  title="Interview actions"
+                >
+                  <SlidersHorizontal size={18} />
+                </button>
+                {actionMenuId === interview.id && (
+                  <div className="absolute right-0 top-12 z-20 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                    {interview.status === 'cancelled' ? (
+                      <button
+                        onClick={() => handleRemoveCancelled(interview)}
+                        className="w-full rounded-xl px-3 py-2 text-left text-sm font-bold text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+                      >
+                        Delete cancelled
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => openCancelModal(interview)}
+                        className="w-full rounded-xl px-3 py-2 text-left text-sm font-bold text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+                      >
+                        Cancel interview
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </FadeIn>
         ))}
       </div>
+      )}
+
+      {cancelTarget && (
+        <PortalModal title="Cancel Interview" onClose={() => setCancelTarget(null)}>
+          <form onSubmit={submitCancelInterview} className="space-y-5">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+              This will notify {cancelTarget.name || cancelTarget.candidateName || 'the professional'} and keep the reason visible on the cancelled interview.
+            </div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+              Cancellation reason
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                rows={4}
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-red-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+              />
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setCancelTarget(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                Keep Interview
+              </button>
+              <button type="submit" disabled={busyAction === `cancel:${cancelTarget.id}`} className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-70">
+                {busyAction === `cancel:${cancelTarget.id}` ? 'Cancelling...' : 'Cancel Interview'}
+              </button>
+            </div>
+          </form>
+        </PortalModal>
       )}
     </div>
   );

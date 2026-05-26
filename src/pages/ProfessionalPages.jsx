@@ -49,6 +49,22 @@ function EmptyState({ icon, title, description }) {
   );
 }
 
+function PortalModal({ children, onClose, title }) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ==========================================
 // 3. PROFESSIONAL PORTAL (TALENT EXPERIENCE)
 // ==========================================
@@ -433,6 +449,8 @@ function AppTalentOpportunitiesView() {
   const [busyAction, setBusyAction] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   useEffect(() => {
     setLocalOpportunities(asList(invites));
@@ -446,7 +464,9 @@ function AppTalentOpportunitiesView() {
     try {
       await backendApi.talent.updateOpportunity({ id: invite.id, status });
       setLocalOpportunities((current) => current.map((item) => (
-        item.id === invite.id ? { ...item, status } : item
+        item.id === invite.id
+          ? { ...item, interviewStatus: status === 'accepted' ? 'scheduled' : 'cancelled', status }
+          : item
       )));
       setActionMessage(status === 'accepted' ? 'Invite accepted.' : 'Invite declined.');
     } catch (updateError) {
@@ -472,32 +492,40 @@ function AppTalentOpportunitiesView() {
     }
   };
 
-  const handleCancelInterview = async (invite) => {
-    const reason = window.prompt('Why do you want to cancel this interview?');
+  const openCancelModal = (invite) => {
+    setActionError('');
+    setActionMessage('');
+    setCancelTarget(invite);
+    setCancelReason('');
+  };
 
-    if (reason === null) return;
+  const submitCancelInterview = async (event) => {
+    event.preventDefault();
 
-    const trimmedReason = reason.trim();
+    if (!cancelTarget) return;
 
-    if (!trimmedReason) {
+    const reason = cancelReason.trim();
+
+    if (!reason) {
       setActionError('Cancellation reason is required.');
       return;
     }
 
     setActionError('');
     setActionMessage('');
-    setBusyAction(`cancel:${invite.id}`);
+    setBusyAction(`cancel:${cancelTarget.id}`);
 
     try {
       await backendApi.talent.cancelInterview({
-        opportunityId: invite.id,
-        reason: trimmedReason,
+        opportunityId: cancelTarget.id,
+        reason,
       });
       setLocalOpportunities((current) => current.map((item) => (
-        item.id === invite.id
-          ? { ...item, cancellationReason: trimmedReason, interviewStatus: 'cancelled', status: 'cancelled' }
+        item.id === cancelTarget.id
+          ? { ...item, cancellationReason: reason, interviewStatus: 'cancelled', status: 'cancelled' }
           : item
       )));
+      setCancelTarget(null);
       setActionMessage('Interview cancelled and the client was notified.');
     } catch (cancelError) {
       setActionError(cancelError.message || 'Unable to cancel this interview.');
@@ -540,7 +568,7 @@ function AppTalentOpportunitiesView() {
         {localOpportunities.map((invite, idx) => {
           const isCancelled = invite.status === 'cancelled' || invite.interviewStatus === 'cancelled';
           const isAnswered = ['accepted', 'declined', 'cancelled'].includes(invite.status) || isCancelled;
-          const canCancel = invite.status === 'accepted' && ['requested', 'scheduled'].includes(invite.interviewStatus);
+          const canCancel = invite.status === 'accepted' && ['requesting', 'requested', 'scheduled'].includes(invite.interviewStatus);
 
           return (
           <FadeIn key={invite.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm flex flex-col md:flex-row gap-6 justify-between">
@@ -579,7 +607,7 @@ function AppTalentOpportunitiesView() {
               >
                 {busyAction === `declined:${invite.id}` ? 'Declining...' : invite.status === 'declined' ? 'Declined' : 'Decline'}
               </button>
-              {invite.status === 'declined' && (
+              {['declined', 'cancelled'].includes(invite.status) && (
                 <button
                   onClick={() => handleRemoveDeclined(invite)}
                   disabled={busyAction === `remove:${invite.id}`}
@@ -591,7 +619,7 @@ function AppTalentOpportunitiesView() {
               )}
               {canCancel && (
                 <button
-                  onClick={() => handleCancelInterview(invite)}
+                  onClick={() => openCancelModal(invite)}
                   disabled={busyAction === `cancel:${invite.id}`}
                   className="w-full bg-white dark:bg-slate-900 text-red-600 border border-red-100 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-950/30 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-default"
                 >
@@ -603,6 +631,33 @@ function AppTalentOpportunitiesView() {
           );
         })}
       </div>
+      )}
+
+      {cancelTarget && (
+        <PortalModal title="Cancel Interview" onClose={() => setCancelTarget(null)}>
+          <form onSubmit={submitCancelInterview} className="space-y-5">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+              This will notify {cancelTarget.company || cancelTarget.clientName || 'the client'} and keep the reason visible on the cancelled request.
+            </div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+              Cancellation reason
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                rows={4}
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-red-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+              />
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setCancelTarget(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                Keep Interview
+              </button>
+              <button type="submit" disabled={busyAction === `cancel:${cancelTarget.id}`} className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-70">
+                {busyAction === `cancel:${cancelTarget.id}` ? 'Cancelling...' : 'Cancel Interview'}
+              </button>
+            </div>
+          </form>
+        </PortalModal>
       )}
     </div>
   );

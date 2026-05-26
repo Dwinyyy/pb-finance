@@ -375,6 +375,7 @@ const opportunityStatusPriority = {
 
 const interviewStatusPriority = {
   scheduled: 5,
+  requesting: 4,
   requested: 4,
   completed: 3,
   cancelled: 2,
@@ -411,7 +412,7 @@ const cancelInterview = async (req, {
 
   const rows = await readRows(
     req,
-    `/interviews?${filters.join('&')}&status=in.(requested,scheduled)&select=*&limit=1`
+    `/interviews?${filters.join('&')}&status=in.(requesting,requested,scheduled)&select=*&limit=1`
   );
   const interview = asList(rows)[0];
 
@@ -868,7 +869,7 @@ const handlers = {
 
     const interviews = await readRows(
       req,
-      `/interviews?client_id=eq.${user.id}&status=in.(requested,scheduled,completed,cancelled)&select=*&order=updated_at.desc&limit=50`
+      `/interviews?client_id=eq.${user.id}&client_hidden_at=is.null&status=in.(requesting,requested,scheduled,completed,cancelled)&select=*&order=updated_at.desc&limit=50`
     );
     const rows = asList(interviews);
     const owners = await loadProfilesById(req, rows.map((interview) => interview.professional_id));
@@ -889,7 +890,7 @@ const handlers = {
         name: professional.full_name,
         role: interview.role_title || professional.title,
         scheduledFor: interview.scheduled_for,
-        status: interview.status,
+        status: interview.status === 'requested' ? 'requesting' : interview.status,
         time: parts.time,
         title: interview.role_title || professional.title,
       };
@@ -1016,7 +1017,7 @@ const handlers = {
       ),
       readRows(
         req,
-        `/interviews?client_id=eq.${user.id}&professional_id=eq.${professionalId}&status=in.(requested,scheduled)&select=id,status&limit=1`
+        `/interviews?client_id=eq.${user.id}&professional_id=eq.${professionalId}&status=in.(requesting,requested,scheduled)&select=id,status&limit=1`
       ),
     ]);
 
@@ -1029,7 +1030,10 @@ const handlers = {
     const professionalOwner = owners.get(professionalId) || {};
     const title = cleanString(body.title || body.roleTitle || professionalOwner.title || 'Finance interview', 160);
     const scheduledFor = cleanString(body.scheduledFor || body.scheduled_for, 80);
-    const schedule = scheduledFor ? `Interview requested for ${formatDate(scheduledFor)}` : 'Interview requested';
+    const scheduledParts = getMonthDay(scheduledFor);
+    const schedule = scheduledFor
+      ? `Interview requested for ${formatDate(scheduledFor)} at ${scheduledParts.time}`
+      : 'Interview requested';
     const companyName = await getPrimaryClientCompanyName(req, user.id, user.company);
     const durationMinutes = Number(body.durationMinutes || body.duration_minutes || 30);
     const opportunityRows = await writeRows(req, '/opportunities', {
@@ -1051,7 +1055,7 @@ const handlers = {
       professional_id: professionalId,
       role_title: title,
       scheduled_for: scheduledFor || null,
-      status: scheduledFor ? 'scheduled' : 'requested',
+      status: 'requesting',
     });
     const interview = asList(interviewRows)[0] || null;
 
@@ -1135,6 +1139,33 @@ const handlers = {
     }).catch(() => {});
 
     sendJson(res, 200, interview);
+  },
+
+  'DELETE /client/interviews': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const interviewId = cleanString(body.id || body.interviewId || body.interview_id, 80);
+
+    if (!isUuid(interviewId)) {
+      sendError(res, 400, 'A valid interview id is required.');
+      return;
+    }
+
+    const rows = await patchRows(
+      req,
+      `/interviews?id=eq.${interviewId}&client_id=eq.${user.id}&status=eq.cancelled`,
+      { client_hidden_at: new Date().toISOString() },
+      { prefer: 'return=representation' }
+    );
+
+    if (!asList(rows)[0]) {
+      sendError(res, 404, 'Cancelled interview not found.');
+      return;
+    }
+
+    sendJson(res, 200, { ok: true });
   },
 
   'POST /matchmaker/suggestions': async (req, res) => {
@@ -1347,7 +1378,7 @@ const handlers = {
     const interviewRows = opportunityIds.length
       ? await readRows(
         req,
-        `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&select=*&limit=100`
+        `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&professional_hidden_at=is.null&select=*&limit=100`
       )
       : [];
     const interviewsByOpportunity = new Map(asList(interviewRows).map((interview) => [interview.opportunity_id, interview]));
@@ -1355,6 +1386,11 @@ const handlers = {
     sendJson(res, 200, opportunityRows.map((opportunity) => {
       const client = clientProfiles.get(opportunity.client_id) || {};
       const interview = interviewsByOpportunity.get(opportunity.id) || {};
+
+      const scheduledParts = getMonthDay(interview.scheduled_for);
+      const interviewSchedule = interview.scheduled_for
+        ? `${formatDate(interview.scheduled_for)} at ${scheduledParts.time}`
+        : opportunity.schedule;
 
       return {
         cancellationReason: interview.cancellation_reason,
@@ -1364,7 +1400,7 @@ const handlers = {
         company: opportunity.company_name || client.company || client.full_name,
         date: formatDate(opportunity.received_at),
         description: opportunity.description,
-        duration: opportunity.schedule,
+        duration: interviewSchedule,
         hourlyRate: toNumber(opportunity.hourly_rate),
         id: opportunity.id,
         interviewId: interview.id,
@@ -1372,7 +1408,7 @@ const handlers = {
         rate: toNumber(opportunity.hourly_rate),
         receivedAt: formatDate(opportunity.received_at),
         role: opportunity.title,
-        schedule: opportunity.schedule,
+        schedule: interviewSchedule,
         status: opportunity.status,
         title: opportunity.title,
       };
@@ -1459,11 +1495,11 @@ const handlers = {
 
     const existing = await readRows(
       req,
-      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=eq.declined&select=*&limit=1`
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=in.(declined,cancelled)&select=*&limit=1`
     );
 
     if (!asList(existing)[0]) {
-      sendError(res, 404, 'Declined opportunity not found.');
+      sendError(res, 404, 'Removable opportunity not found.');
       return;
     }
 
@@ -1473,6 +1509,13 @@ const handlers = {
       { status: 'closed' },
       { prefer: 'return=minimal' }
     );
+
+    await patchRows(
+      req,
+      `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}`,
+      { professional_hidden_at: new Date().toISOString() },
+      { prefer: 'return=minimal' }
+    ).catch(() => {});
 
     sendJson(res, 200, { ok: true });
   },

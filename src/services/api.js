@@ -157,6 +157,7 @@ export const backendApi = {
     listInterviews: () => request('/client/interviews'),
     requestInterview: (payload) => request('/client/interviews', { method: 'POST', body: payload }),
     cancelInterview: (payload) => request('/client/interviews', { method: 'PATCH', body: payload }),
+    removeInterview: (payload) => request('/client/interviews', { method: 'DELETE', body: payload }),
     getBilling: () => request('/client/billing'),
   },
   matchmaker: {

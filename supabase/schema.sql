@@ -117,10 +117,12 @@ create table if not exists public.interviews (
   scheduled_for timestamptz,
   duration_minutes integer not null default 30,
   meeting_url text,
-  status text not null default 'scheduled' check (status in ('requested', 'scheduled', 'completed', 'cancelled', 'no_show')),
+  status text not null default 'requesting' check (status in ('requesting', 'requested', 'scheduled', 'completed', 'cancelled', 'no_show')),
   cancellation_reason text,
   cancelled_by uuid references public.profiles(id) on delete set null,
   cancelled_at timestamptz,
+  client_hidden_at timestamptz,
+  professional_hidden_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -132,6 +134,11 @@ alter table public.opportunities add constraint opportunities_status_check
 alter table public.interviews add column if not exists cancellation_reason text;
 alter table public.interviews add column if not exists cancelled_by uuid references public.profiles(id) on delete set null;
 alter table public.interviews add column if not exists cancelled_at timestamptz;
+alter table public.interviews add column if not exists client_hidden_at timestamptz;
+alter table public.interviews add column if not exists professional_hidden_at timestamptz;
+alter table public.interviews drop constraint if exists interviews_status_check;
+alter table public.interviews add constraint interviews_status_check
+  check (status in ('requesting', 'requested', 'scheduled', 'completed', 'cancelled', 'no_show'));
 
 create table if not exists public.contracts (
   id uuid primary key default gen_random_uuid(),
