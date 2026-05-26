@@ -8,17 +8,372 @@ import {
   signInWithPassword,
   signOut,
   signUpWithPassword,
+  supabaseRestRequest,
 } from '../server/supabase.js';
 
-const sessionPayload = (session) => ({
+const hasServiceRoleKey = () => Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+const getDataOptions = (req) => ({
+  token: getBearerToken(req),
+  useServiceRole: hasServiceRoleKey(),
+});
+
+const asList = (value) => (Array.isArray(value) ? value : []);
+const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+
+const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
+
+const cleanList = (value, maxItems = 20) => {
+  const list = Array.isArray(value)
+    ? value
+    : String(value || '').split(',');
+
+  return [...new Set(list
+    .map((item) => cleanString(item, 80))
+    .filter(Boolean))]
+    .slice(0, maxItems);
+};
+
+const getProfileUserForSession = async (session) => {
+  const user = publicUser(session.user);
+
+  if (!user.id) {
+    return user;
+  }
+
+  try {
+    const rows = await supabaseRestRequest(
+      `/profiles?id=eq.${user.id}&select=id,email,full_name,company,role,title&limit=1`,
+      {
+        token: session.access_token,
+        useServiceRole: hasServiceRoleKey(),
+      }
+    );
+    const profile = asList(rows)[0];
+
+    if (!profile) {
+      return user;
+    }
+
+    return {
+      ...user,
+      company: profile.company || user.company,
+      email: profile.email || user.email,
+      name: profile.full_name || user.name,
+      role: profile.role || user.role,
+      title: profile.title || user.title,
+    };
+  } catch {
+    return user;
+  }
+};
+
+const sessionPayload = async (session) => ({
   expiresIn: session.expires_in,
   provider: 'supabase',
   refreshToken: session.refresh_token,
   token: session.access_token,
-  user: publicUser(session.user),
+  user: await getProfileUserForSession(session),
 });
 
+const toNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const availabilityLabels = {
+  available_now: 'Immediate Start',
+  available_soon: 'Available in 2 Weeks',
+  not_available: 'Not Available',
+};
+
+const formatDate = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const getMonthDay = (value) => {
+  if (!value) {
+    return { day: '--', month: 'TBD', time: 'Time pending' };
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return { day: '--', month: 'TBD', time: 'Time pending' };
+  }
+
+  return {
+    day: date.toLocaleDateString('en-US', { day: '2-digit' }),
+    month: date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+    time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+  };
+};
+
+const requireSession = async (req, res, allowedRoles = []) => {
+  const user = await getSessionUser(req);
+
+  if (!user) {
+    sendError(res, 401, 'Authentication required.');
+    return null;
+  }
+
+  if (allowedRoles.length && !allowedRoles.includes(user.role)) {
+    sendError(res, 403, 'You do not have access to this resource.');
+    return null;
+  }
+
+  return user;
+};
+
+const requireAdmin = async (req, res) => {
+  const user = await requireSession(req, res, ['admin']);
+
+  if (!user) return null;
+
+  if (!hasServiceRoleKey()) {
+    sendError(res, 500, 'Admin routes require SUPABASE_SERVICE_ROLE_KEY on the server.');
+    return null;
+  }
+
+  return user;
+};
+
+const readRows = (req, path) => supabaseRestRequest(path, getDataOptions(req));
+
+const writeRows = (req, path, body, { method = 'POST', prefer = 'return=representation' } = {}) => (
+  supabaseRestRequest(path, {
+    ...getDataOptions(req),
+    body,
+    method,
+    prefer,
+  })
+);
+
+const patchRows = (req, path, body, { prefer = 'return=representation' } = {}) => (
+  writeRows(req, path, body, { method: 'PATCH', prefer })
+);
+
+const byIdFilter = (ids) => `in.(${ids.map((id) => encodeURIComponent(id)).join(',')})`;
+
+const loadProfilesById = async (req, ids) => {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+
+  if (!uniqueIds.length) {
+    return new Map();
+  }
+
+  const rows = await readRows(
+    req,
+    `/profiles?id=${byIdFilter(uniqueIds)}&select=id,email,full_name,company,role,title`
+  );
+
+  return new Map(asList(rows).map((profile) => [profile.id, profile]));
+};
+
+const mapTalentProfile = (profile, owner = {}) => {
+  const displayName = owner.full_name || owner.name || 'Unnamed profile';
+  const title = owner.title || 'Finance Professional';
+  const hourlyRate = toNumber(profile.hourly_rate);
+  const years = toNumber(profile.years_experience);
+
+  return {
+    available: availabilityLabels[profile.availability] || 'Availability pending',
+    availability: availabilityLabels[profile.availability] || 'Availability pending',
+    bio: profile.bio || '',
+    certifications: asList(profile.certifications),
+    email: owner.email || '',
+    exp: years ? `${years}+ yrs` : '',
+    experience: years ? `${years}+ years` : '',
+    fullName: displayName,
+    id: profile.user_id,
+    industries: asList(profile.industries),
+    location: profile.location || profile.country || '',
+    name: displayName,
+    rate: hourlyRate,
+    rating: toNumber(profile.rating),
+    reviewCount: profile.review_count || 0,
+    role: title,
+    skills: asList(profile.skills),
+    status: profile.status,
+    title,
+    tools: asList(profile.tools),
+    yearsExperience: years,
+  };
+};
+
+const loadTalentProfiles = async (req, { ids, onlyApproved = false } = {}) => {
+  if (ids && ids.length === 0) {
+    return [];
+  }
+
+  const filters = [];
+
+  if (ids?.length) {
+    filters.push(`user_id=${byIdFilter([...new Set(ids)])}`);
+  }
+
+  if (onlyApproved) {
+    filters.push('status=eq.approved');
+  }
+
+  const query = filters.length ? `?${filters.join('&')}&` : '?';
+  const rows = await readRows(
+    req,
+    `/professional_profiles${query}select=*&order=updated_at.desc&limit=100`
+  );
+  const profileRows = asList(rows);
+  const owners = await loadProfilesById(req, profileRows.map((row) => row.user_id));
+
+  return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id)));
+};
+
+const mapAgency = (agency) => ({
+  certs: asList(agency.certifications),
+  certifications: asList(agency.certifications),
+  description: agency.description || '',
+  id: agency.id,
+  location: agency.location || '',
+  monthlyRate: toNumber(agency.monthly_rate),
+  name: agency.name || 'Unnamed agency',
+  rate: toNumber(agency.monthly_rate),
+  rating: toNumber(agency.rating),
+  reviewCount: agency.review_count || 0,
+  size: agency.team_size || '',
+  specialty: agency.specialty || '',
+  status: agency.status,
+  tools: asList(agency.tools),
+});
+
+const tokenize = (value) => String(value || '')
+  .toLowerCase()
+  .split(/[^a-z0-9]+/)
+  .filter((word) => word.length > 2);
+
+const scoreMatch = (messageTokens, record, fields) => {
+  const haystack = tokenize(fields.map((field) => {
+    const value = record[field];
+    return Array.isArray(value) ? value.join(' ') : value;
+  }).join(' '));
+  const haystackSet = new Set(haystack);
+
+  return messageTokens.reduce((score, token) => score + (haystackSet.has(token) ? 1 : 0), 0);
+};
+
+const getProfessionalProfile = async (req, professionalId, { requireApproved = false } = {}) => {
+  if (!isUuid(professionalId)) {
+    return null;
+  }
+
+  const filters = [`user_id=eq.${professionalId}`];
+
+  if (requireApproved) {
+    filters.push('status=eq.approved');
+  }
+
+  const rows = await readRows(
+    req,
+    `/professional_profiles?${filters.join('&')}&select=*&limit=1`
+  );
+
+  return asList(rows)[0] || null;
+};
+
+const getPrimaryClientCompanyName = async (req, clientId, fallback = '') => {
+  const rows = await readRows(
+    req,
+    `/client_companies?owner_id=eq.${clientId}&select=name&order=created_at.asc&limit=1`
+  );
+
+  return asList(rows)[0]?.name || fallback || 'Client company';
+};
+
+const normalizeAvailability = (value) => {
+  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+  const labels = {
+    available_in_2_weeks: 'available_soon',
+    available_now: 'available_now',
+    immediate_start: 'available_now',
+    not_available: 'not_available',
+  };
+
+  return labels[normalized] || (['available_now', 'available_soon', 'not_available'].includes(normalized)
+    ? normalized
+    : 'available_now');
+};
+
+const talentStatuses = new Set(['draft', 'pending_review', 'approved', 'hidden', 'rejected']);
+const agencyStatuses = new Set(['draft', 'pending_review', 'approved', 'hidden', 'rejected']);
+
+const normalizeStatus = (status, allowedStatuses, fallback = 'pending_review') => {
+  const value = cleanString(status, 40);
+  return allowedStatuses.has(value) ? value : fallback;
+};
+
+const buildAgencyPayload = (body, fallback = {}) => {
+  const monthlyRate = toNumber(body.monthlyRate ?? body.monthly_rate ?? fallback.monthly_rate);
+  const ownerId = cleanString(body.ownerId || body.owner_id || fallback.owner_id, 80);
+  const reviewCount = Number(body.reviewCount ?? body.review_count ?? fallback.review_count ?? 0);
+
+  return {
+    certifications: cleanList(body.certifications ?? fallback.certifications),
+    description: cleanString(body.description ?? fallback.description, 1600),
+    location: cleanString(body.location ?? fallback.location, 180),
+    monthly_rate: monthlyRate,
+    name: cleanString(body.name ?? fallback.name, 180),
+    owner_id: isUuid(ownerId) ? ownerId : null,
+    rating: toNumber(body.rating ?? fallback.rating),
+    review_count: Number.isFinite(reviewCount) ? reviewCount : 0,
+    slug: cleanString(body.slug ?? fallback.slug, 180) || null,
+    specialty: cleanString(body.specialty ?? fallback.specialty, 180),
+    status: normalizeStatus(body.status ?? fallback.status, agencyStatuses, 'pending_review'),
+    team_size: cleanString(body.teamSize ?? body.team_size ?? fallback.team_size, 80),
+    tools: cleanList(body.tools ?? fallback.tools),
+  };
+};
+
 const handlers = {
+  'GET /health': async (req, res) => {
+    const checks = {
+      anonKeyConfigured: Boolean(process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY),
+      serviceRoleConfigured: hasServiceRoleKey(),
+      supabaseConnected: false,
+      supabaseUrlConfigured: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
+    };
+
+    try {
+      await supabaseRestRequest('/profiles?select=id&limit=1', {
+        token: getBearerToken(req),
+        useServiceRole: hasServiceRoleKey(),
+      });
+
+      sendJson(res, 200, {
+        ok: checks.anonKeyConfigured && checks.supabaseUrlConfigured,
+        checks: {
+          ...checks,
+          supabaseConnected: true,
+        },
+      });
+    } catch (error) {
+      sendJson(res, 503, {
+        ok: false,
+        checks,
+        error: error.message || 'Supabase connectivity check failed.',
+      });
+    }
+  },
+
   'POST /auth/login': async (req, res) => {
     try {
       const body = await readJson(req);
@@ -26,7 +381,7 @@ const handlers = {
       const password = String(body.password || '');
       const session = await signInWithPassword({ email, password });
 
-      sendJson(res, 200, sessionPayload(session));
+      sendJson(res, 200, await sessionPayload(session));
     } catch (error) {
       sendError(res, 500, error.message || 'Unable to sign in.');
     }
@@ -70,7 +425,7 @@ const handlers = {
       }
 
       const session = await refreshSession(refreshToken);
-      sendJson(res, 200, sessionPayload(session));
+      sendJson(res, 200, await sessionPayload(session));
     } catch (error) {
       sendError(res, 401, error.message || 'Unable to refresh session.');
     }
@@ -84,6 +439,7 @@ const handlers = {
       const role = body.role === 'professional' ? 'professional' : 'client';
       const fullName = String(body.fullName || '').trim();
       const company = String(body.company || '').trim();
+      const redirectTo = String(body.redirectTo || '').trim();
 
       if (!email || !email.includes('@')) {
         sendError(res, 400, 'A valid work email is required.');
@@ -100,6 +456,7 @@ const handlers = {
         email,
         fullName,
         password,
+        redirectTo,
         role,
       });
       const user = session.user || session;
@@ -114,41 +471,560 @@ const handlers = {
         return;
       }
 
-      sendJson(res, 201, sessionPayload(session));
+      sendJson(res, 201, await sessionPayload(session));
     } catch (error) {
       sendError(res, 500, error.message || 'Unable to create account.');
     }
   },
 
-  'GET /agencies': (_req, res) => sendJson(res, 200, []),
-  'GET /client/billing': (_req, res) => sendJson(res, 200, { contracts: [], invoices: [], paymentMethods: [] }),
-  'GET /client/interviews': (_req, res) => sendJson(res, 200, []),
-  'GET /client/shortlist': (_req, res) => sendJson(res, 200, []),
-  'POST /matchmaker/suggestions': async (req, res) => {
-    await readJson(req);
-    sendJson(res, 200, {
-      matches: [],
-      message: 'No recommendations are available yet.',
-    });
-  },
-  'GET /talent/earnings': (_req, res) => sendJson(res, 200, {
-    availableToWithdraw: 0,
-    pendingReview: 0,
-    timesheets: [],
-    totalEarnedYtd: 0,
-  }),
-  'GET /talent/me': async (req, res) => {
-    const user = await getSessionUser(req);
+  'GET /admin/talent': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
 
-    if (!user) {
-      sendError(res, 401, 'Authentication required.');
+    const profiles = await loadTalentProfiles(req);
+    sendJson(res, 200, profiles);
+  },
+
+  'PATCH /admin/talent': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const professionalId = cleanString(body.professionalId || body.professional_id || body.id, 80);
+    const status = normalizeStatus(body.status, talentStatuses, '');
+
+    if (!isUuid(professionalId)) {
+      sendError(res, 400, 'A valid professionalId is required.');
       return;
     }
 
-    sendJson(res, 200, user.role === 'professional' ? user : {});
+    if (!status) {
+      sendError(res, 400, 'A valid talent status is required.');
+      return;
+    }
+
+    const payload = {
+      status,
+      ...(status === 'approved' ? { published_at: new Date().toISOString() } : {}),
+    };
+    const rows = await patchRows(
+      req,
+      `/professional_profiles?user_id=eq.${professionalId}`,
+      payload
+    );
+    const saved = asList(rows)[0];
+
+    if (!saved) {
+      sendError(res, 404, 'Talent profile not found.');
+      return;
+    }
+
+    const owners = await loadProfilesById(req, [professionalId]);
+    sendJson(res, 200, mapTalentProfile(saved, owners.get(professionalId)));
   },
-  'GET /talent/opportunities': (_req, res) => sendJson(res, 200, []),
-  'GET /talent/profiles': (_req, res) => sendJson(res, 200, []),
+
+  'GET /admin/agencies': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const agencies = await readRows(
+      req,
+      '/agencies?select=*&order=updated_at.desc&limit=200'
+    );
+
+    sendJson(res, 200, asList(agencies).map(mapAgency));
+  },
+
+  'POST /admin/agencies': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const payload = buildAgencyPayload(body);
+
+    if (!payload.name) {
+      sendError(res, 400, 'Agency name is required.');
+      return;
+    }
+
+    const rows = await writeRows(req, '/agencies', payload);
+    sendJson(res, 201, mapAgency(asList(rows)[0] || payload));
+  },
+
+  'PATCH /admin/agencies': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const agencyId = cleanString(body.id || body.agencyId || body.agency_id, 80);
+
+    if (!isUuid(agencyId)) {
+      sendError(res, 400, 'A valid agency id is required.');
+      return;
+    }
+
+    const existingRows = await readRows(req, `/agencies?id=eq.${agencyId}&select=*&limit=1`);
+    const existing = asList(existingRows)[0];
+
+    if (!existing) {
+      sendError(res, 404, 'Agency not found.');
+      return;
+    }
+
+    const rows = await patchRows(
+      req,
+      `/agencies?id=eq.${agencyId}`,
+      buildAgencyPayload(body, existing)
+    );
+
+    sendJson(res, 200, mapAgency(asList(rows)[0] || existing));
+  },
+
+  'GET /agencies': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    const agencies = await readRows(
+      req,
+      '/agencies?status=eq.approved&select=*&order=updated_at.desc&limit=100'
+    );
+
+    sendJson(res, 200, asList(agencies).map(mapAgency));
+  },
+
+  'GET /client/billing': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const [contracts, invoices, paymentMethods] = await Promise.all([
+      readRows(req, `/contracts?client_id=eq.${user.id}&select=*&order=created_at.desc&limit=50`),
+      readRows(req, `/invoices?client_id=eq.${user.id}&select=*&order=issued_at.desc&limit=50`),
+      readRows(req, `/payment_methods?client_id=eq.${user.id}&select=*&order=is_default.desc,created_at.desc&limit=10`),
+    ]);
+
+    sendJson(res, 200, {
+      contracts: asList(contracts).map((contract) => ({
+        amount: toNumber(contract.monthly_amount),
+        billingInterval: contract.billing_interval || 'Monthly',
+        id: contract.id,
+        monthlyAmount: toNumber(contract.monthly_amount),
+        name: contract.title,
+        startDate: contract.start_date ? `Started ${formatDate(contract.start_date)}` : '',
+        status: contract.status,
+        title: contract.title,
+      })),
+      invoices: asList(invoices).map((invoice) => ({
+        amount: toNumber(invoice.amount),
+        date: formatDate(invoice.issued_at || invoice.created_at),
+        downloadUrl: invoice.pdf_url,
+        hostedInvoiceUrl: invoice.hosted_invoice_url,
+        id: invoice.id,
+        number: invoice.number,
+        status: invoice.status,
+      })),
+      paymentMethods: asList(paymentMethods).map((method) => ({
+        brand: method.brand,
+        expires: method.expires,
+        holderName: method.holder_name,
+        id: method.id,
+        isDefault: method.is_default,
+        last4: method.last4,
+      })),
+    });
+  },
+
+  'GET /client/interviews': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const interviews = await readRows(
+      req,
+      `/interviews?client_id=eq.${user.id}&status=in.(requested,scheduled,completed)&select=*&order=scheduled_for.asc&limit=50`
+    );
+    const rows = asList(interviews);
+    const owners = await loadProfilesById(req, rows.map((interview) => interview.professional_id));
+
+    sendJson(res, 200, rows.map((interview) => {
+      const parts = getMonthDay(interview.scheduled_for);
+      const professional = owners.get(interview.professional_id) || {};
+
+      return {
+        candidateName: professional.full_name,
+        day: parts.day,
+        id: interview.id,
+        meetingUrl: interview.meeting_url,
+        month: parts.month,
+        name: professional.full_name,
+        role: interview.role_title || professional.title,
+        scheduledFor: interview.scheduled_for,
+        status: interview.status,
+        time: parts.time,
+        title: interview.role_title || professional.title,
+      };
+    }));
+  },
+
+  'GET /client/shortlist': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const shortlists = await readRows(
+      req,
+      `/shortlists?client_id=eq.${user.id}&select=*&order=created_at.desc&limit=100`
+    );
+    const rows = asList(shortlists);
+    const profiles = await loadTalentProfiles(req, {
+      ids: rows.map((row) => row.professional_id),
+    });
+    const shortlistByProfessional = new Map(rows.map((row) => [row.professional_id, row]));
+
+    sendJson(res, 200, profiles.map((profile) => ({
+      ...profile,
+      shortlistId: shortlistByProfessional.get(profile.id)?.id,
+      shortlistStatus: shortlistByProfessional.get(profile.id)?.status,
+    })));
+  },
+
+  'POST /client/shortlist': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const professionalId = cleanString(body.professionalId || body.professional_id, 80);
+    const professionalProfile = await getProfessionalProfile(req, professionalId, { requireApproved: true });
+
+    if (!professionalProfile) {
+      sendError(res, 404, 'Approved talent profile not found.');
+      return;
+    }
+
+    const rows = await writeRows(
+      req,
+      '/shortlists?on_conflict=client_id,professional_id',
+      {
+        client_id: user.id,
+        notes: cleanString(body.notes, 1000),
+        professional_id: professionalId,
+        status: 'saved',
+      },
+      { prefer: 'resolution=merge-duplicates,return=representation' }
+    );
+
+    sendJson(res, 201, asList(rows)[0] || { ok: true });
+  },
+
+  'DELETE /client/shortlist': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const professionalId = cleanString(body.professionalId || body.professional_id, 80);
+
+    if (!isUuid(professionalId)) {
+      sendError(res, 400, 'A valid professionalId is required.');
+      return;
+    }
+
+    await supabaseRestRequest(
+      `/shortlists?client_id=eq.${user.id}&professional_id=eq.${professionalId}`,
+      {
+        ...getDataOptions(req),
+        method: 'DELETE',
+        prefer: 'return=minimal',
+      }
+    );
+
+    sendJson(res, 200, { ok: true });
+  },
+
+  'POST /client/interviews': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const professionalId = cleanString(body.professionalId || body.professional_id, 80);
+    const professionalProfile = await getProfessionalProfile(req, professionalId, { requireApproved: true });
+
+    if (!professionalProfile) {
+      sendError(res, 404, 'Approved talent profile not found.');
+      return;
+    }
+
+    const owners = await loadProfilesById(req, [professionalId]);
+    const professionalOwner = owners.get(professionalId) || {};
+    const title = cleanString(body.title || body.roleTitle || professionalOwner.title || 'Finance interview', 160);
+    const scheduledFor = cleanString(body.scheduledFor || body.scheduled_for, 80);
+    const schedule = scheduledFor ? `Interview requested for ${formatDate(scheduledFor)}` : 'Interview requested';
+    const companyName = await getPrimaryClientCompanyName(req, user.id, user.company);
+    const durationMinutes = Number(body.durationMinutes || body.duration_minutes || 30);
+    const opportunityRows = await writeRows(req, '/opportunities', {
+      client_id: user.id,
+      company_name: companyName,
+      description: cleanString(body.description || `Interview requested by ${companyName}.`, 1000),
+      hourly_rate: toNumber(body.hourlyRate || body.hourly_rate || professionalProfile.hourly_rate),
+      professional_id: professionalId,
+      schedule,
+      status: 'invited',
+      title,
+    });
+    const opportunity = asList(opportunityRows)[0];
+    const interviewRows = await writeRows(req, '/interviews', {
+      client_id: user.id,
+      duration_minutes: Number.isFinite(durationMinutes) ? durationMinutes : 30,
+      meeting_url: cleanString(body.meetingUrl || body.meeting_url, 500),
+      opportunity_id: opportunity?.id,
+      professional_id: professionalId,
+      role_title: title,
+      scheduled_for: scheduledFor || null,
+      status: scheduledFor ? 'scheduled' : 'requested',
+    });
+
+    sendJson(res, 201, {
+      interview: asList(interviewRows)[0] || null,
+      opportunity,
+    });
+  },
+
+  'POST /matchmaker/suggestions': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const message = String(body.message || '').trim();
+
+    if (!message) {
+      sendError(res, 400, 'Tell the matchmaker what you need.');
+      return;
+    }
+
+    const [talent, agencyRows] = await Promise.all([
+      loadTalentProfiles(req, { onlyApproved: true }),
+      readRows(req, '/agencies?status=eq.approved&select=*&order=updated_at.desc&limit=100'),
+    ]);
+    const agencies = asList(agencyRows).map(mapAgency);
+    const tokens = tokenize(message);
+    const talentMatches = talent
+      .map((profile) => ({
+        match: profile,
+        score: scoreMatch(tokens, profile, ['title', 'role', 'bio', 'skills', 'tools', 'industries']),
+        type: 'talent',
+      }))
+      .filter((item) => item.score > 0);
+    const agencyMatches = agencies
+      .map((agency) => ({
+        match: agency,
+        score: scoreMatch(tokens, agency, ['name', 'specialty', 'description', 'tools', 'certifications']),
+        type: 'agency',
+      }))
+      .filter((item) => item.score > 0);
+    const matches = [...talentMatches, ...agencyMatches]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    writeRows(req, '/match_requests', {
+      client_id: user.id,
+      message,
+      result_count: matches.length,
+    }, { prefer: 'return=minimal' }).catch(() => {});
+
+    sendJson(res, 200, {
+      matches: matches.map((item) => item.match),
+      message: matches.length
+        ? `I found ${matches.length} relevant match${matches.length === 1 ? '' : 'es'} for that request.`
+        : 'No recommendations are available yet.',
+      type: matches[0]?.type || 'talent',
+    });
+  },
+
+  'GET /talent/earnings': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const timesheets = await readRows(
+      req,
+      `/timesheets?professional_id=eq.${user.id}&select=*&order=period_end.desc&limit=100`
+    );
+    const currentYear = new Date().getFullYear();
+    const rows = asList(timesheets);
+    const amountFor = (statuses) => rows
+      .filter((sheet) => statuses.includes(sheet.status))
+      .reduce((total, sheet) => total + (toNumber(sheet.amount) || 0), 0);
+    const totalEarnedYtd = rows
+      .filter((sheet) => {
+        const paidAt = sheet.paid_at || sheet.approved_at || sheet.period_end;
+        return paidAt && new Date(paidAt).getFullYear() === currentYear;
+      })
+      .reduce((total, sheet) => total + (toNumber(sheet.amount) || 0), 0);
+
+    sendJson(res, 200, {
+      availableToWithdraw: amountFor(['approved']),
+      pendingReview: amountFor(['submitted']),
+      timesheets: rows.map((sheet) => ({
+        amount: toNumber(sheet.amount),
+        hours: toNumber(sheet.hours),
+        id: sheet.id,
+        period: sheet.period_start && sheet.period_end
+          ? `${formatDate(sheet.period_start)} - ${formatDate(sheet.period_end)}`
+          : 'Period pending',
+        status: sheet.status ? sheet.status.charAt(0).toUpperCase() + sheet.status.slice(1) : 'Pending',
+      })),
+      totalEarnedYtd,
+    });
+  },
+
+  'GET /talent/me': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const profiles = await readRows(
+      req,
+      `/professional_profiles?user_id=eq.${user.id}&select=*&limit=1`
+    );
+    const professionalProfile = asList(profiles)[0];
+
+    sendJson(res, 200, professionalProfile
+      ? mapTalentProfile(professionalProfile, {
+        email: user.email,
+        full_name: user.name,
+        title: user.title,
+      })
+      : user);
+  },
+
+  'PATCH /talent/me': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const currentProfile = await getProfessionalProfile(req, user.id);
+    const fullName = cleanString(body.fullName || body.name || user.name, 160);
+    const title = cleanString(body.title || body.role || user.title || 'Finance Professional', 160);
+    const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate);
+    const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience);
+
+    await patchRows(req, `/profiles?id=eq.${user.id}`, {
+      full_name: fullName,
+      title,
+    }, { prefer: 'return=minimal' });
+
+    const profileBody = {
+      availability: normalizeAvailability(body.availability || body.available),
+      bio: cleanString(body.bio, 2000),
+      certifications: cleanList(body.certifications),
+      country: cleanString(body.country || 'Philippines', 100),
+      hourly_rate: hourlyRate,
+      industries: cleanList(body.industries),
+      location: cleanString(body.location, 160),
+      skills: cleanList(body.skills),
+      status: currentProfile?.status === 'approved' ? 'approved' : 'pending_review',
+      tools: cleanList(body.tools),
+      user_id: user.id,
+      work_preferences: typeof body.workPreferences === 'object' && body.workPreferences !== null
+        ? body.workPreferences
+        : {},
+      years_experience: yearsExperience,
+    };
+
+    const rows = await writeRows(
+      req,
+      '/professional_profiles?on_conflict=user_id',
+      profileBody,
+      { prefer: 'resolution=merge-duplicates,return=representation' }
+    );
+    const savedProfile = asList(rows)[0];
+
+    sendJson(res, 200, mapTalentProfile(savedProfile, {
+      email: user.email,
+      full_name: fullName,
+      title,
+    }));
+  },
+
+  'GET /talent/opportunities': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const opportunities = await readRows(
+      req,
+      `/opportunities?professional_id=eq.${user.id}&select=*&order=received_at.desc&limit=50`
+    );
+    const clientProfiles = await loadProfilesById(
+      req,
+      asList(opportunities).map((opportunity) => opportunity.client_id)
+    );
+
+    sendJson(res, 200, asList(opportunities).map((opportunity) => {
+      const client = clientProfiles.get(opportunity.client_id) || {};
+
+      return {
+        clientName: opportunity.company_name || client.company || client.full_name,
+        company: opportunity.company_name || client.company || client.full_name,
+        date: formatDate(opportunity.received_at),
+        description: opportunity.description,
+        duration: opportunity.schedule,
+        hourlyRate: toNumber(opportunity.hourly_rate),
+        id: opportunity.id,
+        rate: toNumber(opportunity.hourly_rate),
+        receivedAt: formatDate(opportunity.received_at),
+        role: opportunity.title,
+        schedule: opportunity.schedule,
+        status: opportunity.status,
+        title: opportunity.title,
+      };
+    }));
+  },
+
+  'PATCH /talent/opportunities': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const opportunityId = cleanString(body.id || body.opportunityId || body.opportunity_id, 80);
+    const status = cleanString(body.status, 40);
+
+    if (!isUuid(opportunityId)) {
+      sendError(res, 400, 'A valid opportunity id is required.');
+      return;
+    }
+
+    if (!['accepted', 'declined'].includes(status)) {
+      sendError(res, 400, 'Opportunity status must be accepted or declined.');
+      return;
+    }
+
+    const existing = await readRows(
+      req,
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`
+    );
+
+    if (!asList(existing)[0]) {
+      sendError(res, 404, 'Opportunity not found.');
+      return;
+    }
+
+    const rows = await patchRows(
+      req,
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}`,
+      { status }
+    );
+
+    await patchRows(
+      req,
+      `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}`,
+      { status: status === 'accepted' ? 'scheduled' : 'cancelled' },
+      { prefer: 'return=minimal' }
+    ).catch(() => {});
+
+    sendJson(res, 200, asList(rows)[0] || { ok: true, status });
+  },
+
+  'GET /talent/profiles': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    const profiles = await loadTalentProfiles(req, { onlyApproved: true });
+    sendJson(res, 200, profiles);
+  },
 };
 
 const allowedMethodsForPath = (routePath) => Object.keys(handlers)
@@ -163,7 +1039,11 @@ export default async function handler(req, res) {
   const route = handlers[`${req.method} ${routePath}`];
 
   if (route) {
-    await route(req, res);
+    try {
+      await route(req, res);
+    } catch (error) {
+      sendError(res, 500, error.message || 'Request failed.');
+    }
     return;
   }
 

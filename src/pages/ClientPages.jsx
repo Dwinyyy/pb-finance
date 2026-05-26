@@ -24,6 +24,17 @@ const EMPTY_BILLING = Object.freeze({
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
+const interviewStatusLabel = (status) => String(status || 'scheduled').replace(/_/g, ' ');
+const interviewStatusStyles = {
+  completed: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  requested: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  scheduled: 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
+};
+const getPromptDateDefault = () => {
+  const date = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  date.setMinutes(0, 0, 0);
+  return date.toISOString().slice(0, 16);
+};
 
 function EmptyState({ icon, title, description }) {
   const emptyIcon = icon || FileText;
@@ -289,6 +300,9 @@ function AITalentMatchmaker() {
 // Sub-views for Client Portal
 function AppDiscoverView() {
   const [activeFilter, setActiveFilter] = useState('All');
+  const [savedIds, setSavedIds] = useState(() => new Set());
+  const [busyProfileId, setBusyProfileId] = useState('');
+  const [actionError, setActionError] = useState('');
   const { data: profiles, error, isConfigured, isLoading } = useBackendResource(backendApi.talent.listProfiles, EMPTY_LIST);
   
   const filteredProfiles = useMemo(() => {
@@ -301,6 +315,22 @@ function AppDiscoverView() {
       return role.includes(activeFilter) || tools.some((tool) => String(tool).includes(activeFilter));
     });
   }, [activeFilter, profiles]);
+
+  const handleSaveProfile = async (profile) => {
+    if (!profile?.id || savedIds.has(profile.id)) return;
+
+    setActionError('');
+    setBusyProfileId(profile.id);
+
+    try {
+      await backendApi.client.saveShortlist({ professionalId: profile.id });
+      setSavedIds((current) => new Set([...current, profile.id]));
+    } catch (saveError) {
+      setActionError(saveError.message || 'Unable to save this profile.');
+    } finally {
+      setBusyProfileId('');
+    }
+  };
   
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in">
@@ -377,6 +407,11 @@ function AppDiscoverView() {
             {error.message}
           </div>
         )}
+        {actionError && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+            {actionError}
+          </div>
+        )}
 
         {filteredProfiles.length === 0 ? (
           <EmptyState
@@ -399,8 +434,13 @@ function AppDiscoverView() {
                     <p className="text-sm font-semibold text-slate-500">{profile.role || profile.title || 'Role pending'}</p>
                   </div>
                 </div>
-                <button className="text-slate-300 hover:text-primary-600 transition-colors p-1" title="Save to Shortlist">
-                  <Bookmark fill="currentColor" className="w-6 h-6 opacity-40 hover:opacity-100" />
+                <button
+                  onClick={() => handleSaveProfile(profile)}
+                  disabled={busyProfileId === profile.id || savedIds.has(profile.id)}
+                  className={`${savedIds.has(profile.id) ? 'text-primary-600' : 'text-slate-300 hover:text-primary-600'} transition-colors p-1 disabled:cursor-default`}
+                  title={savedIds.has(profile.id) ? 'Saved to Shortlist' : 'Save to Shortlist'}
+                >
+                  <Bookmark fill={savedIds.has(profile.id) ? 'currentColor' : 'none'} className="w-6 h-6 opacity-80 hover:opacity-100" />
                 </button>
               </div>
               
@@ -429,8 +469,24 @@ function AppDiscoverView() {
                 <div className="flex items-baseline">
                   <span className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</span>
                 </div>
-                <button className="bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform hover:-translate-y-0.5">
-                   Message <MessageSquare size={16} className="ml-2" />
+                <button
+                  onClick={() => handleSaveProfile(profile)}
+                  disabled={busyProfileId === profile.id || savedIds.has(profile.id)}
+                  className="bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-default disabled:transform-none"
+                >
+                  {busyProfileId === profile.id ? (
+                    <>
+                      Saving <Loader2 size={16} className="ml-2 animate-spin" />
+                    </>
+                  ) : savedIds.has(profile.id) ? (
+                    <>
+                      Saved <CheckCircle size={16} className="ml-2" />
+                    </>
+                  ) : (
+                    <>
+                      Save <Bookmark size={16} className="ml-2" />
+                    </>
+                  )}
                 </button>
               </div>
             </FadeIn>
@@ -521,6 +577,71 @@ function AppAgenciesView() {
 function AppShortlistView() {
   const { data: shortlisted, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST);
   const shortlist = asList(shortlisted);
+  const [localShortlist, setLocalShortlist] = useState(shortlist);
+  const [busyAction, setBusyAction] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+
+  useEffect(() => {
+    setLocalShortlist(asList(shortlisted));
+  }, [shortlisted]);
+
+  const handleRemove = async (profile) => {
+    setActionError('');
+    setActionMessage('');
+    setBusyAction(`remove:${profile.id}`);
+
+    try {
+      await backendApi.client.removeShortlist({ professionalId: profile.id });
+      setLocalShortlist((current) => current.filter((item) => item.id !== profile.id));
+      setActionMessage(`${profile.name || profile.fullName || 'Profile'} removed from shortlist.`);
+    } catch (removeError) {
+      setActionError(removeError.message || 'Unable to remove this profile.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleSchedule = async (profile) => {
+    const requestedTime = window.prompt(
+      'Enter interview date/time as YYYY-MM-DDTHH:mm, or leave blank to request scheduling without a fixed time.',
+      getPromptDateDefault()
+    );
+
+    if (requestedTime === null) return;
+
+    const trimmedTime = requestedTime.trim();
+    let scheduledFor = '';
+
+    if (trimmedTime) {
+      const parsedDate = new Date(trimmedTime);
+
+      if (Number.isNaN(parsedDate.getTime())) {
+        setActionError('Use a valid date/time like 2026-05-24T09:00.');
+        return;
+      }
+
+      scheduledFor = parsedDate.toISOString();
+    }
+
+    setActionError('');
+    setActionMessage('');
+    setBusyAction(`schedule:${profile.id}`);
+
+    try {
+      await backendApi.client.requestInterview({
+        hourlyRate: profile.rate || profile.hourlyRate,
+        professionalId: profile.id,
+        scheduledFor,
+        title: profile.role || profile.title || 'Finance interview',
+      });
+      setActionMessage(`Interview request sent to ${profile.name || profile.fullName || 'the candidate'}.`);
+    } catch (scheduleError) {
+      setActionError(scheduleError.message || 'Unable to request this interview.');
+    } finally {
+      setBusyAction('');
+    }
+  };
 
   return (
     <div className="portal-fade-in max-w-6xl">
@@ -534,8 +655,18 @@ function AppShortlistView() {
           {error.message}
         </div>
       )}
+      {actionError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {actionError}
+        </div>
+      )}
+      {actionMessage && (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+          {actionMessage}
+        </div>
+      )}
 
-      {shortlist.length === 0 ? (
+      {localShortlist.length === 0 ? (
         <EmptyState
           icon={Bookmark}
           title={isLoading ? 'Loading shortlist' : isConfigured ? 'No saved candidates yet' : 'Shortlist is empty'}
@@ -543,7 +674,7 @@ function AppShortlistView() {
         />
       ) : (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {shortlist.map((profile, idx) => (
+        {localShortlist.map((profile, idx) => (
           <FadeIn key={profile.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col sm:flex-row gap-6 hover:shadow-lg transition-shadow">
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-4">
@@ -577,11 +708,19 @@ function AppShortlistView() {
                 <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</div>
               </div>
               <div className="space-y-2">
-                <button className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md">
-                   Schedule
+                <button
+                  onClick={() => handleSchedule(profile)}
+                  disabled={busyAction === `schedule:${profile.id}`}
+                  className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
+                >
+                  {busyAction === `schedule:${profile.id}` ? 'Sending...' : 'Schedule'}
                 </button>
-                <button className="w-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-red-600 border border-slate-200 dark:border-slate-800 hover:border-red-200 py-2.5 rounded-xl text-sm font-bold transition-colors">
-                   Remove
+                <button
+                  onClick={() => handleRemove(profile)}
+                  disabled={busyAction === `remove:${profile.id}`}
+                  className="w-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-red-600 border border-slate-200 dark:border-slate-800 hover:border-red-200 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-default"
+                >
+                  {busyAction === `remove:${profile.id}` ? 'Removing...' : 'Remove'}
                 </button>
               </div>
             </div>
@@ -595,7 +734,7 @@ function AppShortlistView() {
 
 function AppInterviewsView() {
   const { data: interviews, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listInterviews, EMPTY_LIST);
-  const interviewList = asList(interviews);
+  const interviewList = asList(interviews).filter((interview) => !['cancelled', 'no_show'].includes(interview.status));
 
   return (
     <div className="portal-fade-in max-w-4xl">
@@ -633,15 +772,26 @@ function AppInterviewsView() {
               <div>
                 <h3 className="font-bold text-lg text-slate-950 dark:text-white leading-tight mb-1">{interview.name || interview.candidateName || 'Candidate pending'}</h3>
                 <p className="text-sm font-medium text-slate-500 mb-2">Interview for {interview.role || interview.title || 'Role pending'}</p>
-                <div className="flex items-center text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-2 py-1 rounded-md w-fit">
-                  <Clock3 size={12} className="mr-1.5" /> {interview.time || interview.scheduledFor || 'Time pending'}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-2 py-1 rounded-md w-fit">
+                    <Clock3 size={12} className="mr-1.5" /> {interview.time || interview.scheduledFor || 'Time pending'}
+                  </div>
+                  <div className={`rounded-md px-2 py-1 text-xs font-bold capitalize ${interviewStatusStyles[interview.status] || interviewStatusStyles.scheduled}`}>
+                    {interviewStatusLabel(interview.status)}
+                  </div>
                 </div>
               </div>
             </div>
             <div className="flex w-full sm:w-auto gap-3">
-              <button className="flex-1 sm:flex-none bg-slate-950 text-white hover:bg-primary-600 px-6 py-3 rounded-xl text-sm font-bold transition-colors shadow-md flex items-center justify-center">
-                 Join Call <Video size={16} className="ml-2" />
-              </button>
+              {interview.meetingUrl ? (
+                <a href={interview.meetingUrl} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center rounded-xl bg-slate-950 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-primary-600 sm:flex-none">
+                  Join Call <Video size={16} className="ml-2" />
+                </a>
+              ) : (
+                <button disabled className="flex flex-1 cursor-default items-center justify-center rounded-xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-500 sm:flex-none dark:bg-slate-800 dark:text-slate-400">
+                  No link yet <Video size={16} className="ml-2" />
+                </button>
+              )}
               <button className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-50 hover:border-slate-300 rounded-xl transition-colors">
                 <SlidersHorizontal size={18} />
               </button>

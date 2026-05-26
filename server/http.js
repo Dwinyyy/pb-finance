@@ -3,7 +3,7 @@ const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
 export const setCorsHeaders = (res) => {
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'DELETE, GET, PATCH, POST, OPTIONS');
 };
 
 export const handleOptions = (req, res) => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Search, MapPin, Building, Star, Filter, 
   CheckCircle, ArrowRight, User, Briefcase, 
@@ -25,6 +25,14 @@ const EMPTY_EARNINGS = Object.freeze({
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
+const listToText = (value) => asList(value).join(', ');
+const textToList = (value) => String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+const availabilityToValue = (value) => {
+  const label = String(value || '').toLowerCase();
+  if (label.includes('2') || label.includes('soon')) return 'available_soon';
+  if (label.includes('not')) return 'not_available';
+  return 'available_now';
+};
 
 function EmptyState({ icon, title, description }) {
   const emptyIcon = icon || FileText;
@@ -120,11 +128,74 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
 
 function AppTalentProfileView({ user }) {
   const { data: profile } = useBackendResource(backendApi.talent.getMyProfile, EMPTY_PROFILE);
+  const [savedProfile, setSavedProfile] = useState(EMPTY_PROFILE);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileForm, setProfileForm] = useState({});
+
+  useEffect(() => {
+    setSavedProfile(profile || EMPTY_PROFILE);
+  }, [profile]);
+
   const displayProfile = {
     ...user,
-    ...profile,
+    ...savedProfile,
   };
   const skills = asList(displayProfile.tools || displayProfile.skills);
+
+  const openEditor = () => {
+    setProfileError('');
+    setProfileMessage('');
+    setProfileForm({
+      availability: availabilityToValue(displayProfile.availability || displayProfile.available),
+      bio: displayProfile.bio || '',
+      certifications: listToText(displayProfile.certifications),
+      fullName: displayProfile.name || displayProfile.fullName || '',
+      hourlyRate: displayProfile.rate || displayProfile.hourlyRate || '',
+      location: displayProfile.location || '',
+      skills: listToText(displayProfile.skills),
+      title: displayProfile.title || displayProfile.role || '',
+      tools: listToText(displayProfile.tools),
+      yearsExperience: displayProfile.yearsExperience || '',
+    });
+    setIsEditing(true);
+  };
+
+  const handleProfileChange = (field, value) => {
+    setProfileForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleProfileSubmit = async (event) => {
+    event.preventDefault();
+    setIsSaving(true);
+    setProfileError('');
+    setProfileMessage('');
+
+    try {
+      const updated = await backendApi.talent.updateMyProfile({
+        ...profileForm,
+        certifications: textToList(profileForm.certifications),
+        hourlyRate: profileForm.hourlyRate === '' ? null : Number(profileForm.hourlyRate),
+        skills: textToList(profileForm.skills),
+        tools: textToList(profileForm.tools),
+        yearsExperience: profileForm.yearsExperience === '' ? null : Number(profileForm.yearsExperience),
+      });
+      setSavedProfile(updated);
+      setIsEditing(false);
+      setProfileMessage(updated.status === 'approved'
+        ? 'Profile saved.'
+        : 'Profile saved and marked pending review.');
+    } catch (saveError) {
+      setProfileError(saveError.message || 'Unable to save profile.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in max-w-6xl">
@@ -153,10 +224,17 @@ function AppTalentProfileView({ user }) {
                   <span className="text-xs font-bold text-slate-500 uppercase">Availability Status</span>
                   <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                 </div>
-                <select className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-50 text-sm font-bold rounded-lg px-3 py-2 outline-none focus:border-cyan-500">
-                  <option>Available Now</option>
-                  <option>Available in 2 Weeks</option>
-                  <option>Not Available</option>
+                <select
+                  value={availabilityToValue(displayProfile.availability || displayProfile.available)}
+                  onChange={(event) => {
+                    openEditor();
+                    handleProfileChange('availability', event.target.value);
+                  }}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-50 text-sm font-bold rounded-lg px-3 py-2 outline-none focus:border-cyan-500"
+                >
+                  <option value="available_now">Available Now</option>
+                  <option value="available_soon">Available in 2 Weeks</option>
+                  <option value="not_available">Not Available</option>
                 </select>
               </div>
 
@@ -170,11 +248,88 @@ function AppTalentProfileView({ user }) {
 
       {/* Right Column: Detailed Profile Form/View */}
       <div className="flex-1 w-full space-y-6">
+        {profileError && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+            {profileError}
+          </div>
+        )}
+        {profileMessage && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+            {profileMessage}
+          </div>
+        )}
+
+        {isEditing && (
+          <FadeIn>
+            <form onSubmit={handleProfileSubmit} className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 space-y-5">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white">Edit Profile</h3>
+                <button type="button" onClick={() => setIsEditing(false)} className="text-sm font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Full name
+                  <input value={profileForm.fullName || ''} onChange={(event) => handleProfileChange('fullName', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Professional title
+                  <input value={profileForm.title || ''} onChange={(event) => handleProfileChange('title', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Location
+                  <input value={profileForm.location || ''} onChange={(event) => handleProfileChange('location', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Availability
+                  <select value={profileForm.availability || 'available_now'} onChange={(event) => handleProfileChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500">
+                    <option value="available_now">Available Now</option>
+                    <option value="available_soon">Available in 2 Weeks</option>
+                    <option value="not_available">Not Available</option>
+                  </select>
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Hourly rate
+                  <input type="number" min="0" step="1" value={profileForm.hourlyRate || ''} onChange={(event) => handleProfileChange('hourlyRate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Years experience
+                  <input type="number" min="0" step="1" value={profileForm.yearsExperience || ''} onChange={(event) => handleProfileChange('yearsExperience', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+              </div>
+
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                Bio
+                <textarea value={profileForm.bio || ''} onChange={(event) => handleProfileChange('bio', event.target.value)} rows={4} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Tools
+                  <input value={profileForm.tools || ''} onChange={(event) => handleProfileChange('tools', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Skills
+                  <input value={profileForm.skills || ''} onChange={(event) => handleProfileChange('skills', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Certifications
+                  <input value={profileForm.certifications || ''} onChange={(event) => handleProfileChange('certifications', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+              </div>
+
+              <button type="submit" disabled={isSaving} className="bg-slate-950 text-white hover:bg-cyan-600 px-6 py-3 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70">
+                {isSaving ? 'Saving...' : 'Save Profile'}
+              </button>
+            </form>
+          </FadeIn>
+        )}
+
         <FadeIn>
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Professional Bio</h3>
-              <button className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
+              <button onClick={openEditor} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
             {displayProfile.bio ? (
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{displayProfile.bio}</p>
@@ -192,7 +347,7 @@ function AppTalentProfileView({ user }) {
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Rates & Skills</h3>
-              <button className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
+              <button onClick={openEditor} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
@@ -241,6 +396,32 @@ function AppTalentProfileView({ user }) {
 function AppTalentOpportunitiesView() {
   const { data: invites, error, isLoading } = useBackendResource(backendApi.talent.listOpportunities, EMPTY_LIST);
   const opportunities = asList(invites);
+  const [localOpportunities, setLocalOpportunities] = useState(opportunities);
+  const [busyAction, setBusyAction] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+
+  useEffect(() => {
+    setLocalOpportunities(asList(invites));
+  }, [invites]);
+
+  const handleOpportunityStatus = async (invite, status) => {
+    setActionError('');
+    setActionMessage('');
+    setBusyAction(`${status}:${invite.id}`);
+
+    try {
+      await backendApi.talent.updateOpportunity({ id: invite.id, status });
+      setLocalOpportunities((current) => current.map((item) => (
+        item.id === invite.id ? { ...item, status } : item
+      )));
+      setActionMessage(status === 'accepted' ? 'Invite accepted.' : 'Invite declined.');
+    } catch (updateError) {
+      setActionError(updateError.message || 'Unable to update this invite.');
+    } finally {
+      setBusyAction('');
+    }
+  };
 
   return (
     <div className="portal-fade-in max-w-4xl">
@@ -254,8 +435,18 @@ function AppTalentOpportunitiesView() {
           {error.message}
         </div>
       )}
+      {actionError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {actionError}
+        </div>
+      )}
+      {actionMessage && (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+          {actionMessage}
+        </div>
+      )}
 
-      {opportunities.length === 0 ? (
+      {localOpportunities.length === 0 ? (
         <EmptyState
           icon={Briefcase}
           title={isLoading ? 'Loading opportunities' : 'No opportunities yet'}
@@ -263,11 +454,14 @@ function AppTalentOpportunitiesView() {
         />
       ) : (
       <div className="space-y-6">
-        {opportunities.map((invite, idx) => (
+        {localOpportunities.map((invite, idx) => {
+          const isAnswered = ['accepted', 'declined'].includes(invite.status);
+
+          return (
           <FadeIn key={invite.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm flex flex-col md:flex-row gap-6 justify-between">
             <div>
               <div className="inline-flex items-center bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md mb-4">
-                Interview Invite
+                {invite.status === 'accepted' ? 'Accepted' : invite.status === 'declined' ? 'Declined' : 'Interview Invite'}
               </div>
               <h3 className="font-bold text-xl text-slate-950 dark:text-white mb-1">{invite.role || invite.title || 'Opportunity pending'}</h3>
               <p className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-6">
@@ -281,15 +475,24 @@ function AppTalentOpportunitiesView() {
             
             <div className="md:border-l md:border-slate-100 dark:border-slate-800 md:pl-6 flex flex-col justify-center gap-3 md:w-48">
               <div className="text-xs text-slate-400 font-bold mb-2 text-center md:text-left">{invite.date || invite.receivedAt || 'Date pending'}</div>
-              <button className="w-full bg-slate-950 text-white hover:bg-cyan-600 py-3 rounded-xl text-sm font-bold transition-colors shadow-md">
-                 Accept Invite
+              <button
+                onClick={() => handleOpportunityStatus(invite, 'accepted')}
+                disabled={isAnswered || busyAction === `accepted:${invite.id}`}
+                className="w-full bg-slate-950 text-white hover:bg-cyan-600 py-3 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
+              >
+                {busyAction === `accepted:${invite.id}` ? 'Accepting...' : invite.status === 'accepted' ? 'Accepted' : 'Accept Invite'}
               </button>
-              <button className="w-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 py-3 rounded-xl text-sm font-bold transition-colors">
-                 Decline
+              <button
+                onClick={() => handleOpportunityStatus(invite, 'declined')}
+                disabled={isAnswered || busyAction === `declined:${invite.id}`}
+                className="w-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-default"
+              >
+                {busyAction === `declined:${invite.id}` ? 'Declining...' : invite.status === 'declined' ? 'Declined' : 'Decline'}
               </button>
             </div>
           </FadeIn>
-        ))}
+          );
+        })}
       </div>
       )}
     </div>

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ShieldCheck, X } from 'lucide-react';
 
 import { PublicSite } from './pages/PublicPages';
 import { ClientPortal } from './pages/ClientPages';
 import { ProfessionalPortal } from './pages/ProfessionalPages';
+import { AdminPortal } from './pages/AdminPages';
 import { backendApi, clearAuthSession, isBackendConfigured, storeAuthSession } from './services/api';
 
 const getDisplayNameFromEmail = (email) => {
@@ -59,6 +60,45 @@ export default function App() {
   };
   const closeAuth = () => setAuthModal({ isOpen: false, view: 'login' });
 
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '');
+
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash);
+    const errorDescription = params.get('error_description');
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+
+    if (!errorDescription && !accessToken) return;
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+
+    if (errorDescription) {
+      setAuthError(errorDescription);
+      setAuthModal({ isOpen: true, view: 'login' });
+      return;
+    }
+
+    storeAuthSession({ token: accessToken, refreshToken });
+
+    backendApi.auth.me()
+      .then((result) => {
+        if (!result?.user) {
+          throw new Error('Missing confirmed user session.');
+        }
+
+        setUser(result.user);
+        localStorage.setItem('pb_user', JSON.stringify(result.user));
+        setAuthModal({ isOpen: false, view: 'login' });
+      })
+      .catch(() => {
+        clearAuthSession();
+        setAuthError('Email confirmed. Please log in with your email and password.');
+        setAuthModal({ isOpen: true, view: 'login' });
+      });
+  }, []);
+
   const handleAuthSubmit = async (e, role = 'client', view = 'login') => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -74,6 +114,7 @@ export default function App() {
           ...credentials,
           company: String(formData.get('company') || '').trim(),
           fullName: String(formData.get('fullName') || '').trim(),
+          redirectTo: window.location.origin,
           role,
         };
         const result = view === 'login'
@@ -123,7 +164,9 @@ export default function App() {
       
       {/* Conditional Rendering: Entire UI changes if logged in */}
       {user ? (
-        user.role === 'professional' ? (
+        user.role === 'admin' ? (
+          <AdminPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+        ) : user.role === 'professional' ? (
           <ProfessionalPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
         ) : (
           <ClientPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />

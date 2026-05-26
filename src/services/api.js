@@ -142,16 +142,28 @@ export const backendApi = {
   talent: {
     listProfiles: (params) => request(`/talent/profiles${toQueryString(params)}`),
     getMyProfile: () => request('/talent/me'),
+    updateMyProfile: (payload) => request('/talent/me', { method: 'PATCH', body: payload }),
     listOpportunities: () => request('/talent/opportunities'),
+    updateOpportunity: (payload) => request('/talent/opportunities', { method: 'PATCH', body: payload }),
     getEarnings: () => request('/talent/earnings'),
   },
   client: {
     listAgencies: (params) => request(`/agencies${toQueryString(params)}`),
     listShortlist: () => request('/client/shortlist'),
+    saveShortlist: (payload) => request('/client/shortlist', { method: 'POST', body: payload }),
+    removeShortlist: (payload) => request('/client/shortlist', { method: 'DELETE', body: payload }),
     listInterviews: () => request('/client/interviews'),
+    requestInterview: (payload) => request('/client/interviews', { method: 'POST', body: payload }),
     getBilling: () => request('/client/billing'),
   },
   matchmaker: {
     suggestMatches: (payload) => request('/matchmaker/suggestions', { method: 'POST', body: payload }),
+  },
+  admin: {
+    listTalent: () => request('/admin/talent'),
+    updateTalentStatus: (payload) => request('/admin/talent', { method: 'PATCH', body: payload }),
+    listAgencies: () => request('/admin/agencies'),
+    createAgency: (payload) => request('/admin/agencies', { method: 'POST', body: payload }),
+    updateAgency: (payload) => request('/admin/agencies', { method: 'PATCH', body: payload }),
   },
 };
