@@ -244,9 +244,42 @@ function AppTalentProfileView({ user }) {
                 </select>
               </div>
 
-              <button className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-900 dark:text-slate-50 py-2.5 rounded-xl text-sm font-bold transition-colors">
-                 <Settings size={16} /> Account Settings
-              </button>
+              {isEditing && editingSection === 'profile' ? (
+                <form onSubmit={handleProfileSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Full name
+                    <input value={profileForm.fullName || ''} onChange={(event) => handleProfileChange('fullName', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Professional title
+                    <input value={profileForm.title || ''} onChange={(event) => handleProfileChange('title', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Location
+                    <input value={profileForm.location || ''} onChange={(event) => handleProfileChange('location', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Availability
+                    <select value={profileForm.availability || 'available_now'} onChange={(event) => handleProfileChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500">
+                      <option value="available_now">Available Now</option>
+                      <option value="available_soon">Available in 2 Weeks</option>
+                      <option value="not_available">Not Available</option>
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button type="button" onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button onClick={() => openEditor('profile')} className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-900 dark:text-slate-50 py-2.5 rounded-xl text-sm font-bold transition-colors">
+                   <Settings size={16} /> Profile Settings
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -265,92 +298,28 @@ function AppTalentProfileView({ user }) {
           </div>
         )}
 
-        {isEditing && (
-          <FadeIn>
-            <form onSubmit={handleProfileSubmit} className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 space-y-5">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-bold text-slate-950 dark:text-white">
-                  {editingSection === 'bio' ? 'Edit Bio' : editingSection === 'rates' ? 'Edit Rates & Skills' : 'Edit Profile'}
-                </h3>
-                <button type="button" onClick={() => setIsEditing(false)} className="text-sm font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
-              </div>
-
-              {editingSection === 'profile' && (
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Full name
-                  <input value={profileForm.fullName || ''} onChange={(event) => handleProfileChange('fullName', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Professional title
-                  <input value={profileForm.title || ''} onChange={(event) => handleProfileChange('title', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Location
-                  <input value={profileForm.location || ''} onChange={(event) => handleProfileChange('location', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Availability
-                  <select value={profileForm.availability || 'available_now'} onChange={(event) => handleProfileChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500">
-                    <option value="available_now">Available Now</option>
-                    <option value="available_soon">Available in 2 Weeks</option>
-                    <option value="not_available">Not Available</option>
-                  </select>
-                </label>
-              </div>
-              )}
-
-              {editingSection === 'rates' && (
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Hourly rate
-                  <input type="number" min="0" step="1" value={profileForm.hourlyRate || ''} onChange={(event) => handleProfileChange('hourlyRate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Years experience
-                  <input type="number" min="0" step="1" value={profileForm.yearsExperience || ''} onChange={(event) => handleProfileChange('yearsExperience', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-              </div>
-              )}
-
-              {editingSection === 'bio' && (
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                Bio
-                <textarea value={profileForm.bio || ''} onChange={(event) => handleProfileChange('bio', event.target.value)} rows={4} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-              </label>
-              )}
-
-              {editingSection === 'rates' && (
-              <div className="grid gap-4 md:grid-cols-3">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Tools
-                  <input value={profileForm.tools || ''} onChange={(event) => handleProfileChange('tools', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Skills
-                  <input value={profileForm.skills || ''} onChange={(event) => handleProfileChange('skills', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Certifications
-                  <input value={profileForm.certifications || ''} onChange={(event) => handleProfileChange('certifications', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-              </div>
-              )}
-
-              <button type="submit" disabled={isSaving} className="bg-slate-950 text-white hover:bg-cyan-600 px-6 py-3 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70">
-                {isSaving ? 'Saving...' : 'Save Profile'}
-              </button>
-            </form>
-          </FadeIn>
-        )}
-
         <FadeIn>
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Professional Bio</h3>
               <button onClick={() => openEditor('bio')} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
-            {displayProfile.bio ? (
+            {isEditing && editingSection === 'bio' ? (
+              <form onSubmit={handleProfileSubmit} className="space-y-4">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Bio
+                  <textarea value={profileForm.bio || ''} onChange={(event) => handleProfileChange('bio', event.target.value)} rows={5} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                </label>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
+                    {isSaving ? 'Saving...' : 'Save Bio'}
+                  </button>
+                  <button type="button" onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : displayProfile.bio ? (
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{displayProfile.bio}</p>
             ) : (
               <EmptyState
@@ -368,7 +337,46 @@ function AppTalentProfileView({ user }) {
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Rates & Skills</h3>
               <button onClick={() => openEditor('rates')} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
-            
+
+            {isEditing && editingSection === 'rates' ? (
+              <form onSubmit={handleProfileSubmit} className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Hourly rate
+                    <input type="number" min="0" step="1" value={profileForm.hourlyRate || ''} onChange={(event) => handleProfileChange('hourlyRate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Years experience
+                    <input type="number" min="0" step="1" value={profileForm.yearsExperience || ''} onChange={(event) => handleProfileChange('yearsExperience', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Tools
+                    <input value={profileForm.tools || ''} onChange={(event) => handleProfileChange('tools', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Skills
+                    <input value={profileForm.skills || ''} onChange={(event) => handleProfileChange('skills', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Certifications
+                    <input value={profileForm.certifications || ''} onChange={(event) => handleProfileChange('certifications', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                  </label>
+                </div>
+
+                <div className="flex gap-2">
+                  <button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
+                    {isSaving ? 'Saving...' : 'Save Rates'}
+                  </button>
+                  <button type="button" onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
               <div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Current Hourly Rate</div>
@@ -393,6 +401,8 @@ function AppTalentProfileView({ user }) {
                 ))}
               </div>
             </div>
+            </>
+            )}
           </div>
         </FadeIn>
 
@@ -400,7 +410,7 @@ function AppTalentProfileView({ user }) {
           <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800 border border-emerald-100 dark:border-slate-700 rounded-3xl p-8 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-emerald-950 dark:text-emerald-300 text-lg mb-1 flex items-center gap-2"><CheckSquare size={18} className="text-emerald-600 dark:text-emerald-400"/> Profile Status</h3>
-              <p className="text-emerald-800 dark:text-emerald-400 text-sm font-medium">{displayProfile.status || 'Complete onboarding to publish your profile.'}</p>
+              <p className="text-emerald-800 dark:text-emerald-400 text-sm font-medium">{displayProfile.reviewStatus || displayProfile.status || 'Complete onboarding to publish your profile.'}</p>
             </div>
             <button className="bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm border border-emerald-200 dark:border-slate-600 hover:bg-emerald-100 dark:hover:bg-slate-600 transition-colors">
               View Public Profile
@@ -462,6 +472,40 @@ function AppTalentOpportunitiesView() {
     }
   };
 
+  const handleCancelInterview = async (invite) => {
+    const reason = window.prompt('Why do you want to cancel this interview?');
+
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+
+    if (!trimmedReason) {
+      setActionError('Cancellation reason is required.');
+      return;
+    }
+
+    setActionError('');
+    setActionMessage('');
+    setBusyAction(`cancel:${invite.id}`);
+
+    try {
+      await backendApi.talent.cancelInterview({
+        opportunityId: invite.id,
+        reason: trimmedReason,
+      });
+      setLocalOpportunities((current) => current.map((item) => (
+        item.id === invite.id
+          ? { ...item, cancellationReason: trimmedReason, interviewStatus: 'cancelled', status: 'cancelled' }
+          : item
+      )));
+      setActionMessage('Interview cancelled and the client was notified.');
+    } catch (cancelError) {
+      setActionError(cancelError.message || 'Unable to cancel this interview.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   return (
     <div className="portal-fade-in max-w-4xl">
       <div className="mb-8">
@@ -494,13 +538,15 @@ function AppTalentOpportunitiesView() {
       ) : (
       <div className="space-y-6">
         {localOpportunities.map((invite, idx) => {
-          const isAnswered = ['accepted', 'declined'].includes(invite.status);
+          const isCancelled = invite.status === 'cancelled' || invite.interviewStatus === 'cancelled';
+          const isAnswered = ['accepted', 'declined', 'cancelled'].includes(invite.status) || isCancelled;
+          const canCancel = invite.status === 'accepted' && ['requested', 'scheduled'].includes(invite.interviewStatus);
 
           return (
           <FadeIn key={invite.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm flex flex-col md:flex-row gap-6 justify-between">
             <div>
               <div className="inline-flex items-center bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md mb-4">
-                {invite.status === 'accepted' ? 'Accepted' : invite.status === 'declined' ? 'Declined' : 'Interview Invite'}
+                {isCancelled ? 'Cancelled' : invite.status === 'accepted' ? 'Accepted' : invite.status === 'declined' ? 'Declined' : 'Interview Invite'}
               </div>
               <h3 className="font-bold text-xl text-slate-950 dark:text-white mb-1">{invite.role || invite.title || 'Opportunity pending'}</h3>
               <p className="text-sm font-semibold text-slate-500 flex items-center gap-2 mb-6">
@@ -510,6 +556,11 @@ function AppTalentOpportunitiesView() {
                 <div className="flex items-center gap-2"><Clock3 size={16} className="text-slate-400"/> {invite.duration || invite.schedule || 'Schedule pending'}</div>
                 <div className="flex items-center gap-2"><DollarSign size={16} className="text-slate-400"/> {formatMoney(invite.rate || invite.hourlyRate)}</div>
               </div>
+              {isCancelled && invite.cancellationReason && (
+                <p className="mt-5 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                  Cancelled: {invite.cancellationReason}
+                </p>
+              )}
             </div>
             
             <div className="md:border-l md:border-slate-100 dark:border-slate-800 md:pl-6 flex flex-col justify-center gap-3 md:w-48">
@@ -536,6 +587,15 @@ function AppTalentOpportunitiesView() {
                 >
                   <Trash2 size={15} />
                   {busyAction === `remove:${invite.id}` ? 'Removing...' : 'Remove'}
+                </button>
+              )}
+              {canCancel && (
+                <button
+                  onClick={() => handleCancelInterview(invite)}
+                  disabled={busyAction === `cancel:${invite.id}`}
+                  className="w-full bg-white dark:bg-slate-900 text-red-600 border border-red-100 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-950/30 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-default"
+                >
+                  {busyAction === `cancel:${invite.id}` ? 'Cancelling...' : 'Cancel Interview'}
                 </button>
               )}
             </div>

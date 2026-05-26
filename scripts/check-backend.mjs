@@ -87,6 +87,16 @@ const run = async () => {
     tableChecks.professional_profile_review_columns = { ok: false, error: error.message };
   }
 
+  try {
+    await supabaseRestRequest(
+      '/interviews?select=id,cancellation_reason,cancelled_by,cancelled_at&limit=1',
+      { useServiceRole: true }
+    );
+    tableChecks.interview_cancellation_columns = { ok: true };
+  } catch (error) {
+    tableChecks.interview_cancellation_columns = { ok: false, error: error.message };
+  }
+
   const summary = { env, tableChecks };
 
   try {

@@ -40,7 +40,16 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
     }
 
     try {
-      setNotifications(asList(await backendApi.notifications.list()));
+      const latest = asList(await backendApi.notifications.list());
+      setNotifications((current) => {
+        const readIds = new Set(current.filter((notification) => notification.isRead).map((notification) => notification.id));
+
+        return latest.map((notification) => (
+          readIds.has(notification.id)
+            ? { ...notification, isRead: true, readAt: notification.readAt || new Date().toISOString() }
+            : notification
+        ));
+      });
     } catch (loadError) {
       setError(loadError.message || 'Unable to load notifications.');
     } finally {
@@ -107,9 +116,9 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
   };
 
   return (
-    <div className="relative">
+    <div className="relative flex h-5 w-5 items-center justify-center">
       <button
-        className="relative text-slate-400 transition-colors hover:text-white"
+        className="relative flex h-5 w-5 items-center justify-center text-slate-400 transition-colors hover:text-white"
         onClick={() => {
           setIsOpen((current) => {
             const next = !current;

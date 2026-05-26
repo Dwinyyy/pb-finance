@@ -146,6 +146,7 @@ export const backendApi = {
     listOpportunities: () => request('/talent/opportunities'),
     updateOpportunity: (payload) => request('/talent/opportunities', { method: 'PATCH', body: payload }),
     removeOpportunity: (payload) => request('/talent/opportunities', { method: 'DELETE', body: payload }),
+    cancelInterview: (payload) => request('/talent/interviews', { method: 'PATCH', body: payload }),
     getEarnings: () => request('/talent/earnings'),
   },
   client: {
@@ -155,6 +156,7 @@ export const backendApi = {
     removeShortlist: (payload) => request('/client/shortlist', { method: 'DELETE', body: payload }),
     listInterviews: () => request('/client/interviews'),
     requestInterview: (payload) => request('/client/interviews', { method: 'POST', body: payload }),
+    cancelInterview: (payload) => request('/client/interviews', { method: 'PATCH', body: payload }),
     getBilling: () => request('/client/billing'),
   },
   matchmaker: {

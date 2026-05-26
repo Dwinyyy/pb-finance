@@ -700,7 +700,10 @@ function AppShortlistView() {
       ) : (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {localShortlist.map((profile, idx) => {
-          const currentStatus = profile.opportunityStatus || profile.interviewStatus || profile.shortlistStatus;
+          const hasActiveOpportunity = ['accepted', 'active', 'invited'].includes(profile.opportunityStatus);
+          const currentStatus = hasActiveOpportunity
+            ? (['requested', 'scheduled'].includes(profile.interviewStatus) ? profile.interviewStatus : profile.opportunityStatus)
+            : profile.interviewStatus || profile.opportunityStatus || profile.shortlistStatus;
           const hasActiveRequest = ['invited', 'accepted', 'active', 'requested', 'scheduled'].includes(currentStatus);
 
           return (
@@ -768,12 +771,42 @@ function AppShortlistView() {
 }
 
 function AppInterviewsView() {
-  const { data: interviews, error, isConfigured, isLoading } = useBackendResource(
+  const { data: interviews, error, isConfigured, isLoading, refetch } = useBackendResource(
     backendApi.client.listInterviews,
     EMPTY_LIST,
     { refreshInterval: 10000 }
   );
-  const interviewList = asList(interviews).filter((interview) => !['cancelled', 'no_show'].includes(interview.status));
+  const interviewList = asList(interviews);
+  const [busyAction, setBusyAction] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+
+  const handleCancelInterview = async (interview) => {
+    const reason = window.prompt('Why do you want to cancel this interview?');
+
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+
+    if (!trimmedReason) {
+      setActionError('Cancellation reason is required.');
+      return;
+    }
+
+    setActionError('');
+    setActionMessage('');
+    setBusyAction(`cancel:${interview.id}`);
+
+    try {
+      await backendApi.client.cancelInterview({ id: interview.id, reason: trimmedReason });
+      await refetch();
+      setActionMessage('Interview cancelled and the professional was notified.');
+    } catch (cancelError) {
+      setActionError(cancelError.message || 'Unable to cancel this interview.');
+    } finally {
+      setBusyAction('');
+    }
+  };
 
   return (
     <div className="portal-fade-in max-w-4xl">
@@ -790,6 +823,16 @@ function AppInterviewsView() {
       {error && (
         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
           {error.message}
+        </div>
+      )}
+      {actionError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {actionError}
+        </div>
+      )}
+      {actionMessage && (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+          {actionMessage}
         </div>
       )}
 
@@ -819,10 +862,19 @@ function AppInterviewsView() {
                     {interviewStatusLabel(interview.status)}
                   </div>
                 </div>
+                {interview.status === 'cancelled' && interview.cancellationReason && (
+                  <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                    Cancelled: {interview.cancellationReason}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex w-full sm:w-auto gap-3">
-              {interview.meetingUrl ? (
+              {interview.status === 'cancelled' ? (
+                <button disabled className="flex flex-1 cursor-default items-center justify-center rounded-xl bg-red-50 px-6 py-3 text-sm font-bold text-red-600 sm:flex-none dark:bg-red-950/20 dark:text-red-300">
+                  Cancelled
+                </button>
+              ) : interview.meetingUrl ? (
                 <a href={interview.meetingUrl} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center rounded-xl bg-slate-950 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-primary-600 sm:flex-none">
                   Join Call <Video size={16} className="ml-2" />
                 </a>
@@ -831,7 +883,12 @@ function AppInterviewsView() {
                   No link yet <Video size={16} className="ml-2" />
                 </button>
               )}
-              <button className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-50 hover:border-slate-300 rounded-xl transition-colors">
+              <button
+                onClick={() => handleCancelInterview(interview)}
+                disabled={interview.status === 'cancelled' || busyAction === `cancel:${interview.id}`}
+                className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:text-slate-50 hover:border-red-200 rounded-xl transition-colors disabled:cursor-default disabled:opacity-50"
+                title="Cancel interview"
+              >
                 <SlidersHorizontal size={18} />
               </button>
             </div>

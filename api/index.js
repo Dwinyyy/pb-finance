@@ -364,6 +364,93 @@ const mapNotification = (notification) => ({
   type: notification.type,
 });
 
+const opportunityStatusPriority = {
+  accepted: 5,
+  active: 5,
+  invited: 4,
+  cancelled: 3,
+  declined: 2,
+  closed: 1,
+};
+
+const interviewStatusPriority = {
+  scheduled: 5,
+  requested: 4,
+  completed: 3,
+  cancelled: 2,
+  no_show: 1,
+};
+
+const setPreferredByStatus = (map, row, priorityMap) => {
+  const current = map.get(row.professional_id);
+  const currentPriority = current ? priorityMap[current.status] || 0 : -1;
+  const nextPriority = priorityMap[row.status] || 0;
+
+  if (!current || nextPriority > currentPriority) {
+    map.set(row.professional_id, row);
+  }
+};
+
+const cancelInterview = async (req, {
+  actor,
+  allowedRole,
+  interviewId,
+  opportunityId,
+  reason,
+}) => {
+  const actorColumn = allowedRole === 'client' ? 'client_id' : 'professional_id';
+  const filters = [`${actorColumn}=eq.${actor.id}`];
+
+  if (interviewId) {
+    filters.push(`id=eq.${interviewId}`);
+  }
+
+  if (opportunityId) {
+    filters.push(`opportunity_id=eq.${opportunityId}`);
+  }
+
+  const rows = await readRows(
+    req,
+    `/interviews?${filters.join('&')}&status=in.(requested,scheduled)&select=*&limit=1`
+  );
+  const interview = asList(rows)[0];
+
+  if (!interview) {
+    return null;
+  }
+
+  const cancellationReason = cleanString(reason, 1000);
+  const cancelledAt = new Date().toISOString();
+  const updatedRows = await patchRows(
+    req,
+    `/interviews?id=eq.${interview.id}&${actorColumn}=eq.${actor.id}`,
+    {
+      cancellation_reason: cancellationReason,
+      cancelled_at: cancelledAt,
+      cancelled_by: actor.id,
+      status: 'cancelled',
+    }
+  );
+  const updatedInterview = asList(updatedRows)[0] || {
+    ...interview,
+    cancellation_reason: cancellationReason,
+    cancelled_at: cancelledAt,
+    cancelled_by: actor.id,
+    status: 'cancelled',
+  };
+
+  if (interview.opportunity_id) {
+    await patchRows(
+      req,
+      `/opportunities?id=eq.${interview.opportunity_id}`,
+      { status: 'cancelled' },
+      { prefer: 'return=minimal' }
+    ).catch(() => {});
+  }
+
+  return updatedInterview;
+};
+
 const buildAgencyPayload = (body, fallback = {}) => {
   const monthlyRate = toNumber(body.monthlyRate ?? body.monthly_rate ?? fallback.monthly_rate);
   const ownerId = cleanString(body.ownerId || body.owner_id || fallback.owner_id, 80);
@@ -781,7 +868,7 @@ const handlers = {
 
     const interviews = await readRows(
       req,
-      `/interviews?client_id=eq.${user.id}&status=in.(requested,scheduled,completed)&select=*&order=scheduled_for.asc&limit=50`
+      `/interviews?client_id=eq.${user.id}&status=in.(requested,scheduled,completed,cancelled)&select=*&order=updated_at.desc&limit=50`
     );
     const rows = asList(interviews);
     const owners = await loadProfilesById(req, rows.map((interview) => interview.professional_id));
@@ -792,6 +879,9 @@ const handlers = {
 
       return {
         candidateName: professional.full_name,
+        cancellationReason: interview.cancellation_reason,
+        cancelledAt: interview.cancelled_at,
+        cancelledBy: interview.cancelled_by,
         day: parts.day,
         id: interview.id,
         meetingUrl: interview.meeting_url,
@@ -830,15 +920,11 @@ const handlers = {
     const latestInterviewByProfessional = new Map();
 
     asList(opportunities).forEach((opportunity) => {
-      if (!latestOpportunityByProfessional.has(opportunity.professional_id)) {
-        latestOpportunityByProfessional.set(opportunity.professional_id, opportunity);
-      }
+      setPreferredByStatus(latestOpportunityByProfessional, opportunity, opportunityStatusPriority);
     });
 
     asList(interviews).forEach((interview) => {
-      if (!latestInterviewByProfessional.has(interview.professional_id)) {
-        latestInterviewByProfessional.set(interview.professional_id, interview);
-      }
+      setPreferredByStatus(latestInterviewByProfessional, interview, interviewStatusPriority);
     });
 
     sendJson(res, 200, profiles.map((profile) => {
@@ -997,6 +1083,58 @@ const handlers = {
       interview,
       opportunity,
     });
+  },
+
+  'PATCH /client/interviews': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const interviewId = cleanString(body.id || body.interviewId || body.interview_id, 80);
+    const reason = cleanString(body.reason || body.cancellationReason || body.cancellation_reason, 1000);
+
+    if (!isUuid(interviewId)) {
+      sendError(res, 400, 'A valid interview id is required.');
+      return;
+    }
+
+    if (!reason) {
+      sendError(res, 400, 'Cancellation reason is required.');
+      return;
+    }
+
+    const interview = await cancelInterview(req, {
+      actor: user,
+      allowedRole: 'client',
+      interviewId,
+      reason,
+    });
+
+    if (!interview) {
+      sendError(res, 404, 'Active interview not found.');
+      return;
+    }
+
+    const owners = await loadProfilesById(req, [interview.professional_id]);
+    const professional = owners.get(interview.professional_id) || {};
+
+    notifyUser({
+      actionUrl: '/',
+      body: `${user.company || user.name || 'A client'} cancelled an interview. Reason: ${reason}`,
+      emailSubject: 'Interview cancelled',
+      metadata: {
+        cancelledBy: user.id,
+        interviewId: interview.id,
+        reason,
+      },
+      recipientEmail: professional.email,
+      recipientId: interview.professional_id,
+      recipientName: professional.full_name,
+      title: 'Interview cancelled',
+      type: 'interview_cancelled',
+    }).catch(() => {});
+
+    sendJson(res, 200, interview);
   },
 
   'POST /matchmaker/suggestions': async (req, res) => {
@@ -1200,15 +1338,28 @@ const handlers = {
       req,
       `/opportunities?professional_id=eq.${user.id}&status=neq.closed&select=*&order=received_at.desc&limit=50`
     );
+    const opportunityRows = asList(opportunities);
     const clientProfiles = await loadProfilesById(
       req,
-      asList(opportunities).map((opportunity) => opportunity.client_id)
+      opportunityRows.map((opportunity) => opportunity.client_id)
     );
+    const opportunityIds = opportunityRows.map((opportunity) => opportunity.id);
+    const interviewRows = opportunityIds.length
+      ? await readRows(
+        req,
+        `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&select=*&limit=100`
+      )
+      : [];
+    const interviewsByOpportunity = new Map(asList(interviewRows).map((interview) => [interview.opportunity_id, interview]));
 
-    sendJson(res, 200, asList(opportunities).map((opportunity) => {
+    sendJson(res, 200, opportunityRows.map((opportunity) => {
       const client = clientProfiles.get(opportunity.client_id) || {};
+      const interview = interviewsByOpportunity.get(opportunity.id) || {};
 
       return {
+        cancellationReason: interview.cancellation_reason,
+        cancelledAt: interview.cancelled_at,
+        cancelledBy: interview.cancelled_by,
         clientName: opportunity.company_name || client.company || client.full_name,
         company: opportunity.company_name || client.company || client.full_name,
         date: formatDate(opportunity.received_at),
@@ -1216,6 +1367,8 @@ const handlers = {
         duration: opportunity.schedule,
         hourlyRate: toNumber(opportunity.hourly_rate),
         id: opportunity.id,
+        interviewId: interview.id,
+        interviewStatus: interview.status,
         rate: toNumber(opportunity.hourly_rate),
         receivedAt: formatDate(opportunity.received_at),
         role: opportunity.title,
@@ -1322,6 +1475,60 @@ const handlers = {
     );
 
     sendJson(res, 200, { ok: true });
+  },
+
+  'PATCH /talent/interviews': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const interviewId = cleanString(body.id || body.interviewId || body.interview_id, 80);
+    const opportunityId = cleanString(body.opportunityId || body.opportunity_id, 80);
+    const reason = cleanString(body.reason || body.cancellationReason || body.cancellation_reason, 1000);
+
+    if (!isUuid(interviewId) && !isUuid(opportunityId)) {
+      sendError(res, 400, 'A valid interview id or opportunity id is required.');
+      return;
+    }
+
+    if (!reason) {
+      sendError(res, 400, 'Cancellation reason is required.');
+      return;
+    }
+
+    const interview = await cancelInterview(req, {
+      actor: user,
+      allowedRole: 'professional',
+      interviewId: isUuid(interviewId) ? interviewId : '',
+      opportunityId: isUuid(opportunityId) ? opportunityId : '',
+      reason,
+    });
+
+    if (!interview) {
+      sendError(res, 404, 'Active interview not found.');
+      return;
+    }
+
+    const clientProfiles = await loadProfilesById(req, [interview.client_id]);
+    const client = clientProfiles.get(interview.client_id) || {};
+
+    notifyUser({
+      actionUrl: '/',
+      body: `${user.name || 'A professional'} cancelled an interview. Reason: ${reason}`,
+      emailSubject: 'Interview cancelled',
+      metadata: {
+        cancelledBy: user.id,
+        interviewId: interview.id,
+        reason,
+      },
+      recipientEmail: client.email,
+      recipientId: interview.client_id,
+      recipientName: client.full_name,
+      title: 'Interview cancelled',
+      type: 'interview_cancelled',
+    }).catch(() => {});
+
+    sendJson(res, 200, interview);
   },
 
   'GET /talent/profiles': async (req, res) => {
