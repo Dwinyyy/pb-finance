@@ -181,6 +181,18 @@ create table if not exists public.match_requests (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  type text not null,
+  title text not null,
+  body text,
+  action_url text,
+  metadata jsonb not null default '{}'::jsonb,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists professional_profiles_status_idx on public.professional_profiles(status);
 create index if not exists agencies_status_idx on public.agencies(status);
 create index if not exists shortlists_client_id_idx on public.shortlists(client_id);
@@ -190,6 +202,9 @@ create index if not exists contracts_client_id_idx on public.contracts(client_id
 create index if not exists invoices_client_id_idx on public.invoices(client_id);
 create index if not exists timesheets_professional_id_idx on public.timesheets(professional_id);
 create index if not exists match_requests_client_id_idx on public.match_requests(client_id);
+create index if not exists notifications_recipient_id_idx on public.notifications(recipient_id);
+create index if not exists notifications_unread_idx on public.notifications(recipient_id, created_at desc)
+  where read_at is null;
 
 alter table public.profiles enable row level security;
 alter table public.professional_profiles enable row level security;
@@ -203,6 +218,7 @@ alter table public.invoices enable row level security;
 alter table public.payment_methods enable row level security;
 alter table public.timesheets enable row level security;
 alter table public.match_requests enable row level security;
+alter table public.notifications enable row level security;
 
 drop policy if exists "Profiles are visible to their owners" on public.profiles;
 create policy "Profiles are visible to their owners"
@@ -411,6 +427,19 @@ create policy "Match requests are managed by clients"
   for all
   using (auth.uid() = client_id)
   with check (auth.uid() = client_id);
+
+drop policy if exists "Notifications are visible to recipients" on public.notifications;
+create policy "Notifications are visible to recipients"
+  on public.notifications
+  for select
+  using (auth.uid() = recipient_id);
+
+drop policy if exists "Notifications are editable by recipients" on public.notifications;
+create policy "Notifications are editable by recipients"
+  on public.notifications
+  for update
+  using (auth.uid() = recipient_id)
+  with check (auth.uid() = recipient_id);
 
 create or replace function public.set_updated_at()
 returns trigger

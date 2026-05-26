@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import FadeIn from '../components/FadeIn';
+import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi } from '../services/api';
 
@@ -57,6 +58,7 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
         </div>
 
         <div className="flex items-center gap-4">
+          <NotificationBell unreadClassName="bg-cyan-500" />
           <button onClick={toggleDarkMode} className="text-slate-400 transition-colors hover:text-white" title="Toggle Dark Mode">
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>

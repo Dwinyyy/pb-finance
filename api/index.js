@@ -1,4 +1,5 @@
 import { getRoutePath, handleOptions, readJson, sendError, sendJson } from '../server/http.js';
+import { notifyAdmins, notifyUser } from '../server/notifications.js';
 import { getSessionUser } from '../server/session.js';
 import {
   getBearerToken,
@@ -321,6 +322,20 @@ const normalizeStatus = (status, allowedStatuses, fallback = 'pending_review') =
   return allowedStatuses.has(value) ? value : fallback;
 };
 
+const formatStatusLabel = (value) => cleanString(value, 80).replace(/_/g, ' ');
+
+const mapNotification = (notification) => ({
+  actionUrl: notification.action_url,
+  body: notification.body,
+  createdAt: notification.created_at,
+  id: notification.id,
+  isRead: Boolean(notification.read_at),
+  metadata: notification.metadata || {},
+  readAt: notification.read_at,
+  title: notification.title,
+  type: notification.type,
+});
+
 const buildAgencyPayload = (body, fallback = {}) => {
   const monthlyRate = toNumber(body.monthlyRate ?? body.monthly_rate ?? fallback.monthly_rate);
   const ownerId = cleanString(body.ownerId || body.owner_id || fallback.owner_id, 80);
@@ -372,6 +387,38 @@ const handlers = {
         error: error.message || 'Supabase connectivity check failed.',
       });
     }
+  },
+
+  'GET /notifications': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    const rows = await readRows(
+      req,
+      `/notifications?recipient_id=eq.${user.id}&select=*&order=created_at.desc&limit=50`
+    );
+
+    sendJson(res, 200, asList(rows).map(mapNotification));
+  },
+
+  'PATCH /notifications': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const notificationId = cleanString(body.id || body.notificationId || body.notification_id, 80);
+    const readAt = body.isRead === false || body.read === false ? null : new Date().toISOString();
+    const path = notificationId
+      ? `/notifications?id=eq.${notificationId}&recipient_id=eq.${user.id}`
+      : `/notifications?recipient_id=eq.${user.id}&read_at=is.null`;
+
+    if (notificationId && !isUuid(notificationId)) {
+      sendError(res, 400, 'A valid notification id is required.');
+      return;
+    }
+
+    const rows = await patchRows(req, path, { read_at: readAt });
+    sendJson(res, 200, asList(rows).map(mapNotification));
   },
 
   'POST /auth/login': async (req, res) => {
@@ -520,7 +567,29 @@ const handlers = {
     }
 
     const owners = await loadProfilesById(req, [professionalId]);
-    sendJson(res, 200, mapTalentProfile(saved, owners.get(professionalId)));
+    const owner = owners.get(professionalId) || {};
+    const mappedProfile = mapTalentProfile(saved, owner);
+
+    if (['approved', 'rejected'].includes(status)) {
+      notifyUser({
+        actionUrl: '/',
+        body: status === 'approved'
+          ? 'Your professional profile has been approved and is now visible in the client talent directory.'
+          : 'Your professional profile was not approved yet. Update your profile and submit it again when ready.',
+        emailSubject: `PB Finance profile ${formatStatusLabel(status)}`,
+        metadata: {
+          professionalId,
+          status,
+        },
+        recipientEmail: owner.email,
+        recipientId: professionalId,
+        recipientName: owner.full_name,
+        title: `Profile ${formatStatusLabel(status)}`,
+        type: 'profile_status_updated',
+      }).catch(() => {});
+    }
+
+    sendJson(res, 200, mappedProfile);
   },
 
   'GET /admin/agencies': async (req, res) => {
@@ -778,9 +847,27 @@ const handlers = {
       scheduled_for: scheduledFor || null,
       status: scheduledFor ? 'scheduled' : 'requested',
     });
+    const interview = asList(interviewRows)[0] || null;
+
+    notifyUser({
+      actionUrl: '/',
+      body: `${companyName} requested an interview for ${title}.`,
+      emailSubject: `New interview request from ${companyName}`,
+      metadata: {
+        clientId: user.id,
+        interviewId: interview?.id,
+        opportunityId: opportunity?.id,
+        professionalId,
+      },
+      recipientEmail: professionalOwner.email,
+      recipientId: professionalId,
+      recipientName: professionalOwner.full_name,
+      title: 'New interview request',
+      type: 'interview_requested',
+    }).catch(() => {});
 
     sendJson(res, 201, {
-      interview: asList(interviewRows)[0] || null,
+      interview,
       opportunity,
     });
   },
@@ -932,6 +1019,22 @@ const handlers = {
       { prefer: 'resolution=merge-duplicates,return=representation' }
     );
     const savedProfile = asList(rows)[0];
+    const shouldNotifyAdmins = savedProfile?.status === 'pending_review'
+      && currentProfile?.status !== 'pending_review';
+
+    if (shouldNotifyAdmins) {
+      notifyAdmins({
+        actionUrl: '/',
+        body: `${fullName} submitted a professional profile for review.`,
+        emailSubject: 'New PB Finance talent profile for review',
+        metadata: {
+          professionalId: user.id,
+          status: savedProfile.status,
+        },
+        title: 'Talent profile pending review',
+        type: 'talent_profile_submitted',
+      }).catch(() => {});
+    }
 
     sendJson(res, 200, mapTalentProfile(savedProfile, {
       email: user.email,
@@ -997,7 +1100,9 @@ const handlers = {
       `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`
     );
 
-    if (!asList(existing)[0]) {
+    const opportunity = asList(existing)[0];
+
+    if (!opportunity) {
       sendError(res, 404, 'Opportunity not found.');
       return;
     }
@@ -1014,6 +1119,26 @@ const handlers = {
       { status: status === 'accepted' ? 'scheduled' : 'cancelled' },
       { prefer: 'return=minimal' }
     ).catch(() => {});
+
+    const clientProfiles = await loadProfilesById(req, [opportunity.client_id]);
+    const client = clientProfiles.get(opportunity.client_id) || {};
+
+    notifyUser({
+      actionUrl: '/',
+      body: `${user.name || 'A professional'} ${status} your interview request for ${opportunity.title}.`,
+      emailSubject: `Interview request ${formatStatusLabel(status)}`,
+      metadata: {
+        clientId: opportunity.client_id,
+        opportunityId,
+        professionalId: user.id,
+        status,
+      },
+      recipientEmail: client.email,
+      recipientId: opportunity.client_id,
+      recipientName: client.full_name,
+      title: `Interview ${formatStatusLabel(status)}`,
+      type: `interview_${status}`,
+    }).catch(() => {});
 
     sendJson(res, 200, asList(rows)[0] || { ok: true, status });
   },

@@ -47,6 +47,7 @@ const requiredTables = [
   'payment_methods',
   'timesheets',
   'match_requests',
+  'notifications',
 ];
 
 const run = async () => {
@@ -61,6 +62,8 @@ const run = async () => {
       || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
     ),
     serviceRoleConfigured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    emailConfigured: Boolean(process.env.BREVO_API_KEY && process.env.NOTIFICATION_FROM_EMAIL),
+    adminNotificationEmailConfigured: Boolean(process.env.ADMIN_NOTIFICATION_EMAIL),
   };
 
   const tableChecks = {};

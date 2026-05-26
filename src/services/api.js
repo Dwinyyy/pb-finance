@@ -159,6 +159,11 @@ export const backendApi = {
   matchmaker: {
     suggestMatches: (payload) => request('/matchmaker/suggestions', { method: 'POST', body: payload }),
   },
+  notifications: {
+    list: () => request('/notifications'),
+    markRead: (payload) => request('/notifications', { method: 'PATCH', body: payload }),
+    markAllRead: () => request('/notifications', { method: 'PATCH', body: {} }),
+  },
   admin: {
     listTalent: () => request('/admin/talent'),
     updateTalentStatus: (payload) => request('/admin/talent', { method: 'PATCH', body: payload }),

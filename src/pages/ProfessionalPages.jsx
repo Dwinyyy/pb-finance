@@ -6,11 +6,12 @@ import {
   Mail, Lock, LogOut, Sparkles, Layers3, 
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
-  Bookmark, MessageSquare, Bell, SlidersHorizontal,
+  Bookmark, MessageSquare, SlidersHorizontal,
   ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
+import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi } from '../services/api';
 
@@ -73,10 +74,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
               <button onClick={toggleDarkMode} className="text-slate-400 hover:text-white transition-colors" title="Toggle Dark Mode">
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
-              <button className="text-slate-400 hover:text-white relative transition-colors">
-                <Bell size={20} />
-                <span className="absolute top-0 right-0 w-2 h-2 bg-emerald-500 rounded-full"></span>
-              </button>
+              <NotificationBell unreadClassName="bg-emerald-500" />
               
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">

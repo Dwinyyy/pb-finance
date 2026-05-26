@@ -26,6 +26,8 @@ The API is deployed through one Vercel Serverless Function (`api/index.js`) and 
 Implemented endpoints:
 
 - `GET /api/health`
+- `GET /api/notifications`
+- `PATCH /api/notifications`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `POST /api/auth/register`
@@ -57,6 +59,11 @@ Auth is backed by Supabase Auth. For production, set these in Vercel Project Set
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-or-publishable-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+PUBLIC_APP_URL=https://your-production-domain.com
+BREVO_API_KEY=your-brevo-api-key
+NOTIFICATION_FROM_EMAIL=your-verified-sender@email.com
+NOTIFICATION_FROM_NAME=PB Finance
+ADMIN_NOTIFICATION_EMAIL=your-admin@email.com
 ```
 
 The backend also accepts `SUPABASE_PUBLISHABLE_KEY` if your Supabase project uses publishable keys instead of the older anon key naming.
@@ -69,6 +76,7 @@ Set Supabase Dashboard -> Authentication -> URL Configuration -> Site URL to you
 If Supabase email confirmation is enabled, registration returns a confirmation-required response and the user must confirm their email before signing in. For immediate portal access during early testing, disable Confirm email in Supabase Dashboard -> Authentication -> Providers -> Email.
 
 For production confirmation emails, use Brevo as the free SMTP provider. See `docs/smtp-brevo.md` and `scripts/configure-supabase-brevo-smtp.ps1`.
+Runtime workflow emails also support Brevo. If `BREVO_API_KEY` and `NOTIFICATION_FROM_EMAIL` are missing, the app still creates in-app notifications and silently skips email sending.
 
 Optional database setup:
 
@@ -76,7 +84,7 @@ Optional database setup:
 supabase/schema.sql
 ```
 
-Run that SQL in the Supabase SQL Editor to create the first production-ready data model: profiles, professional profiles, agencies, client companies, shortlists, opportunities, interviews, contracts, invoices, payment method metadata, timesheets, and match requests.
+Run that SQL in the Supabase SQL Editor to create the first production-ready data model: profiles, professional profiles, agencies, client companies, shortlists, opportunities, interviews, contracts, invoices, payment method metadata, timesheets, match requests, and notifications.
 
 To enable the built-in admin console, create a normal user first, then promote that account in Supabase SQL Editor:
 
