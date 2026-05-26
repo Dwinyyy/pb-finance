@@ -27,8 +27,15 @@ const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
 const interviewStatusLabel = (status) => String(status || 'scheduled').replace(/_/g, ' ');
 const interviewStatusStyles = {
+  accepted: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  active: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  archived: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  contacted: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   completed: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  declined: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  invited: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   requested: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  saved: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   scheduled: 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
 };
 const getPromptDateDefault = () => {
@@ -301,7 +308,20 @@ function AppDiscoverView() {
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [busyProfileId, setBusyProfileId] = useState('');
   const [actionError, setActionError] = useState('');
-  const { data: profiles, error, isConfigured, isLoading } = useBackendResource(backendApi.talent.listProfiles, EMPTY_LIST);
+  const { data: profiles, error, isConfigured, isLoading } = useBackendResource(
+    backendApi.talent.listProfiles,
+    EMPTY_LIST,
+    { refreshInterval: 30000 }
+  );
+  const { data: shortlistSnapshot } = useBackendResource(
+    backendApi.client.listShortlist,
+    EMPTY_LIST,
+    { refreshInterval: 15000 }
+  );
+
+  useEffect(() => {
+    setSavedIds(new Set(asList(shortlistSnapshot).map((profile) => profile.id)));
+  }, [shortlistSnapshot]);
   
   const filteredProfiles = useMemo(() => {
     const profileList = asList(profiles);
@@ -573,7 +593,13 @@ function AppAgenciesView() {
 }
 
 function AppShortlistView() {
-  const { data: shortlisted, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST);
+  const {
+    data: shortlisted,
+    error,
+    isConfigured,
+    isLoading,
+    refetch,
+  } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST, { refreshInterval: 10000 });
   const shortlist = asList(shortlisted);
   const [localShortlist, setLocalShortlist] = useState(shortlist);
   const [busyAction, setBusyAction] = useState('');
@@ -633,6 +659,7 @@ function AppShortlistView() {
         scheduledFor,
         title: profile.role || profile.title || 'Finance interview',
       });
+      await refetch();
       setActionMessage(`Interview request sent to ${profile.name || profile.fullName || 'the candidate'}.`);
     } catch (scheduleError) {
       setActionError(scheduleError.message || 'Unable to request this interview.');
@@ -672,7 +699,11 @@ function AppShortlistView() {
         />
       ) : (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {localShortlist.map((profile, idx) => (
+        {localShortlist.map((profile, idx) => {
+          const currentStatus = profile.opportunityStatus || profile.interviewStatus || profile.shortlistStatus;
+          const hasActiveRequest = ['invited', 'accepted', 'active', 'requested', 'scheduled'].includes(currentStatus);
+
+          return (
           <FadeIn key={profile.id} delay={idx * 100} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col sm:flex-row gap-6 hover:shadow-lg transition-shadow">
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-4">
@@ -691,6 +722,11 @@ function AppShortlistView() {
                 <div className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400">
                   <Calendar size={16} className="mr-2 text-slate-400"/> Available: {profile.available || profile.availability || 'Pending'}
                 </div>
+                {currentStatus && (
+                  <div className={`inline-flex rounded-md px-2 py-1 text-xs font-bold capitalize ${interviewStatusStyles[currentStatus] || interviewStatusStyles.saved}`}>
+                    {interviewStatusLabel(currentStatus)}
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                   {asList(profile.tools || profile.skills).slice(0,3).map(tool => (
@@ -708,10 +744,10 @@ function AppShortlistView() {
               <div className="space-y-2">
                 <button
                   onClick={() => handleSchedule(profile)}
-                  disabled={busyAction === `schedule:${profile.id}`}
+                  disabled={busyAction === `schedule:${profile.id}` || hasActiveRequest}
                   className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
                 >
-                  {busyAction === `schedule:${profile.id}` ? 'Sending...' : 'Schedule'}
+                  {busyAction === `schedule:${profile.id}` ? 'Sending...' : hasActiveRequest ? 'Requested' : 'Schedule'}
                 </button>
                 <button
                   onClick={() => handleRemove(profile)}
@@ -723,7 +759,8 @@ function AppShortlistView() {
               </div>
             </div>
           </FadeIn>
-        ))}
+          );
+        })}
       </div>
       )}
     </div>
@@ -731,7 +768,11 @@ function AppShortlistView() {
 }
 
 function AppInterviewsView() {
-  const { data: interviews, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listInterviews, EMPTY_LIST);
+  const { data: interviews, error, isConfigured, isLoading } = useBackendResource(
+    backendApi.client.listInterviews,
+    EMPTY_LIST,
+    { refreshInterval: 10000 }
+  );
   const interviewList = asList(interviews).filter((interview) => !['cancelled', 'no_show'].includes(interview.status));
 
   return (

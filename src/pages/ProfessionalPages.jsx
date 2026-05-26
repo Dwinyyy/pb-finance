@@ -125,7 +125,11 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
 }
 
 function AppTalentProfileView({ user }) {
-  const { data: profile } = useBackendResource(backendApi.talent.getMyProfile, EMPTY_PROFILE);
+  const { data: profile } = useBackendResource(
+    backendApi.talent.getMyProfile,
+    EMPTY_PROFILE,
+    { refreshInterval: 15000 }
+  );
   const [savedProfile, setSavedProfile] = useState(EMPTY_PROFILE);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -392,7 +396,11 @@ function AppTalentProfileView({ user }) {
 }
 
 function AppTalentOpportunitiesView() {
-  const { data: invites, error, isLoading } = useBackendResource(backendApi.talent.listOpportunities, EMPTY_LIST);
+  const { data: invites, error, isLoading } = useBackendResource(
+    backendApi.talent.listOpportunities,
+    EMPTY_LIST,
+    { refreshInterval: 10000 }
+  );
   const opportunities = asList(invites);
   const [localOpportunities, setLocalOpportunities] = useState(opportunities);
   const [busyAction, setBusyAction] = useState('');

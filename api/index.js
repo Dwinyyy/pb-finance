@@ -742,16 +742,47 @@ const handlers = {
       `/shortlists?client_id=eq.${user.id}&select=*&order=created_at.desc&limit=100`
     );
     const rows = asList(shortlists);
-    const profiles = await loadTalentProfiles(req, {
-      ids: rows.map((row) => row.professional_id),
-    });
+    const professionalIds = rows.map((row) => row.professional_id);
+    const [profiles, opportunities, interviews] = await Promise.all([
+      loadTalentProfiles(req, { ids: professionalIds }),
+      professionalIds.length
+        ? readRows(req, `/opportunities?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&select=id,professional_id,status,title,received_at&order=received_at.desc&limit=100`)
+        : [],
+      professionalIds.length
+        ? readRows(req, `/interviews?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&select=id,professional_id,status,created_at,scheduled_for&order=created_at.desc&limit=100`)
+        : [],
+    ]);
     const shortlistByProfessional = new Map(rows.map((row) => [row.professional_id, row]));
+    const latestOpportunityByProfessional = new Map();
+    const latestInterviewByProfessional = new Map();
 
-    sendJson(res, 200, profiles.map((profile) => ({
-      ...profile,
-      shortlistId: shortlistByProfessional.get(profile.id)?.id,
-      shortlistStatus: shortlistByProfessional.get(profile.id)?.status,
-    })));
+    asList(opportunities).forEach((opportunity) => {
+      if (!latestOpportunityByProfessional.has(opportunity.professional_id)) {
+        latestOpportunityByProfessional.set(opportunity.professional_id, opportunity);
+      }
+    });
+
+    asList(interviews).forEach((interview) => {
+      if (!latestInterviewByProfessional.has(interview.professional_id)) {
+        latestInterviewByProfessional.set(interview.professional_id, interview);
+      }
+    });
+
+    sendJson(res, 200, profiles.map((profile) => {
+      const shortlist = shortlistByProfessional.get(profile.id);
+      const latestOpportunity = latestOpportunityByProfessional.get(profile.id);
+      const latestInterview = latestInterviewByProfessional.get(profile.id);
+
+      return {
+        ...profile,
+        interviewStatus: latestInterview?.status,
+        latestInterviewId: latestInterview?.id,
+        latestOpportunityId: latestOpportunity?.id,
+        opportunityStatus: latestOpportunity?.status,
+        shortlistId: shortlist?.id,
+        shortlistStatus: shortlist?.status,
+      };
+    }));
   },
 
   'POST /client/shortlist': async (req, res) => {
@@ -819,6 +850,22 @@ const handlers = {
       return;
     }
 
+    const [activeOpportunities, activeInterviews] = await Promise.all([
+      readRows(
+        req,
+        `/opportunities?client_id=eq.${user.id}&professional_id=eq.${professionalId}&status=in.(invited,accepted,active)&select=id,status&limit=1`
+      ),
+      readRows(
+        req,
+        `/interviews?client_id=eq.${user.id}&professional_id=eq.${professionalId}&status=in.(requested,scheduled)&select=id,status&limit=1`
+      ),
+    ]);
+
+    if (asList(activeOpportunities).length || asList(activeInterviews).length) {
+      sendError(res, 409, 'There is already an active interview request for this professional.');
+      return;
+    }
+
     const owners = await loadProfilesById(req, [professionalId]);
     const professionalOwner = owners.get(professionalId) || {};
     const title = cleanString(body.title || body.roleTitle || professionalOwner.title || 'Finance interview', 160);
@@ -848,6 +895,13 @@ const handlers = {
       status: scheduledFor ? 'scheduled' : 'requested',
     });
     const interview = asList(interviewRows)[0] || null;
+
+    patchRows(
+      req,
+      `/shortlists?client_id=eq.${user.id}&professional_id=eq.${professionalId}`,
+      { status: 'contacted' },
+      { prefer: 'return=minimal' }
+    ).catch(() => {});
 
     notifyUser({
       actionUrl: '/',
@@ -1003,7 +1057,7 @@ const handlers = {
       industries: cleanList(body.industries),
       location: cleanString(body.location, 160),
       skills: cleanList(body.skills),
-      status: currentProfile?.status === 'approved' ? 'approved' : 'pending_review',
+      status: 'pending_review',
       tools: cleanList(body.tools),
       user_id: user.id,
       work_preferences: typeof body.workPreferences === 'object' && body.workPreferences !== null
@@ -1025,7 +1079,7 @@ const handlers = {
     if (shouldNotifyAdmins) {
       notifyAdmins({
         actionUrl: '/',
-        body: `${fullName} submitted a professional profile for review.`,
+        body: `${fullName} submitted an updated professional profile for review.`,
         emailSubject: 'New PB Finance talent profile for review',
         metadata: {
           professionalId: user.id,

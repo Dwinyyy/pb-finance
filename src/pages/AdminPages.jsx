@@ -112,7 +112,11 @@ function EmptyPanel({ icon, title, description }) {
 }
 
 function TalentReview() {
-  const { data, error, isLoading } = useBackendResource(backendApi.admin.listTalent, EMPTY_LIST);
+  const { data, error, isLoading } = useBackendResource(
+    backendApi.admin.listTalent,
+    EMPTY_LIST,
+    { refreshInterval: 10000 }
+  );
   const [talent, setTalent] = useState(EMPTY_LIST);
   const [busyId, setBusyId] = useState('');
   const [actionError, setActionError] = useState('');
@@ -232,7 +236,11 @@ function TalentReview() {
 }
 
 function AgenciesAdmin() {
-  const { data, error, isLoading } = useBackendResource(backendApi.admin.listAgencies, EMPTY_LIST);
+  const { data, error, isLoading } = useBackendResource(
+    backendApi.admin.listAgencies,
+    EMPTY_LIST,
+    { refreshInterval: 30000 }
+  );
   const [agencies, setAgencies] = useState(EMPTY_LIST);
   const [busyAction, setBusyAction] = useState('');
   const [actionError, setActionError] = useState('');

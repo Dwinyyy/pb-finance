@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 
 import { backendApi, isBackendConfigured } from '../services/api';
@@ -27,14 +27,17 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
     [notifications]
   );
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async ({ showLoading = false } = {}) => {
     if (!isBackendConfigured()) {
       setIsLoading(false);
       return;
     }
 
     setError('');
-    setIsLoading(true);
+
+    if (showLoading || notifications.length === 0) {
+      setIsLoading(true);
+    }
 
     try {
       setNotifications(asList(await backendApi.notifications.list()));
@@ -43,11 +46,21 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [notifications.length]);
 
   useEffect(() => {
-    loadNotifications();
-  }, []);
+    loadNotifications({ showLoading: true });
+
+    const interval = window.setInterval(() => loadNotifications(), 15000);
+    const handleFocus = () => loadNotifications();
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadNotifications]);
 
   const markAllRead = async () => {
     const unreadIds = notifications
@@ -97,7 +110,17 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
     <div className="relative">
       <button
         className="relative text-slate-400 transition-colors hover:text-white"
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => {
+          setIsOpen((current) => {
+            const next = !current;
+
+            if (next) {
+              loadNotifications();
+            }
+
+            return next;
+          });
+        }}
         title="Notifications"
       >
         <Bell size={20} />
