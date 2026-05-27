@@ -10,7 +10,7 @@ import {
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, SlidersHorizontal,
   ChevronLeft, ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
-  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon
+  DollarSign, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
@@ -18,7 +18,7 @@ import { EmptyState } from '../components/EmptyState';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi, isBackendConfigured } from '../services/api';
-import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS } from '../data/constants';
+import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS, SKILLS_OPTIONS } from '../data/constants';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_BILLING = Object.freeze({
@@ -27,6 +27,7 @@ const EMPTY_BILLING = Object.freeze({
   paymentMethods: EMPTY_LIST,
 });
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
+const TALENT_SKILL_FILTERS = ['All', ...SKILLS_OPTIONS];
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
@@ -96,6 +97,157 @@ const scheduleTimeOptions = Array.from({ length: 23 }, (_, index) => {
   const minutes = index % 2 === 0 ? '00' : '30';
   return `${padTimePart(hour)}:${minutes}`;
 });
+const CLIENT_ONBOARDING_STORAGE_PREFIX = 'pb_client_workflow_onboarding_seen_v1';
+
+const CLIENT_WORKFLOW_STEPS = [
+  {
+    id: 'discover',
+    icon: Search,
+    label: 'Discover',
+    text: 'Filter available talent',
+    detail: 'Find vetted accountants and finance specialists with clear filters for role, skills, software, rate, and availability.',
+  },
+  {
+    id: 'shortlist',
+    icon: Bookmark,
+    label: 'Shortlist',
+    text: 'Compare the best fits',
+    detail: 'Save the best matches in one place so choosing who to interview feels focused, not scattered.',
+  },
+  {
+    id: 'interviews',
+    icon: Calendar,
+    label: 'Interview',
+    text: 'Confirm fit and timing',
+    detail: 'Request a preferred time and keep the scheduling flow organized without long back-and-forth.',
+  },
+  {
+    id: 'billing',
+    icon: FileText,
+    label: 'Contract',
+    text: 'Track terms and invoices',
+    detail: 'Move approved hires into terms and billing with the next steps laid out clearly.',
+  },
+];
+
+const getClientOnboardingStorageKey = (user) => {
+  const identifier = user?.id || user?.email || user?.company || 'local-client';
+  return `${CLIENT_ONBOARDING_STORAGE_PREFIX}:${identifier}`;
+};
+
+const shouldShowClientWorkflowOnboarding = (storageKey) => {
+  try {
+    return !localStorage.getItem(storageKey);
+  } catch {
+    return true;
+  }
+};
+
+function ClientWorkflowOnboardingModal({ user, onClose, onStart }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[220] overflow-y-auto bg-slate-950/60 px-4 py-6 backdrop-blur-md sm:py-10">
+      <div className="flex min-h-full items-center justify-center">
+        <Motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="client-workflow-title"
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.98 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+          className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="flex items-start justify-between gap-5 border-b border-slate-100 px-5 py-5 dark:border-slate-800 sm:px-7">
+            <div>
+              <div className="mb-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <Sparkles size={13} className="mr-1.5 text-primary-500" />
+                Client guide{user?.name ? ` for ${user.name}` : ''}
+              </div>
+              <h2 id="client-workflow-title" className="text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
+                Getting the right accountant should feel simple.
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">
+                PB Finance turns hiring into a clean guided flow: discover vetted talent, shortlist the strongest matches, interview, then move into contract without messy handoffs.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+              aria-label="Close onboarding"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="px-5 py-6 sm:px-7">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {CLIENT_WORKFLOW_STEPS.map((step, index) => {
+                const Icon = step.icon;
+
+                return (
+                  <div
+                    key={step.id}
+                    className="group relative rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-lg hover:shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-primary-900/60 dark:hover:shadow-slate-950/40"
+                  >
+                    {index < CLIENT_WORKFLOW_STEPS.length - 1 && (
+                      <div className="absolute -right-3 top-10 hidden h-px w-3 bg-slate-200 dark:bg-slate-800 xl:block" />
+                    )}
+                    <div className="mb-5 flex items-center justify-between">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm dark:bg-primary-600">
+                        <Icon size={20} />
+                      </div>
+                      <span className="text-xs font-black text-slate-300 dark:text-slate-700">0{index + 1}</span>
+                    </div>
+                    <h3 className="text-base font-black text-slate-950 dark:text-white">{step.label}</h3>
+                    <div className="mt-1 text-sm font-bold text-primary-600 dark:text-primary-300">{step.text}</div>
+                    <p className="mt-4 text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">{step.detail}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300">
+                  <CheckCircle size={17} />
+                </div>
+                <div>
+                  <div className="text-sm font-black text-slate-950 dark:text-white">You are always in control.</div>
+                  <div className="mt-0.5 text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">
+                    Move at your pace while the portal keeps each step clear, organized, and easy to finish.
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={onStart}
+                className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition-colors hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500"
+              >
+                Start discovering <ArrowRight size={16} className="ml-2" />
+              </button>
+            </div>
+          </div>
+        </Motion.div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function InterviewDateTimePicker({ value, onChange }) {
   const parsedDate = isScheduleDate(value.date) ? new Date(`${value.date}T00:00:00`) : new Date();
@@ -173,7 +325,7 @@ function InterviewDateTimePicker({ value, onChange }) {
 
       <div className="space-y-3">
         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-          Time
+          Preferred time
           <select
             value={scheduleTimeOptions.includes(value.time) ? value.time : ''}
             onChange={(event) => onChange({ ...value, time: event.target.value })}
@@ -185,25 +337,8 @@ function InterviewDateTimePicker({ value, onChange }) {
             ))}
           </select>
         </label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
-          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-            Date
-            <input
-              value={value.date}
-              onChange={(event) => updateDate(event.target.value)}
-              placeholder="YYYY-MM-DD"
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-            />
-          </label>
-          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-            Time
-            <input
-              value={value.time}
-              onChange={(event) => onChange({ ...value, time: event.target.value })}
-              placeholder="HH:MM"
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-            />
-          </label>
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          {value.date && value.time ? `${value.date} at ${value.time}` : 'Select a date and time'}
         </div>
       </div>
     </div>
@@ -218,9 +353,36 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const appView = searchParams.get('tab') || 'discover';
   const setAppView = (tab) => setSearchParams({ tab });
   const [matchmakerVisible, setMatchmakerVisible] = useState(true);
+  const onboardingStorageKey = getClientOnboardingStorageKey(user);
+  const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
+
+  const dismissWorkflowOnboarding = () => {
+    try {
+      localStorage.setItem(onboardingStorageKey, 'true');
+    } catch {
+      // The modal should still close even if browser storage is unavailable.
+    }
+
+    setShowWorkflowOnboarding(false);
+  };
+
+  const startWorkflowOnboarding = () => {
+    dismissWorkflowOnboarding();
+    setAppView('discover');
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans relative">
+      <AnimatePresence>
+        {showWorkflowOnboarding && (
+          <ClientWorkflowOnboardingModal
+            user={user}
+            onClose={dismissWorkflowOnboarding}
+            onStart={startWorkflowOnboarding}
+          />
+        )}
+      </AnimatePresence>
+
       {/* App Header */}
       <header className="bg-slate-950 text-white sticky top-0 z-40 shadow-md">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -231,16 +393,18 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
                 PB
               </div>
               <span className="font-bold tracking-tight">Client Portal</span>
-
-              {/* App Global Search */}
-              <div className="hidden lg:flex items-center ml-8 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1.5 focus-within:border-primary-500 focus-within:bg-slate-800 transition-all w-96">
-                <Search size={16} className="text-slate-400 mr-2" />
-                <input type="text" placeholder="Search skills, profiles, or agencies..." className="bg-transparent outline-none text-sm text-white w-full placeholder-slate-500" />
-              </div>
             </div>
 
             {/* App User Nav */}
             <div className="flex items-center gap-6">
+              <button
+                onClick={() => setShowWorkflowOnboarding(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-black text-slate-300 transition-colors hover:border-primary-500 hover:text-white"
+                title="Open client workflow guide"
+              >
+                <Sparkles size={14} className="text-primary-400" />
+                <span className="hidden sm:inline">Guide</span>
+              </button>
               <button onClick={() => setMatchmakerVisible(!matchmakerVisible)} className={`relative transition-colors ${matchmakerVisible ? 'text-primary-400' : 'text-slate-400 hover:text-white'}`} title="Toggle AI Matchmaker">
                 <Bot size={20} />
               </button>
@@ -566,6 +730,7 @@ function AppDiscoverView({ user }) {
             <h3 className="font-bold text-slate-950 dark:text-white flex items-center gap-2"><SlidersHorizontal size={18} className="text-primary-600"/> Filters</h3>
             <button
               onClick={() => {
+                setActiveFilter('All');
                 setSelectedAvailabilities(new Set());
                 setSelectedSoftware(new Set());
                 setMaxRate(50);
@@ -714,7 +879,7 @@ function AppDiscoverView({ user }) {
       <div className="flex-1 w-full">
         <div className="flex justify-between items-center mb-6">
           <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
-            {['All', 'Bookkeeper', 'CPA', 'Financial Controller', 'Fractional CFO'].map((filter) => (
+            {TALENT_SKILL_FILTERS.map((filter) => (
               <button
                 key={filter}
                 onClick={() => setActiveFilter(filter)}
@@ -765,14 +930,6 @@ function AppDiscoverView({ user }) {
                     <p className="text-sm font-semibold text-slate-500">{profile.role || profile.title || 'Role pending'}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleSaveProfile(profile)}
-                  disabled={busyProfileId === profile.id || savedIds.has(profile.id)}
-                  className={`${savedIds.has(profile.id) ? 'text-primary-600' : 'text-slate-300 hover:text-primary-600'} transition-colors p-1 disabled:cursor-default`}
-                  title={savedIds.has(profile.id) ? 'Saved to Shortlist' : 'Save to Shortlist'}
-                >
-                  <Bookmark fill={savedIds.has(profile.id) ? 'currentColor' : 'none'} className="w-6 h-6 opacity-80 hover:opacity-100" />
-                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-6 flex-grow">
@@ -788,7 +945,7 @@ function AppDiscoverView({ user }) {
 
               <div className="mb-6">
                 <div className="flex flex-wrap gap-2">
-                  {asList(profile.tools || profile.skills).map(tool => (
+                  {[...new Set([...asList(profile.skills), ...asList(profile.tools)])].map(tool => (
                     <span key={tool} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-xs px-3 py-1.5 rounded-lg font-bold shadow-sm">
                       {tool}
                     </span>
@@ -800,25 +957,27 @@ function AppDiscoverView({ user }) {
                 <div className="flex items-baseline">
                   <span className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</span>
                 </div>
-                <button
-                  onClick={() => handleSaveProfile(profile)}
-                  disabled={busyProfileId === profile.id || savedIds.has(profile.id)}
-                  className="bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-default disabled:transform-none"
-                >
-                  {busyProfileId === profile.id ? (
+                {savedIds.has(profile.id) ? (
+                  <div className="flex items-center rounded-xl bg-primary-50 px-5 py-2.5 text-sm font-black text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
+                    Saved <CheckCircle size={16} className="ml-2" />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleSaveProfile(profile)}
+                    disabled={busyProfileId === profile.id}
+                    className="bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-default disabled:transform-none"
+                  >
+                    {busyProfileId === profile.id ? (
                     <>
                       Saving <Loader2 size={16} className="ml-2 animate-spin" />
                     </>
-                  ) : savedIds.has(profile.id) ? (
-                    <>
-                      Saved <CheckCircle size={16} className="ml-2" />
-                    </>
-                  ) : (
+                    ) : (
                     <>
                       Save <Bookmark size={16} className="ml-2" />
                     </>
-                  )}
-                </button>
+                    )}
+                  </button>
+                )}
               </div>
             </FadeIn>
           ))}
@@ -901,9 +1060,9 @@ function AppAgenciesView() {
                 <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Pricing</div>
                 <div className="font-bold text-slate-950 dark:text-white">{formatMoney(agency.rate || agency.monthlyRate)}</div>
               </div>
-              <button onClick={() => alert('View Firm feature coming soon!')} className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-slate-950 text-slate-950 dark:text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">
-                View Firm
-              </button>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                Agency preview
+              </div>
             </div>
           </FadeIn>
         ))}
@@ -1091,13 +1250,19 @@ function AppShortlistView({ user }) {
                 <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</div>
               </div>
               <div className="space-y-2">
-                <button
-                  onClick={() => openScheduleModal(profile)}
-                  disabled={busyAction === `schedule:${profile.id}` || hasActiveRequest}
-                  className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
-                >
-                  {busyAction === `schedule:${profile.id}` ? 'Sending...' : hasActiveRequest ? 'Requested' : 'Schedule'}
-                </button>
+                {hasActiveRequest ? (
+                  <div className="w-full rounded-xl bg-primary-50 py-2.5 text-center text-sm font-black text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
+                    Requested
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => openScheduleModal(profile)}
+                    disabled={busyAction === `schedule:${profile.id}`}
+                    className="w-full bg-slate-950 text-white hover:bg-primary-600 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
+                  >
+                    {busyAction === `schedule:${profile.id}` ? 'Sending...' : 'Schedule'}
+                  </button>
+                )}
                 <button
                   onClick={() => handleRemove(profile)}
                   disabled={busyAction === `remove:${profile.id}`}
@@ -1119,7 +1284,7 @@ function AppShortlistView({ user }) {
             <div>
               <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-300">Preferred date and time</div>
               <InterviewDateTimePicker value={scheduleForm} onChange={(nextSchedule) => { setScheduleForm(nextSchedule); setScheduleFormError(''); }} />
-              <p className="mt-2 text-xs font-medium text-slate-500">Pick a date from the calendar, choose a time, or type both fields manually.</p>
+              <p className="mt-2 text-xs font-medium text-slate-500">Pick a date from the calendar and choose one preferred time.</p>
             </div>
             {scheduleFormError && (
               <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
@@ -1230,14 +1395,11 @@ function AppInterviewsView({ user }) {
 
   return (
     <div className="portal-fade-in max-w-4xl">
-      <div className="mb-8 flex justify-between items-end">
+      <div className="mb-8">
         <div>
           <h2 className="text-2xl font-bold text-slate-950 dark:text-white mb-2">Interviews</h2>
           <p className="text-slate-600 dark:text-slate-400">Manage your upcoming candidate screenings.</p>
         </div>
-        <button className="text-primary-600 font-bold text-sm hover:underline flex items-center">
-          Sync with Google Calendar
-        </button>
       </div>
 
       {error && (
@@ -1291,17 +1453,17 @@ function AppInterviewsView({ user }) {
             </div>
             <div className="flex w-full sm:w-auto gap-3">
               {interview.status === 'cancelled' ? (
-                <button disabled className="flex flex-1 cursor-default items-center justify-center rounded-xl bg-red-50 px-6 py-3 text-sm font-bold text-red-600 sm:flex-none dark:bg-red-950/20 dark:text-red-300">
+                <div className="flex flex-1 items-center justify-center rounded-xl bg-red-50 px-6 py-3 text-sm font-bold text-red-600 sm:flex-none dark:bg-red-950/20 dark:text-red-300">
                   Cancelled
-                </button>
+                </div>
               ) : interview.meetingUrl ? (
                 <a href={interview.meetingUrl} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center rounded-xl bg-slate-950 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-primary-600 sm:flex-none">
                   Join Call <Video size={16} className="ml-2" />
                 </a>
               ) : (
-                <button disabled className="flex flex-1 cursor-default items-center justify-center rounded-xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-500 sm:flex-none dark:bg-slate-800 dark:text-slate-400">
+                <div className="flex flex-1 items-center justify-center rounded-xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-500 sm:flex-none dark:bg-slate-800 dark:text-slate-400">
                   No link yet <Video size={16} className="ml-2" />
-                </button>
+                </div>
               )}
               <div className="relative">
                 <button
@@ -1421,9 +1583,8 @@ function AppBillingView() {
               </div>
             </div>
 
-            <div className="flex gap-4">
-              <button className="bg-slate-950 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-primary-600 transition-colors">View Contract</button>
-              <button className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Request Change</button>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+              Contract actions appear here after an agreement is active.
             </div>
           </FadeIn>
         </div>
@@ -1447,7 +1608,9 @@ function AppBillingView() {
                 </div>
               </div>
             </div>
-            <button className="w-full mt-4 text-sm font-bold text-primary-600 hover:text-primary-800">Update payment method</button>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+              Payment updates will be available after billing setup.
+            </div>
           </FadeIn>
 
           <FadeIn delay={300}>
@@ -1467,13 +1630,16 @@ function AppBillingView() {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm font-black text-slate-900 dark:text-slate-50">{formatMoney(inv.amount)}</span>
-                    <button className="text-slate-400 hover:text-primary-600 transition-colors"><Download size={16}/></button>
+                    {inv.downloadUrl ? (
+                      <a href={inv.downloadUrl} target="_blank" rel="noreferrer" className="text-slate-400 transition-colors hover:text-primary-600" title="Download invoice">
+                        <Download size={16}/>
+                      </a>
+                    ) : (
+                      <span className="text-xs font-bold text-slate-400">PDF pending</span>
+                    )}
                   </div>
                 </div>
               ))}
-              <div className="p-4 bg-slate-50 dark:bg-slate-950 text-center border-t border-slate-100 dark:border-slate-800">
-                <button className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-50 uppercase tracking-wider">View All History</button>
-              </div>
             </div>
           </FadeIn>
         </div>

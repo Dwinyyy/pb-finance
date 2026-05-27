@@ -12,9 +12,12 @@ import {
 } from 'lucide-react';
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import { FAQ_ITEMS, MATCHING_WORKFLOW, PROCESS_STEPS, SERVICE_CARDS } from '../data/staticContent';
+import { SKILLS_OPTIONS } from '../data/constants';
 import FadeIn from '../components/FadeIn';
 import { motion as Motion } from 'framer-motion';
 import { Button } from '../components/ui/Button';
+
+const asList = (value) => (Array.isArray(value) ? value : []);
 
 // ==========================================
 // 1. PUBLIC MARKETING SITE
@@ -110,9 +113,11 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
 
               <div className="flex items-center space-x-4 pl-4 ml-2 border-l border-slate-200 dark:border-slate-800">
                 <button onClick={() => openAuth('login')} className="text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-primary-600 transition-colors">Client Login</button>
-                <button onClick={() => openAuth('register')} className="bg-slate-950 text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-primary-600 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-                  Start Hiring
-                </button>
+                {activeTab !== 'home' && (
+                  <button onClick={() => openAuth('register')} className="bg-slate-950 text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-primary-600 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                    Start Hiring
+                  </button>
+                )}
               </div>
             </div>
 
@@ -145,7 +150,9 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
               </button>
               <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid gap-2">
                 <button onClick={() => openMobileAuth('login')} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 px-4 py-3 rounded-xl text-sm font-bold">Client Login</button>
-                <button onClick={() => openMobileAuth('register')} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl text-sm font-bold">Start Hiring</button>
+                {activeTab !== 'home' && (
+                  <button onClick={() => openMobileAuth('register')} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl text-sm font-bold">Start Hiring</button>
+                )}
               </div>
             </div>
           </div>
@@ -155,7 +162,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
       <main className="min-h-screen pt-16 md:pt-20">
         <Routes>
           <Route path="/" element={<HomeMarketingView navigateTo={navigateTo} openAuth={openAuth} />} />
-          <Route path="/talents" element={<PreviewDirectoryView openAuth={openAuth} />} />
+          <Route path="/talents" element={<PreviewDirectoryView navigateTo={navigateTo} openAuth={openAuth} />} />
           <Route path="/agency" element={<AgencyMarketingView openAuth={openAuth} />} />
           <Route path="/pricing" element={<PricingView openAuth={openAuth} />} />
           <Route path="*" element={
@@ -330,13 +337,135 @@ function FAQAccordion() {
   );
 }
 
+const DIRECTORY_PREVIEW_PROFILES = [
+  {
+    code: 'CPA-214',
+    title: 'Senior CPA',
+    rate: '$24/hr',
+    availability: 'Immediate Start',
+    overlap: 'US EST overlap',
+    credentials: 'CPA equivalent, 8 yrs',
+    skills: ['Tax', 'Audit'],
+    tools: ['QuickBooks', 'Xero', 'Tax'],
+  },
+  {
+    code: 'CTL-089',
+    title: 'Financial Controller',
+    rate: '$38/hr',
+    availability: '2 weeks',
+    overlap: 'US/Pacific overlap',
+    credentials: 'Month-end close lead',
+    skills: ['Financial Reporting', 'Budgeting'],
+    tools: ['NetSuite', 'Excel', 'Power BI'],
+  },
+  {
+    code: 'FPA-441',
+    title: 'FP&A Analyst',
+    rate: '$28/hr',
+    availability: 'Part-time OK',
+    overlap: 'UK/Europe overlap',
+    credentials: 'Forecasting, dashboards',
+    skills: ['FP&A', 'Budgeting'],
+    tools: ['Tableau', 'Excel', 'Oracle SAP'],
+  },
+  {
+    code: 'TAX-117',
+    title: 'Senior Tax Preparer',
+    rate: '$22/hr',
+    availability: '3-4 weeks',
+    overlap: 'Tax season coverage',
+    credentials: 'US tax workflow support',
+    skills: ['Tax', 'Advisory'],
+    tools: ['Tax', 'QuickBooks', 'Excel'],
+  },
+  {
+    code: 'BKK-530',
+    title: 'Full-charge Bookkeeper',
+    rate: '$16/hr',
+    availability: 'Immediate Start',
+    overlap: 'Daily close window',
+    credentials: 'AP, AR, reconciliations',
+    skills: ['Bookkeeping', 'Payroll'],
+    tools: ['Xero', 'Payroll', 'QuickBooks'],
+  },
+  {
+    code: 'NSC-302',
+    title: 'NetSuite Consultant',
+    rate: '$42/hr',
+    availability: '1-2 weeks',
+    overlap: 'Project-based',
+    credentials: 'ERP cleanup and reporting',
+    skills: ['Financial Reporting', 'Advisory'],
+    tools: ['NetSuite', 'Reporting', 'Excel'],
+  },
+];
+
+const DIRECTORY_FILTERS = ['All', ...SKILLS_OPTIONS];
+const directoryProfileMatchesFilter = (profile, activeFilter) => {
+  if (activeFilter === 'All') return true;
+
+  const normalizedFilter = activeFilter.toLowerCase();
+  const searchableValues = [
+    profile.title,
+    profile.credentials,
+    ...asList(profile.skills),
+    ...asList(profile.tools),
+  ];
+
+  return searchableValues.some((value) => String(value || '').toLowerCase().includes(normalizedFilter));
+};
+
+const DIRECTORY_UNLOCKS = [
+  'Full verified resumes and work history',
+  'Tool-specific filters and hourly rate ranges',
+  'Shortlist, interview requests, and status tracking',
+];
+
+const POD_USE_CASES = [
+  {
+    icon: Calculator,
+    title: 'Month-end close pod',
+    text: 'Close calendar, reconciliations, flux analysis, reporting packs, and review-ready documentation.',
+  },
+  {
+    icon: Receipt,
+    title: 'Tax season capacity',
+    text: 'Preparer and reviewer coverage for seasonal volume, document follow-up, and deadline management.',
+  },
+  {
+    icon: BarChart3,
+    title: 'FP&A and reporting desk',
+    text: 'Forecast refreshes, board metrics, KPI dashboards, variance analysis, and management reporting.',
+  },
+];
+
+const POD_SETUP_STEPS = [
+  'Map workflows and systems',
+  'Assign primary owner and backup',
+  'Launch pilot with QA checkpoints',
+  'Scale coverage by role',
+];
+
+const PRICING_DECISION_GUIDE = [
+  {
+    title: 'Start with Platform Access',
+    text: 'Best when you want to evaluate individual professionals and run a focused interview process.',
+    points: ['Browse vetted profiles', 'Shortlist candidates', 'Request interviews'],
+  },
+  {
+    title: 'Move to Enterprise Pods',
+    text: 'Best when the work spans multiple roles, requires backup coverage, or needs ongoing QA.',
+    points: ['Role-based team design', 'Managed onboarding', 'Accountability and review cadence'],
+  },
+];
+
 function HomeMarketingView({ navigateTo, openAuth }) {
   const audiencePaths = [
     {
       icon: Briefcase,
       label: 'Hire Talent',
       text: 'Browse vetted CPAs and analysts',
-      action: () => openAuth('register'),
+      action: () => navigateTo('talents'),
     },
     {
       icon: Layers3,
@@ -377,12 +506,9 @@ function HomeMarketingView({ navigateTo, openAuth }) {
             </p>
           </FadeIn>
 
-          <FadeIn delay={400} className="w-full max-w-2xl flex flex-col sm:flex-row gap-3 justify-center mb-5">
+          <FadeIn delay={400} className="w-full max-w-2xl flex justify-center mb-5">
             <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto shadow-xl shadow-primary-900/10">
               Start Building Your Team
-            </Button>
-            <Button variant="outline" size="lg" onClick={() => navigateTo('talents')} className="w-full sm:w-auto bg-white dark:bg-slate-800 shadow-sm hover:shadow-md">
-              Browse Directory <ArrowRight size={20} className="ml-2 text-slate-400" />
             </Button>
           </FadeIn>
 
@@ -399,7 +525,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
                 <button
                   key={path.label}
                   onClick={path.action}
-                  className="flex min-w-[230px] flex-1 items-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left shadow-sm transition-all hover:border-primary-200 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-900/80 dark:hover:bg-slate-900"
+                  className="flex min-w-[230px] flex-1 items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-center shadow-sm transition-all hover:border-primary-200 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-900/80 dark:hover:bg-slate-900"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-primary-600">
                     <Icon size={18} />
@@ -505,8 +631,8 @@ function HomeMarketingView({ navigateTo, openAuth }) {
               <div className="mt-12 bg-gradient-to-br from-primary-50 to-cyan-50 dark:from-slate-800 dark:to-slate-800 border border-primary-100 dark:border-slate-700 rounded-[32px] p-10 text-center shadow-sm">
                 <h3 className="text-2xl font-bold text-slate-950 dark:text-white mb-4">Still have questions?</h3>
                 <p className="text-slate-600 dark:text-slate-400 text-lg mb-8 max-w-sm mx-auto">Schedule a brief call to see how we can map a solution to your exact workflow.</p>
-                <button onClick={() => openAuth('register')} className="bg-slate-950 text-white px-10 py-4 rounded-full text-base font-bold hover:bg-primary-600 transition-transform transform hover:-translate-y-1 shadow-xl shadow-slate-900/10">
-                  Talk to an Expert
+                <button onClick={() => navigateTo('pricing')} className="bg-slate-950 text-white px-10 py-4 rounded-full text-base font-bold hover:bg-primary-600 transition-transform transform hover:-translate-y-1 shadow-xl shadow-slate-900/10">
+                  View Pricing
                 </button>
               </div>
             </FadeIn>
@@ -529,8 +655,8 @@ function HomeMarketingView({ navigateTo, openAuth }) {
                     </li>
                   ))}
                 </ul>
-                <button onClick={() => openAuth('register')} className="bg-white text-slate-950 px-8 py-4 rounded-full font-bold text-lg hover:bg-cyan-50 transition-all shadow-lg flex items-center">
-                  Create Client Account <ArrowRight size={20} className="ml-2" />
+                <button onClick={() => navigateTo('talents')} className="bg-white text-slate-950 px-8 py-4 rounded-full font-bold text-lg hover:bg-cyan-50 transition-all shadow-lg flex items-center">
+                  Preview Directory <ArrowRight size={20} className="ml-2" />
                 </button>
               </FadeIn>
             </div>
@@ -567,63 +693,177 @@ function HomeMarketingView({ navigateTo, openAuth }) {
   );
 }
 
-// Blurred preview of the directory for unauthenticated users
-function PreviewDirectoryView({ openAuth }) {
-  return (
-    <div className="pt-24 pb-32 bg-slate-50 dark:bg-slate-950 min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <FadeIn>
-          <div className="text-center max-w-3xl mx-auto mb-16">
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-6">Global Talent Directory</h1>
-            <p className="text-xl text-slate-600 dark:text-slate-400">Browse a snapshot of our highly vetted professional network.</p>
-          </div>
-        </FadeIn>
+// Public preview of the directory for unauthenticated users
+function PreviewDirectoryView({ navigateTo, openAuth }) {
+  const [activeFilter, setActiveFilter] = useState('All');
+  const filteredPreviewProfiles = useMemo(
+    () => DIRECTORY_PREVIEW_PROFILES.filter((profile) => directoryProfileMatchesFilter(profile, activeFilter)),
+    [activeFilter]
+  );
 
-        <div className="relative">
-          <FadeIn delay={200}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 blur-[5px] opacity-60 pointer-events-none select-none overflow-hidden h-[600px]">
-              {Array.from({ length: 6 }, (_, index) => (
-                <div key={index} className="bg-white dark:bg-slate-900 rounded-[24px] border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-full"></div>
-                    <div>
-                      <div className="h-5 w-32 bg-slate-200 rounded mb-2"></div>
-                      <div className="h-4 w-24 bg-slate-100 dark:bg-slate-800 rounded"></div>
-                    </div>
-                  </div>
-                  <div className="space-y-3 mb-6">
-                    <div className="h-4 w-full bg-slate-50 dark:bg-slate-950 rounded"></div>
-                    <div className="h-4 w-4/5 bg-slate-50 dark:bg-slate-950 rounded"></div>
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="h-8 w-16 bg-slate-100 dark:bg-slate-800 rounded-md"></div>
-                    <div className="h-8 w-16 bg-slate-100 dark:bg-slate-800 rounded-md"></div>
-                  </div>
+  return (
+    <div className="bg-slate-50 dark:bg-slate-950 min-h-screen">
+      <section className="pt-16 pb-12 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <FadeIn>
+              <div>
+                <div className="inline-flex mb-5 rounded-full border border-primary-200 bg-primary-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-700 dark:border-primary-900/50 dark:bg-primary-950/30 dark:text-primary-300">
+                  Talent Directory Preview
                 </div>
-              ))}
-            </div>
-          </FadeIn>
-          
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center">
-            <FadeIn delay={400} hover={true} className="bg-white dark:bg-slate-900/90 backdrop-blur-xl p-10 md:p-12 rounded-[32px] shadow-2xl border border-slate-200 dark:border-slate-800/50 max-w-xl mx-auto">
-              <div className="w-20 h-20 bg-gradient-to-br from-primary-100 to-cyan-50 rounded-2xl flex items-center justify-center text-primary-600 mx-auto mb-8 shadow-inner">
-                <Lock size={32} />
+                <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-5">
+                  See the roles, rates, and readiness before you sign in.
+                </h1>
+                <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed mb-8">
+                  Preview anonymized finance profiles with the same signals clients use to shortlist: role fit, tools, availability, overlap, and estimated rate.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto">
+                    Unlock Full Directory
+                  </Button>
+                  <Button variant="outline" size="lg" onClick={() => openAuth('login')} className="w-full sm:w-auto bg-white dark:bg-slate-800">
+                    Client Login
+                  </Button>
+                </div>
               </div>
-              <h3 className="text-3xl font-bold text-slate-950 dark:text-white mb-4 tracking-tight">Verified Client Access</h3>
-              <p className="text-slate-600 dark:text-slate-400 text-lg mb-10 leading-relaxed">
-                We fiercely protect our talent pool. Create a free enterprise account to view full resumes, unlock specific tooling filters, and interview candidates directly.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <button onClick={() => openAuth('register')} className="bg-slate-950 hover:bg-primary-600 text-white px-8 py-4 rounded-full font-bold transition-all shadow-xl shadow-slate-900/10">
-                  Create Client Account
-                </button>
-                <button onClick={() => openAuth('login')} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-950 dark:text-white border-2 border-slate-200 dark:border-slate-700 px-8 py-4 rounded-full font-bold transition-all">
-                  Log In
-                </button>
+            </FadeIn>
+
+            <FadeIn delay={150} direction="left">
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ['120+', 'Finance professionals'],
+                  ['5+ hrs', 'Timezone overlap'],
+                  ['24-72h', 'Shortlist turnaround'],
+                  ['Role-fit', 'Credential screening'],
+                ].map(([value, label]) => (
+                  <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{value}</div>
+                    <div className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</div>
+                  </div>
+                ))}
               </div>
             </FadeIn>
           </div>
         </div>
+      </section>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="py-10">
+          <FadeIn>
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-h-12 flex-1 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 dark:border-slate-800 dark:bg-slate-950">
+                  <Search size={18} className="mr-3 text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-500">Search by role, software, shift, or credential</span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide lg:pb-0">
+                  {DIRECTORY_FILTERS.map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setActiveFilter(filter)}
+                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-bold ${
+                        activeFilter === filter
+                          ? 'border-slate-950 bg-slate-950 text-white dark:border-primary-500 dark:bg-primary-600'
+                          : 'border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </FadeIn>
+
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            {filteredPreviewProfiles.map((profile, index) => (
+              <FadeIn key={profile.code} delay={(index % 6) * 60} direction="up" hover={true} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-primary-200 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-5 flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white dark:bg-primary-600">
+                      {profile.code.split('-')[0]}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black leading-tight text-slate-950 dark:text-white">{profile.title}</h3>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{profile.code} verified preview</p>
+                    </div>
+                  </div>
+                  <Lock size={18} className="text-slate-300 dark:text-slate-600" />
+                </div>
+
+                <div className="mb-5 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rate</div>
+                    <div className="mt-1 text-base font-black text-slate-950 dark:text-white">{profile.rate}</div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Availability</div>
+                    <div className="mt-1 text-sm font-black text-slate-950 dark:text-white">{profile.availability}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <BadgeCheck size={16} className="text-emerald-500" />
+                    {profile.credentials}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock3 size={16} className="text-primary-500" />
+                    {profile.overlap}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {[...new Set([...asList(profile.skills), ...asList(profile.tools)])].map((tool) => (
+                    <span key={tool} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                  Full resume unlocks after client signup
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </section>
+
+        <section className="pb-24">
+          <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-stretch">
+            <FadeIn>
+              <div className="h-full rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-300">
+                  <Lock size={24} />
+                </div>
+                <h2 className="mb-4 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Verified client access protects the talent pool.</h2>
+                <p className="mb-8 text-base font-medium leading-relaxed text-slate-600 dark:text-slate-400">
+                  Public previews stay anonymized. Approved client accounts can view full profiles, save candidates, and request interviews from the portal.
+                </p>
+                <Button variant="outline" size="md" onClick={() => navigateTo('pricing')} className="w-full sm:w-auto bg-white dark:bg-slate-800">
+                  View Pricing
+                </Button>
+              </div>
+            </FadeIn>
+
+            <FadeIn delay={150} direction="left">
+              <div className="h-full rounded-3xl border border-slate-200 bg-slate-950 p-8 text-white shadow-xl dark:border-slate-800">
+                <h3 className="mb-6 text-xl font-black">What unlocks after signup</h3>
+                <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+                  {DIRECTORY_UNLOCKS.map((item, index) => (
+                    <div key={item} className="flex gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
+                        {index + 1}
+                      </div>
+                      <div className="text-sm font-bold leading-relaxed text-slate-200">{item}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </FadeIn>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -705,6 +945,62 @@ function AgencyMarketingView({ openAuth }) {
         </div>
       </div>
 
+      <section className="py-24 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <FadeIn>
+              <div>
+                <div className="inline-flex mb-4 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                  Pod Design Preview
+                </div>
+                <h2 className="mb-5 text-4xl font-bold tracking-tight text-slate-950 dark:text-white md:text-5xl">
+                  Pick the finance workload. We shape the team around it.
+                </h2>
+                <p className="mb-8 text-lg leading-relaxed text-slate-600 dark:text-slate-400">
+                  Enterprise clients need more than resumes. They need coverage, ownership, QA, and a clean handoff from scope to recurring execution.
+                </p>
+
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
+                  <h3 className="mb-4 text-sm font-black uppercase tracking-wider text-slate-500">Setup Path</h3>
+                  <div className="space-y-3">
+                    {POD_SETUP_STEPS.map((step, index) => (
+                      <div key={step} className="flex items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white dark:bg-primary-600">
+                          {index + 1}
+                        </span>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </FadeIn>
+
+            <div className="grid gap-5">
+              {POD_USE_CASES.map((item, index) => {
+                const Icon = item.icon;
+
+                return (
+                  <FadeIn key={item.title} delay={index * 90} direction="left">
+                    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-primary-200 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                      <div className="flex gap-5">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-300">
+                          <Icon size={24} />
+                        </div>
+                        <div>
+                          <h3 className="mb-2 text-xl font-black text-slate-950 dark:text-white">{item.title}</h3>
+                          <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">{item.text}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </FadeIn>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Engagement Models */}
       <div className="py-32 bg-slate-50 dark:bg-slate-950 relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -747,9 +1043,9 @@ function AgencyMarketingView({ openAuth }) {
                       <span className="text-slate-700 dark:text-slate-300 text-base font-bold">Billed at flat monthly rate</span>
                     </li>
                   </ul>
-                  <button onClick={() => openAuth('register')} className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 text-slate-950 dark:text-white hover:border-primary-600 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 py-4 rounded-full font-bold text-lg transition-all mt-auto">
-                    Inquire Setup
-                  </button>
+                  <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 text-center text-sm font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                    Embedded hire option
+                  </div>
                 </div>
               </div>
             </FadeIn>
@@ -786,9 +1082,9 @@ function AgencyMarketingView({ openAuth }) {
                       <span className="text-slate-200 text-base font-bold">Includes CPAs, Tax Prep, and Reviewers</span>
                     </li>
                   </ul>
-                  <button onClick={() => openAuth('register')} className="w-full bg-white text-slate-950 hover:bg-primary-50 py-4 rounded-full font-bold text-lg transition-all mt-auto shadow-xl shadow-white/10">
-                    Draft a Pod Structure
-                  </button>
+                  <div className="w-full rounded-2xl border border-white/10 bg-white/10 py-4 text-center text-sm font-black text-white">
+                    Managed pod option
+                  </div>
                 </div>
               </div>
             </FadeIn>
@@ -832,10 +1128,6 @@ function PublicFooter({ navigateTo, openAuth }) {
         </div>
         <div className="text-slate-500 font-medium text-sm flex flex-col md:flex-row justify-between items-center">
           <p>&copy; {new Date().getFullYear()} PB Finance Global. All rights reserved.</p>
-          <div className="flex space-x-8 mt-4 md:mt-0">
-            <button className="hover:text-white transition-colors">Privacy</button>
-            <button className="hover:text-white transition-colors">Terms</button>
-          </div>
         </div>
       </div>
     </footer>
@@ -846,45 +1138,96 @@ function PublicFooter({ navigateTo, openAuth }) {
 
 function PricingView({ openAuth }) {
   return (
-    <div className="animate-in fade-in duration-700 bg-white dark:bg-slate-900 pt-32 pb-40 min-h-screen">
+    <div className="animate-in fade-in duration-700 bg-white dark:bg-slate-900 pt-20 pb-28 min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <FadeIn hover={true}>
-          <div className="text-center max-w-3xl mx-auto mb-20">
-            <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-6">Transparent Platform Fees</h1>
-            <p className="text-xl text-slate-600 dark:text-slate-400">Simple, predictable models to augment your finance team.</p>
+        <FadeIn>
+          <div className="mx-auto mb-16 max-w-3xl text-center">
+            <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+              Pricing
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white md:text-5xl mb-5">Transparent access, custom delivery.</h1>
+            <p className="text-lg text-slate-600 dark:text-slate-400">
+              Start with the directory for individual hiring, or move into a managed pod when the workflow needs structure, coverage, and QA.
+            </p>
           </div>
         </FadeIn>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
           <FadeIn delay={100} direction="up" hover={true} className="h-full">
-            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-[32px] p-10 flex flex-col h-full hover:shadow-xl transition-shadow">
-              <h3 className="text-2xl font-bold text-slate-950 dark:text-white mb-2">Platform Access</h3>
-              <p className="text-slate-500 dark:text-slate-400 mb-8">Best for hiring 1-2 remote professionals.</p>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 md:p-10 flex flex-col h-full hover:shadow-xl transition-shadow">
+              <div className="mb-8 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-950 dark:text-white mb-2">Platform Access</h3>
+                  <p className="text-slate-500 dark:text-slate-400">Best for hiring 1-2 remote professionals.</p>
+                </div>
+                <div className="rounded-2xl bg-white p-3 text-primary-600 shadow-sm dark:bg-slate-900">
+                  <User size={22} />
+                </div>
+              </div>
               <div className="text-5xl font-black text-slate-950 dark:text-white tracking-tight mb-8">Free<span className="text-lg font-bold text-slate-500 tracking-normal"> forever</span></div>
               <ul className="space-y-4 mb-10 flex-grow">
-                <li className="flex items-center text-slate-700 dark:text-slate-300"><CheckCircle className="text-primary-500 w-5 h-5 mr-3"/> Browse full talent directory</li>
-                <li className="flex items-center text-slate-700 dark:text-slate-300"><CheckCircle className="text-primary-500 w-5 h-5 mr-3"/> Interview up to 3 candidates</li>
-                <li className="flex items-center text-slate-700 dark:text-slate-300"><CheckCircle className="text-primary-500 w-5 h-5 mr-3"/> Standard KYC compliance</li>
+                {['Browse full talent directory', 'Interview up to 3 candidates', 'Standard KYC compliance', 'Shortlist and interview tracking'].map((item) => (
+                  <li key={item} className="flex items-center text-slate-700 dark:text-slate-300">
+                    <CheckCircle className="text-primary-500 w-5 h-5 mr-3 shrink-0" /> {item}
+                  </li>
+                ))}
               </ul>
-              <button onClick={() => openAuth('register')} className="w-full bg-slate-950 text-white rounded-full py-4 font-bold hover:bg-primary-600 transition-colors">Create Free Account</button>
+              <button onClick={() => openAuth('register')} className="w-full bg-slate-950 text-white rounded-2xl py-4 font-bold hover:bg-primary-600 transition-colors">Create Free Account</button>
             </div>
           </FadeIn>
 
           <FadeIn delay={200} direction="up" hover={true} className="h-full">
-            <div className="bg-slate-950 border border-slate-800 rounded-[32px] p-10 flex flex-col h-full shadow-2xl relative overflow-hidden group hover:border-primary-500 transition-colors">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/20 blur-[60px] rounded-full pointer-events-none group-hover:bg-cyan-500/20 transition-colors"></div>
-              <h3 className="text-2xl font-bold text-white mb-2 relative z-10">Enterprise Pods</h3>
-              <p className="text-slate-400 mb-8 relative z-10">Dedicated managed teams and SLAs.</p>
+            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-8 md:p-10 flex flex-col h-full shadow-2xl relative overflow-hidden group hover:border-primary-500 transition-colors">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/15 blur-[60px] rounded-full pointer-events-none group-hover:bg-cyan-500/20 transition-colors"></div>
+              <div className="relative z-10 mb-8 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-2xl font-bold text-white mb-2">Enterprise Pods</h3>
+                  <p className="text-slate-400">Dedicated managed teams and SLAs.</p>
+                </div>
+                <div className="rounded-2xl bg-white/10 p-3 text-cyan-300">
+                  <Layers3 size={22} />
+                </div>
+              </div>
               <div className="text-5xl font-black text-white tracking-tight mb-8 relative z-10">Custom</div>
               <ul className="space-y-4 mb-10 flex-grow relative z-10">
-                <li className="flex items-center text-slate-300"><CheckCircle className="text-cyan-400 w-5 h-5 mr-3"/> Dedicated US-based Account Manager</li>
-                <li className="flex items-center text-slate-300"><CheckCircle className="text-cyan-400 w-5 h-5 mr-3"/> Custom SOC2 secure enclaves</li>
-                <li className="flex items-center text-slate-300"><CheckCircle className="text-cyan-400 w-5 h-5 mr-3"/> Priority placement within 72hrs</li>
+                {['Dedicated account manager', 'Role-based pod design', 'Backup coverage and QA cadence', 'Priority placement within 72hrs'].map((item) => (
+                  <li key={item} className="flex items-center text-slate-300">
+                    <CheckCircle className="text-cyan-400 w-5 h-5 mr-3 shrink-0" /> {item}
+                  </li>
+                ))}
               </ul>
-              <button onClick={() => openAuth('register')} className="w-full bg-white text-slate-950 rounded-full py-4 font-bold hover:bg-slate-100 transition-colors relative z-10">Contact Sales</button>
+              <button onClick={() => openAuth('register')} className="w-full bg-white text-slate-950 rounded-2xl py-4 font-bold hover:bg-slate-100 transition-colors relative z-10">Draft a Pod Structure</button>
             </div>
           </FadeIn>
         </div>
+
+        <section className="mt-12 grid gap-6 lg:grid-cols-2">
+          {PRICING_DECISION_GUIDE.map((guide, index) => (
+            <FadeIn key={guide.title} delay={index * 100}>
+              <div className="h-full rounded-3xl border border-slate-200 bg-white p-7 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <h2 className="mb-3 text-xl font-black text-slate-950 dark:text-white">{guide.title}</h2>
+                <p className="mb-6 text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">{guide.text}</p>
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                  {guide.points.map((point) => (
+                    <div key={point} className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                      <CheckCircle size={16} className="text-emerald-500 shrink-0" />
+                      {point}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </FadeIn>
+          ))}
+        </section>
+
+        <FadeIn delay={250}>
+          <div className="mt-12 rounded-3xl border border-primary-100 bg-primary-50 p-8 text-center dark:border-slate-800 dark:bg-slate-950">
+            <h2 className="mb-3 text-2xl font-black text-slate-950 dark:text-white">Not sure which path fits?</h2>
+            <p className="mx-auto max-w-2xl text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">
+              Start free, describe the workload, and PB Finance can steer you toward individual profiles or a managed team structure.
+            </p>
+          </div>
+        </FadeIn>
       </div>
     </div>
   );
