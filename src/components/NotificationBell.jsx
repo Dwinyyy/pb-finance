@@ -1,10 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 
-import { backendApi, isBackendConfigured } from '../services/api';
-import { isRealtimeConfigured, subscribeToDatabaseChanges } from '../services/realtime';
-
-const asList = (value) => (Array.isArray(value) ? value : []);
+import { useNotifications } from '../hooks/useNotifications';
 
 const formatTime = (value) => {
   if (!value) return '';
@@ -18,119 +16,52 @@ const formatTime = (value) => {
   });
 };
 
-export function NotificationBell({ unreadClassName = 'bg-primary-500', userId }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(isBackendConfigured());
-  const [notifications, setNotifications] = useState([]);
-  const [error, setError] = useState('');
-  const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.isRead).length,
-    [notifications]
-  );
+const getNavigationTarget = (actionUrl) => {
+  const rawUrl = String(actionUrl || '').trim();
 
-  const loadNotifications = useCallback(async ({ showLoading = false } = {}) => {
-    if (!isBackendConfigured()) {
-      setIsLoading(false);
+  if (!rawUrl) return '';
+
+  try {
+    const url = new URL(rawUrl, window.location.origin);
+
+    if (url.origin !== window.location.origin) {
+      return url.href;
+    }
+
+    return `${url.pathname}${url.search}${url.hash}` || '/';
+  } catch {
+    return rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+  }
+};
+
+export function NotificationBell({ notificationState, unreadClassName = 'bg-primary-500', userId }) {
+  const navigate = useNavigate();
+  const internalNotificationState = useNotifications(userId, { enabled: !notificationState });
+  const {
+    error,
+    isLoading,
+    loadNotifications,
+    markAllRead,
+    markRead,
+    notifications,
+    unreadCount,
+  } = notificationState || internalNotificationState;
+  const [isOpen, setIsOpen] = useState(false);
+
+  const openNotification = (notification) => {
+    markRead(notification);
+    setIsOpen(false);
+
+    const target = getNavigationTarget(notification.actionUrl);
+
+    if (!target) return;
+
+    if (/^https?:\/\//i.test(target)) {
+      window.location.assign(target);
       return;
     }
 
-    setError('');
-
-    if (showLoading) {
-      setIsLoading(true);
-    }
-
-    try {
-      const latest = asList(await backendApi.notifications.list());
-      setNotifications((current) => {
-        const readIds = new Set(current.filter((notification) => notification.isRead).map((notification) => notification.id));
-
-        return latest.map((notification) => (
-          readIds.has(notification.id)
-            ? { ...notification, isRead: true, readAt: notification.readAt || new Date().toISOString() }
-            : notification
-        ));
-      });
-    } catch (loadError) {
-      setError(loadError.message || 'Unable to load notifications.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadNotifications({ showLoading: true });
-
-    const interval = window.setInterval(() => loadNotifications(), 60000);
-    const handleFocus = () => loadNotifications();
-
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [loadNotifications]);
-
-  useEffect(() => {
-    if (!userId || !isBackendConfigured() || !isRealtimeConfigured()) {
-      return undefined;
-    }
-
-    return subscribeToDatabaseChanges({
-      channelName: `notifications:${userId}`,
-      changes: [
-        {
-          filter: `recipient_id=eq.${userId}`,
-          table: 'notifications',
-        },
-      ],
-      onChange: () => loadNotifications(),
-    });
-  }, [loadNotifications, userId]);
-
-  const markAllRead = async () => {
-    const unreadIds = notifications
-      .filter((notification) => !notification.isRead)
-      .map((notification) => notification.id);
-
-    if (!unreadIds.length) return;
-
-    setNotifications((current) => current.map((notification) => ({
-      ...notification,
-      isRead: true,
-      readAt: notification.readAt || new Date().toISOString(),
-    })));
-
-    try {
-      await backendApi.notifications.markAllRead();
-    } catch {
-      setNotifications((current) => current.map((notification) => (
-        unreadIds.includes(notification.id)
-          ? { ...notification, isRead: false, readAt: null }
-          : notification
-      )));
-    }
-  };
-
-  const markRead = async (notification) => {
-    if (notification.isRead) return;
-
-    setNotifications((current) => current.map((item) => (
-      item.id === notification.id
-        ? { ...item, isRead: true, readAt: new Date().toISOString() }
-        : item
-    )));
-
-    try {
-      await backendApi.notifications.markRead({ id: notification.id });
-    } catch {
-      setNotifications((current) => current.map((item) => (
-        item.id === notification.id
-          ? { ...item, isRead: false, readAt: null }
-          : item
-      )));
-    }
+    navigate(target);
   };
 
   return (
@@ -195,7 +126,7 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500', userId })
               <button
                 key={notification.id}
                 className={`block w-full border-b border-slate-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60 ${notification.isRead ? '' : 'bg-cyan-50/60 dark:bg-cyan-950/20'}`}
-                onClick={() => markRead(notification)}
+                onClick={() => openNotification(notification)}
               >
                 <div className="mb-1 flex items-start justify-between gap-3">
                   <div className="text-sm font-black leading-snug text-slate-950 dark:text-white">{notification.title}</div>

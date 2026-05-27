@@ -18,14 +18,27 @@ import {
 import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
+import { useNotifications } from '../hooks/useNotifications';
 import { backendApi } from '../services/api';
+import { countUnreadNotificationsByTab, getUnreadNotificationsForTab } from '../utils/notificationRouting';
 
 const EMPTY_LIST = Object.freeze([]);
 const STATUS_OPTIONS = ['pending_review', 'approved', 'hidden', 'rejected'];
+const ADMIN_TABS = ['overview', 'talent', 'agencies'];
+const ADMIN_NOTIFICATION_TAB_FALLBACKS = {
+  agency_submitted: 'agencies',
+  talent_profile_submitted: 'talent',
+};
 
-const asList = (value) => (Array.isArray(value) ? value : []);
+const asList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  return [];
+};
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
-const toTextList = (value) => asList(value).join(', ');
 const statusLabel = (status) => String(status || 'draft').replace(/_/g, ' ');
 
 const statusStyles = {
@@ -36,6 +49,13 @@ const statusStyles = {
   rejected: 'border-red-200 bg-red-50 text-red-700',
 };
 
+const STATUS_ACTIONS = [
+  { icon: CheckCircle, label: 'Approve', status: 'approved', variant: 'primary' },
+  { icon: Clock3, label: 'Pending', status: 'pending_review', variant: 'neutral' },
+  { icon: EyeOff, label: 'Hide', status: 'hidden', variant: 'neutral' },
+  { icon: XCircle, label: 'Reject', status: 'rejected', variant: 'danger' },
+];
+
 function StatusBadge({ status }) {
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold capitalize ${statusStyles[status] || statusStyles.draft}`}>
@@ -44,7 +64,79 @@ function StatusBadge({ status }) {
   );
 }
 
+function StatusSummary({ records }) {
+  const counts = STATUS_OPTIONS.map((status) => ({
+    status,
+    count: records.filter((record) => record.status === status).length,
+  }));
+
+  return (
+    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {counts.map((item) => (
+        <div key={item.status} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{statusLabel(item.status)}</div>
+          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">{item.count}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatusActions({ busyKey, currentStatus, onUpdate, record, rejected = true }) {
+  const availableActions = STATUS_ACTIONS.filter((action) => (
+    action.status !== currentStatus && (rejected || action.status !== 'rejected')
+  ));
+  const recordBusy = Boolean(busyKey) && availableActions.some((action) => busyKey === `${record.id}:${action.status}`);
+
+  return (
+    <div className={`grid gap-2 ${rejected ? 'sm:grid-cols-3 xl:grid-cols-4' : 'sm:grid-cols-3'}`}>
+      {availableActions.map((action) => {
+        const Icon = action.icon;
+        const actionBusy = busyKey === `${record.id}:${action.status}`;
+        const className = action.variant === 'primary'
+          ? 'bg-slate-950 text-white hover:bg-emerald-600 disabled:opacity-70'
+          : action.variant === 'danger'
+            ? 'border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20'
+            : 'border border-slate-200 text-slate-700 hover:border-slate-400 dark:border-slate-800 dark:text-slate-300';
+
+        return (
+          <button
+            key={action.status}
+            onClick={() => onUpdate(record, action.status)}
+            disabled={recordBusy}
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors disabled:cursor-default ${className}`}
+          >
+            {actionBusy ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} />}
+            {action.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, toggleDarkMode }) {
+  const notificationState = useNotifications(user?.id);
+  const { markRead, notifications } = notificationState;
+  const tabUnreadCounts = countUnreadNotificationsByTab(
+    notifications,
+    ADMIN_TABS,
+    ADMIN_NOTIFICATION_TAB_FALLBACKS
+  );
+
+  useEffect(() => {
+    const activeTabNotifications = getUnreadNotificationsForTab(
+      notifications,
+      activeTab,
+      ADMIN_TABS,
+      ADMIN_NOTIFICATION_TAB_FALLBACKS
+    );
+
+    activeTabNotifications.forEach((notification) => {
+      markRead(notification);
+    });
+  }, [activeTab, markRead, notifications]);
+
   return (
     <header className="sticky top-0 z-50 bg-slate-950 text-white shadow-md">
       <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -59,7 +151,7 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
         </div>
 
         <div className="flex items-center gap-4">
-          <NotificationBell unreadClassName="bg-cyan-500" userId={user.id} />
+          <NotificationBell notificationState={notificationState} unreadClassName="bg-cyan-500" userId={user.id} />
           <button onClick={toggleDarkMode} className="text-slate-400 transition-colors hover:text-white" title="Toggle Dark Mode">
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -72,16 +164,18 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
       <div className="border-t border-slate-800 bg-white dark:bg-slate-900">
         <div className="mx-auto flex max-w-[1600px] gap-8 overflow-x-auto px-4 pt-4 sm:px-6 lg:px-8">
           {[
+            { icon: ShieldCheck, id: 'overview', label: 'Overview' },
             { icon: Users, id: 'talent', label: 'Talent Review' },
             { icon: Building, id: 'agencies', label: 'Agencies' },
           ].map((tab) => {
             const Icon = tab.icon;
+            const unreadCount = tabUnreadCounts[tab.id] || 0;
 
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-bold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-bold transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
                     : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
@@ -89,6 +183,11 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
               >
                 <Icon size={16} />
                 {tab.label}
+                {unreadCount > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-cyan-600 px-1.5 text-[11px] font-black leading-none text-white shadow-sm shadow-cyan-500/20">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -108,6 +207,163 @@ function EmptyPanel({ icon, title, description }) {
       </div>
       <h3 className="mb-2 text-lg font-bold text-slate-950 dark:text-white">{title}</h3>
       <p className="mx-auto max-w-md text-sm font-medium leading-relaxed text-slate-500 dark:text-slate-400">{description}</p>
+    </div>
+  );
+}
+
+function AdminOverview({ setActiveTab }) {
+  const { data: talentData, error: talentError, isLoading: isTalentLoading } = useBackendResource(
+    backendApi.admin.listTalent,
+    EMPTY_LIST,
+    {
+      realtime: [
+        { table: 'professional_profiles' },
+      ],
+      refreshInterval: 10000,
+    }
+  );
+  const { data: agencyData, error: agencyError, isLoading: isAgencyLoading } = useBackendResource(
+    backendApi.admin.listAgencies,
+    EMPTY_LIST,
+    {
+      realtime: [
+        { table: 'agencies' },
+      ],
+      refreshInterval: 30000,
+    }
+  );
+  const talent = asList(talentData);
+  const agencies = asList(agencyData);
+  const isLoading = isTalentLoading || isAgencyLoading;
+  const pendingTalent = talent.filter((profile) => profile.status === 'pending_review').length;
+  const pendingAgencies = agencies.filter((agency) => agency.status === 'pending_review').length;
+  const approvedTalent = talent.filter((profile) => profile.status === 'approved').length;
+  const approvedAgencies = agencies.filter((agency) => agency.status === 'approved').length;
+  const hiddenTotal = [...talent, ...agencies].filter((record) => record.status === 'hidden').length;
+  const rejectedTotal = [...talent, ...agencies].filter((record) => record.status === 'rejected').length;
+  const latestTalent = talent.slice(0, 3);
+  const latestAgencies = agencies.slice(0, 3);
+
+  return (
+    <div className="portal-fade-in">
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Admin Overview</h1>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Review marketplace readiness, publishable supply, and records that need attention.</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          {isLoading ? 'Refreshing admin data' : `${talent.length + agencies.length} records tracked`}
+        </div>
+      </div>
+
+      {(talentError || agencyError) && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {talentError?.message || agencyError?.message}
+        </div>
+      )}
+
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          { icon: Clock3, label: 'Needs Review', value: pendingTalent + pendingAgencies, text: `${pendingTalent} talent / ${pendingAgencies} agencies` },
+          { icon: Users, label: 'Approved Talent', value: approvedTalent, text: 'Visible in the client directory' },
+          { icon: Building, label: 'Approved Agencies', value: approvedAgencies, text: 'Visible in managed pods' },
+          { icon: EyeOff, label: 'Hidden / Rejected', value: hiddenTotal + rejectedTotal, text: `${hiddenTotal} hidden / ${rejectedTotal} rejected` },
+        ].map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <FadeIn key={item.label}>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white dark:bg-cyan-600">
+                  <Icon size={20} />
+                </div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{item.label}</div>
+                <div className="mt-2 text-4xl font-black tracking-tight text-slate-950 dark:text-white">{item.value}</div>
+                <div className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">{item.text}</div>
+              </div>
+            </FadeIn>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <FadeIn>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-black text-slate-950 dark:text-white">Review Queues</h2>
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Jump straight into the records that shape what clients can see.</p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <button onClick={() => setActiveTab('talent')} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition-colors hover:border-cyan-200 hover:bg-cyan-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-900/50 dark:hover:bg-cyan-950/20">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-cyan-600 shadow-sm dark:bg-slate-900">
+                    <Users size={18} />
+                  </div>
+                  <span className="text-2xl font-black text-slate-950 dark:text-white">{pendingTalent}</span>
+                </div>
+                <div className="font-black text-slate-950 dark:text-white">Talent Review</div>
+                <div className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Approve professional profiles before they appear in search.</div>
+              </button>
+              <button onClick={() => setActiveTab('agencies')} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition-colors hover:border-cyan-200 hover:bg-cyan-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-900/50 dark:hover:bg-cyan-950/20">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-cyan-600 shadow-sm dark:bg-slate-900">
+                    <Building size={18} />
+                  </div>
+                  <span className="text-2xl font-black text-slate-950 dark:text-white">{pendingAgencies}</span>
+                </div>
+                <div className="font-black text-slate-950 dark:text-white">Agency Records</div>
+                <div className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Create and publish managed firm profiles for clients.</div>
+              </button>
+            </div>
+          </div>
+        </FadeIn>
+
+        <FadeIn delay={100}>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-5 text-lg font-black text-slate-950 dark:text-white">Recent Records</h2>
+            <div className="space-y-4">
+              <div>
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Talent</div>
+                {latestTalent.length === 0 ? (
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:bg-slate-950 dark:text-slate-400">No talent profiles yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {latestTalent.map((profile) => (
+                      <div key={profile.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-950">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-slate-950 dark:text-white">{profile.name || profile.fullName || 'Unnamed profile'}</div>
+                          <div className="truncate text-xs font-semibold text-slate-500">{profile.title || profile.role || 'Role pending'}</div>
+                        </div>
+                        <StatusBadge status={profile.status} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Agencies</div>
+                {latestAgencies.length === 0 ? (
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:bg-slate-950 dark:text-slate-400">No agencies yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {latestAgencies.map((agency) => (
+                      <div key={agency.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-950">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-slate-950 dark:text-white">{agency.name}</div>
+                          <div className="truncate text-xs font-semibold text-slate-500">{agency.specialty || 'Specialty pending'}</div>
+                        </div>
+                        <StatusBadge status={agency.status} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </FadeIn>
+      </div>
     </div>
   );
 }
@@ -165,6 +421,8 @@ function TalentReview() {
         </div>
       </div>
 
+      {talent.length > 0 && <StatusSummary records={talent} />}
+
       {(error || actionError) && (
         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
           {actionError || error.message}
@@ -208,31 +466,19 @@ function TalentReview() {
               </div>
 
               <div className="mb-6 flex flex-wrap gap-2">
-                {asList(profile.tools || profile.skills).slice(0, 8).map((tool) => (
+                {[...new Set([...asList(profile.skills), ...asList(profile.tools)])].slice(0, 8).map((tool) => (
                   <span key={tool} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
                     {tool}
                   </span>
                 ))}
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-4">
-                <button onClick={() => updateTalentStatus(profile, 'approved')} disabled={busyId === `${profile.id}:approved`} className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-600 disabled:opacity-70">
-                  {busyId === `${profile.id}:approved` ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
-                  Approve
-                </button>
-                <button onClick={() => updateTalentStatus(profile, 'pending_review')} disabled={busyId === `${profile.id}:pending_review`} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-amber-300 hover:text-amber-700 dark:border-slate-800 dark:text-slate-300">
-                  <Clock3 size={15} />
-                  Pending
-                </button>
-                <button onClick={() => updateTalentStatus(profile, 'hidden')} disabled={busyId === `${profile.id}:hidden`} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-slate-400 dark:border-slate-800 dark:text-slate-300">
-                  <EyeOff size={15} />
-                  Hide
-                </button>
-                <button onClick={() => updateTalentStatus(profile, 'rejected')} disabled={busyId === `${profile.id}:rejected`} className="flex items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2.5 text-sm font-bold text-red-600 transition-colors hover:bg-red-50">
-                  <XCircle size={15} />
-                  Reject
-                </button>
-              </div>
+              <StatusActions
+                busyKey={busyId}
+                currentStatus={profile.status}
+                onUpdate={updateTalentStatus}
+                record={profile}
+              />
             </FadeIn>
           ))}
         </div>
@@ -333,9 +579,14 @@ function AgenciesAdmin() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Agencies</h1>
-        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Create managed firms and control which agency records are visible in the client portal.</p>
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Agencies</h1>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Create managed firms and control which agency records are visible in the client portal.</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          {isLoading ? 'Loading agencies' : `${agencies.length} agency records`}
+        </div>
       </div>
 
       {(error || actionError) && (
@@ -399,6 +650,8 @@ function AgenciesAdmin() {
         </button>
       </form>
 
+      {agencies.length > 0 && <StatusSummary records={agencies} />}
+
       {agencies.length === 0 ? (
         <EmptyPanel icon={Building} title={isLoading ? 'Loading agencies' : 'No agencies yet'} description="Agency records you create will appear here and can be published to the client portal." />
       ) : (
@@ -430,21 +683,12 @@ function AgenciesAdmin() {
                 ))}
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-3">
-                <button onClick={() => updateAgencyStatus(agency, 'approved')} disabled={busyAction === `${agency.id}:approved`} className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-600 disabled:opacity-70">
-                  <CheckCircle size={15} />
-                  Approve
-                </button>
-                <button onClick={() => updateAgencyStatus(agency, 'pending_review')} disabled={busyAction === `${agency.id}:pending_review`} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-amber-300 hover:text-amber-700 dark:border-slate-800 dark:text-slate-300">
-                  <Clock3 size={15} />
-                  Pending
-                </button>
-                <button onClick={() => updateAgencyStatus(agency, 'hidden')} disabled={busyAction === `${agency.id}:hidden`} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-slate-400 dark:border-slate-800 dark:text-slate-300">
-                  <EyeOff size={15} />
-                  Hide
-                </button>
-              </div>
-              <div className="mt-4 text-xs font-medium text-slate-400">Tools: {toTextList(agency.tools) || 'None yet'}</div>
+              <StatusActions
+                busyKey={busyAction}
+                currentStatus={agency.status}
+                onUpdate={updateAgencyStatus}
+                record={agency}
+              />
             </FadeIn>
           ))}
         </div>
@@ -455,7 +699,8 @@ function AgenciesAdmin() {
 
 export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'talent';
+  const requestedTab = searchParams.get('tab') || 'overview';
+  const activeTab = ['overview', 'talent', 'agencies'].includes(requestedTab) ? requestedTab : 'overview';
   const setActiveTab = (tab) => setSearchParams({ tab });
 
   return (
@@ -469,6 +714,7 @@ export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
         user={user}
       />
       <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
+        {activeTab === 'overview' && <AdminOverview setActiveTab={setActiveTab} />}
         {activeTab === 'talent' && <TalentReview />}
         {activeTab === 'agencies' && <AgenciesAdmin />}
       </main>

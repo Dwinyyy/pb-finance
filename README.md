@@ -41,6 +41,7 @@ Implemented endpoints:
 - `GET /api/talent/profiles`
 - `GET /api/talent/me`
 - `PATCH /api/talent/me`
+- `POST /api/talent/uploads`
 - `GET /api/talent/opportunities`
 - `PATCH /api/talent/opportunities`
 - `GET /api/talent/earnings`

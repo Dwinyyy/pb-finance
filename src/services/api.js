@@ -160,6 +160,7 @@ export const backendApi = {
     removeOpportunity: (payload) => request('/talent/opportunities', { method: 'DELETE', body: payload }),
     cancelInterview: (payload) => request('/talent/interviews', { method: 'PATCH', body: payload }),
     getEarnings: () => request('/talent/earnings'),
+    uploadCredential: (payload) => request('/talent/uploads', { method: 'POST', body: payload }),
   },
   client: {
     listAgencies: (params) => request(`/agencies${toQueryString(params)}`),

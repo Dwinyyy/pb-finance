@@ -15,10 +15,12 @@ import {
 import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
+import { useNotifications } from '../hooks/useNotifications';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi, isBackendConfigured } from '../services/api';
 import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS, SKILLS_OPTIONS } from '../data/constants';
+import { countUnreadNotificationsByTab, getUnreadNotificationsForTab } from '../utils/notificationRouting';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_BILLING = Object.freeze({
@@ -28,6 +30,13 @@ const EMPTY_BILLING = Object.freeze({
 });
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 const TALENT_SKILL_FILTERS = ['All', ...SKILLS_OPTIONS];
+const CLIENT_TABS = ['discover', 'agencies', 'shortlist', 'interviews', 'billing'];
+const CLIENT_NOTIFICATION_TAB_FALLBACKS = {
+  interview_accepted: 'interviews',
+  interview_cancelled: 'interviews',
+  interview_declined: 'interviews',
+  interview_requested: 'interviews',
+};
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
@@ -350,11 +359,32 @@ function InterviewDateTimePicker({ value, onChange }) {
 // ==========================================
 export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const appView = searchParams.get('tab') || 'discover';
+  const requestedTab = searchParams.get('tab') || 'discover';
+  const appView = ['discover', 'agencies', 'shortlist', 'interviews', 'billing'].includes(requestedTab) ? requestedTab : 'discover';
   const setAppView = (tab) => setSearchParams({ tab });
   const [matchmakerVisible, setMatchmakerVisible] = useState(true);
   const onboardingStorageKey = getClientOnboardingStorageKey(user);
   const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
+  const notificationState = useNotifications(user?.id);
+  const { markRead, notifications } = notificationState;
+  const tabUnreadCounts = countUnreadNotificationsByTab(
+    notifications,
+    CLIENT_TABS,
+    CLIENT_NOTIFICATION_TAB_FALLBACKS
+  );
+
+  useEffect(() => {
+    const activeTabNotifications = getUnreadNotificationsForTab(
+      notifications,
+      appView,
+      CLIENT_TABS,
+      CLIENT_NOTIFICATION_TAB_FALLBACKS
+    );
+
+    activeTabNotifications.forEach((notification) => {
+      markRead(notification);
+    });
+  }, [appView, markRead, notifications]);
 
   const dismissWorkflowOnboarding = () => {
     try {
@@ -411,7 +441,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
               <button onClick={toggleDarkMode} className="text-slate-400 hover:text-white transition-colors" title="Toggle Dark Mode">
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
-              <NotificationBell unreadClassName="bg-primary-500" userId={user.id} />
+              <NotificationBell notificationState={notificationState} unreadClassName="bg-primary-500" userId={user.id} />
 
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">
@@ -439,15 +469,24 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
                 { id: 'shortlist', label: 'My Shortlist' },
                 { id: 'interviews', label: 'Interviews' },
                 { id: 'billing', label: 'Billing & Contracts' },
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setAppView(tab.id)}
-                  className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${appView === tab.id ? 'border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200 hover:border-slate-300'}`}
-                >
-                  {tab.label} {tab.count && <span className="ml-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-0.5 px-2 rounded-full text-xs">{tab.count}</span>}
-                </button>
-              ))}
+              ].map(tab => {
+                const unreadCount = tabUnreadCounts[tab.id] || 0;
+
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setAppView(tab.id)}
+                    className={`relative pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${appView === tab.id ? 'border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200 hover:border-slate-300'}`}
+                  >
+                    {tab.label}
+                    {unreadCount > 0 && (
+                      <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[11px] font-black leading-none text-white shadow-sm shadow-primary-500/20">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

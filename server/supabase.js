@@ -111,6 +111,35 @@ export const supabaseRestRequest = async (path, {
   return parseResponse(response);
 };
 
+export const supabaseStorageRequest = async (path, {
+  body,
+  contentType,
+  headers = {},
+  method = 'GET',
+} = {}) => {
+  const { baseUrl, key, serviceRoleKey } = getSupabaseConfig();
+
+  if (!serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for file uploads.');
+  }
+
+  const isBinaryBody = body instanceof Uint8Array || Buffer.isBuffer(body);
+  const response = await fetch(`${baseUrl}/storage/v1${path}`, {
+    method,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/json',
+      ...(body && !isBinaryBody ? { 'Content-Type': 'application/json' } : {}),
+      ...(contentType ? { 'Content-Type': contentType } : {}),
+      ...headers,
+    },
+    body: body && isBinaryBody ? body : body ? JSON.stringify(body) : undefined,
+  });
+
+  return parseResponse(response);
+};
+
 export const signUpWithPassword = ({ email, password, fullName, company, redirectTo, role }) => {
   const redirectQuery = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '';
 

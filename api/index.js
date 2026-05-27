@@ -10,6 +10,7 @@ import {
   signOut,
   signUpWithPassword,
   supabaseRestRequest,
+  supabaseStorageRequest,
 } from '../server/supabase.js';
 
 const hasServiceRoleKey = () => Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -21,6 +22,15 @@ const getDataOptions = (req) => ({
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+const CREDENTIAL_UPLOAD_BUCKET = 'professional-documents';
+const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
+const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
+  'application/msword',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/jpeg',
+  'image/png',
+]);
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
 const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
@@ -39,6 +49,66 @@ const cleanList = (value, maxItems = 20) => {
     .map((item) => cleanString(item, 80))
     .filter(Boolean))]
     .slice(0, maxItems);
+};
+const cleanRecord = (value) => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {});
+const cleanUrl = (value) => {
+  const url = cleanString(value, 500);
+
+  if (!url) return '';
+
+  try {
+    const parsed = new URL(url);
+
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+  } catch {
+    return '';
+  }
+};
+const cleanExternalLinks = (links) => asList(links)
+  .map((link) => ({
+    id: cleanString(link.id, 40),
+    label: cleanString(link.label, 80),
+    url: cleanUrl(link.url),
+  }))
+  .filter((link) => link.label && link.url)
+  .slice(0, 8);
+const cleanCredentialFileRecord = (file) => {
+  const record = cleanRecord(file);
+  const fileName = cleanString(record.fileName || record.name, 220);
+  const uploadedAt = cleanString(record.uploadedAt, 80);
+
+  if (!fileName || !uploadedAt) return null;
+
+  return {
+    contentType: cleanString(record.contentType, 120),
+    fileName,
+    fileSize: toNumber(record.fileSize),
+    id: cleanString(record.id, 80),
+    key: cleanString(record.key, 180),
+    kind: cleanString(record.kind, 80),
+    label: cleanString(record.label, 180),
+    path: cleanString(record.path, 700),
+    status: cleanString(record.status, 60) || 'pending_review',
+    storageKey: cleanString(record.storageKey, 120),
+    uploadedAt,
+  };
+};
+const cleanSupportingDocuments = (documents) => asList(documents)
+  .map((document) => cleanCredentialFileRecord(document))
+  .filter(Boolean)
+  .slice(0, 20);
+const cleanWorkPreferences = (value, fallback = {}) => {
+  const preferences = cleanRecord(value);
+  const fallbackPreferences = cleanRecord(fallback);
+  const resume = cleanCredentialFileRecord(preferences.resume) || cleanCredentialFileRecord(fallbackPreferences.resume);
+
+  return {
+    ...fallbackPreferences,
+    ...preferences,
+    externalLinks: cleanExternalLinks(preferences.externalLinks ?? fallbackPreferences.externalLinks),
+    resume,
+    supportingDocuments: cleanSupportingDocuments(preferences.supportingDocuments ?? fallbackPreferences.supportingDocuments),
+  };
 };
 const cleanProfessionalTitles = (value, fallback = []) => {
   const source = value === undefined ? fallback : value;
@@ -200,21 +270,25 @@ const hasPendingProfile = (profile) => (
   profile?.pending_profile && Object.keys(profile.pending_profile).length > 0
 );
 
-const toProfilePatch = (profile) => ({
-  availability: profile.availability,
-  bio: profile.bio,
-  certifications: cleanList(profile.certifications),
-  country: profile.country,
-  hourly_rate: toNumber(profile.hourly_rate),
-  industries: cleanList(profile.industries),
-  location: profile.location,
-  skills: cleanList(profile.skills),
-  titles: cleanProfessionalTitles(profile.titles ?? profile.title),
-  tools: cleanList(profile.tools),
-  work_preferences: typeof profile.work_preferences === 'object' && profile.work_preferences !== null
-    ? profile.work_preferences
-    : {},
-  years_experience: toNumber(profile.years_experience),
+const hasOwn = (value, key) => Object.hasOwn(cleanRecord(value), key);
+const valueOrFallback = (value, fallback, key) => (hasOwn(value, key) ? value[key] : fallback?.[key]);
+
+const toProfilePatch = (profile, fallback = {}) => ({
+  availability: valueOrFallback(profile, fallback, 'availability'),
+  bio: valueOrFallback(profile, fallback, 'bio'),
+  certifications: cleanList(valueOrFallback(profile, fallback, 'certifications')),
+  country: valueOrFallback(profile, fallback, 'country'),
+  hourly_rate: toNumber(valueOrFallback(profile, fallback, 'hourly_rate')),
+  industries: cleanList(valueOrFallback(profile, fallback, 'industries')),
+  location: valueOrFallback(profile, fallback, 'location'),
+  skills: cleanList(valueOrFallback(profile, fallback, 'skills')),
+  titles: cleanProfessionalTitles(valueOrFallback(profile, fallback, 'titles') ?? profile?.title),
+  tools: cleanList(valueOrFallback(profile, fallback, 'tools')),
+  work_preferences: cleanWorkPreferences(
+    valueOrFallback(profile, fallback, 'work_preferences'),
+    fallback.work_preferences
+  ),
+  years_experience: toNumber(valueOrFallback(profile, fallback, 'years_experience')),
 });
 
 const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
@@ -229,6 +303,7 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
   const hourlyRate = toNumber(viewProfile.hourly_rate);
   const years = toNumber(viewProfile.years_experience);
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
+  const workPreferences = cleanWorkPreferences(viewProfile.work_preferences);
 
   return {
     available: viewProfile.availability || 'Immediate Start',
@@ -254,6 +329,10 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
     title,
     titles,
     tools: asList(viewProfile.tools),
+    externalLinks: asList(workPreferences.externalLinks),
+    resume: workPreferences.resume || null,
+    supportingDocuments: asList(workPreferences.supportingDocuments),
+    workPreferences,
     yearsExperience: years,
   };
 };
@@ -480,6 +559,115 @@ const buildAgencyPayload = (body, fallback = {}) => {
   };
 };
 
+let credentialBucketReady = false;
+
+const encodeStoragePath = (path) => path
+  .split('/')
+  .map((part) => encodeURIComponent(part))
+  .join('/');
+
+const safeFileName = (value) => {
+  const name = cleanString(value, 220)
+    .replace(/[^a-z0-9._ -]/gi, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^\.+/, '')
+    .slice(0, 180);
+
+  return name || 'credential-upload';
+};
+
+const parseCredentialUpload = (body) => {
+  const fileData = String(body.fileData || body.dataUrl || '');
+  const dataUrlMatch = fileData.match(/^data:([^;]+);base64,(.+)$/);
+
+  if (!dataUrlMatch) {
+    throw new Error('A valid file upload is required.');
+  }
+
+  const declaredContentType = cleanString(body.contentType || dataUrlMatch[1], 120);
+  const contentType = ALLOWED_CREDENTIAL_MIME_TYPES.has(declaredContentType)
+    ? declaredContentType
+    : '';
+
+  if (!contentType) {
+    throw new Error('Upload must be a PDF, Word document, JPG, or PNG.');
+  }
+
+  const bytes = Buffer.from(dataUrlMatch[2], 'base64');
+
+  if (!bytes.length || bytes.length > MAX_CREDENTIAL_UPLOAD_BYTES) {
+    throw new Error('Upload must be 3 MB or smaller.');
+  }
+
+  return {
+    bytes,
+    contentType,
+    fileName: safeFileName(body.fileName || body.name),
+  };
+};
+
+const ensureCredentialBucket = async () => {
+  if (credentialBucketReady) return;
+
+  try {
+    await supabaseStorageRequest('/bucket', {
+      body: {
+        allowed_mime_types: [...ALLOWED_CREDENTIAL_MIME_TYPES],
+        file_size_limit: MAX_CREDENTIAL_UPLOAD_BYTES,
+        id: CREDENTIAL_UPLOAD_BUCKET,
+        name: CREDENTIAL_UPLOAD_BUCKET,
+        public: false,
+      },
+      method: 'POST',
+    });
+  } catch (error) {
+    if (!String(error.message || '').toLowerCase().includes('already exists')) {
+      throw error;
+    }
+  }
+
+  credentialBucketReady = true;
+};
+
+const uploadCredentialFile = async ({ body, userId }) => {
+  const { bytes, contentType, fileName } = parseCredentialUpload(body);
+  const documentType = cleanString(body.documentType || body.kind || 'credential', 80);
+  const rawDocumentKey = cleanString(body.documentKey || body.key || documentType, 140);
+  const documentKey = rawDocumentKey
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'credential';
+  const label = cleanString(body.documentLabel || body.label || fileName, 180);
+  const uploadedAt = new Date().toISOString();
+  const path = `${userId}/${documentKey}/${Date.now()}-${fileName}`;
+
+  await ensureCredentialBucket();
+  await supabaseStorageRequest(
+    `/object/${CREDENTIAL_UPLOAD_BUCKET}/${encodeStoragePath(path)}`,
+    {
+      body: bytes,
+      contentType,
+      headers: { 'x-upsert': 'true' },
+      method: 'POST',
+    }
+  );
+
+  return {
+    contentType,
+    fileName,
+    fileSize: bytes.length,
+    id: `${documentKey}:${uploadedAt}`,
+    key: rawDocumentKey || documentKey,
+    kind: documentType,
+    label,
+    path,
+    status: 'pending_review',
+    storageKey: documentKey,
+    uploadedAt,
+  };
+};
+
 const handlers = {
   'GET /health': async (req, res) => {
     const checks = {
@@ -701,7 +889,7 @@ const handlers = {
       }, { prefer: 'return=minimal' });
 
       payload = {
-        ...toProfilePatch(pendingProfile),
+        ...toProfilePatch(pendingProfile, existingProfile),
         pending_profile: {},
         published_at: new Date().toISOString(),
         review_status: null,
@@ -743,7 +931,7 @@ const handlers = {
 
     if (['approved', 'rejected'].includes(status)) {
       notifyUser({
-        actionUrl: '/',
+        actionUrl: '/?tab=profile',
         body: status === 'approved'
           ? 'Your professional profile has been approved and is now visible in the client talent directory.'
           : 'Your professional profile was not approved yet. Update your profile and submit it again when ready.',
@@ -1082,7 +1270,7 @@ const handlers = {
     ).catch(() => {});
 
     notifyUser({
-      actionUrl: '/',
+      actionUrl: '/?tab=opportunities',
       body: `${companyName} requested an interview for ${title}.`,
       emailSubject: `New interview request from ${companyName}`,
       metadata: {
@@ -1138,7 +1326,7 @@ const handlers = {
     const professional = owners.get(interview.professional_id) || {};
 
     notifyUser({
-      actionUrl: '/',
+      actionUrl: '/?tab=opportunities',
       body: `${user.company || user.name || 'A client'} cancelled an interview. Reason: ${reason}`,
       emailSubject: 'Interview cancelled',
       metadata: {
@@ -1270,6 +1458,20 @@ const handlers = {
     });
   },
 
+  'POST /talent/uploads': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const upload = await uploadCredentialFile({ body, userId: user.id });
+
+      sendJson(res, 201, upload);
+    } catch (error) {
+      sendError(res, 400, error.message || 'Unable to upload this file.');
+    }
+  },
+
   'GET /talent/me': async (req, res) => {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
@@ -1297,30 +1499,36 @@ const handlers = {
     const currentProfile = await getProfessionalProfile(req, user.id);
     const fullName = cleanString(body.fullName || body.name || user.name, 160);
     const existingPendingProfile = currentProfile?.pending_profile || {};
+    const currentProfileView = {
+      ...(currentProfile || {}),
+      ...existingPendingProfile,
+    };
     const fallbackTitles = cleanProfessionalTitles(
       existingPendingProfile.titles ?? existingPendingProfile.title,
       cleanProfessionalTitles(currentProfile?.titles, cleanProfessionalTitles(user.title))
     );
     const titles = cleanProfessionalTitles(body.titles ?? body.title ?? body.role, fallbackTitles);
     const primaryTitle = titles[0] || '';
-    const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate);
-    const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience);
+    const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate ?? currentProfileView.hourly_rate);
+    const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience ?? currentProfileView.years_experience);
+    const workPreferences = cleanWorkPreferences(
+      body.workPreferences ?? body.work_preferences ?? currentProfileView.work_preferences,
+      currentProfile?.work_preferences
+    );
 
     const profilePayload = {
-      availability: normalizeAvailability(body.availability || body.available),
-      bio: cleanString(body.bio, 2000),
-      certifications: cleanList(body.certifications),
-      country: cleanString(body.country || 'Philippines', 100),
+      availability: normalizeAvailability(body.availability || body.available || currentProfileView.availability),
+      bio: cleanString(body.bio ?? currentProfileView.bio, 2000),
+      certifications: cleanList(body.certifications ?? currentProfileView.certifications),
+      country: cleanString(body.country || currentProfileView.country || 'Philippines', 100),
       full_name: fullName,
       hourly_rate: hourlyRate,
-      industries: cleanList(body.industries),
-      location: cleanString(body.location, 160),
-      skills: cleanList(body.skills),
+      industries: cleanList(body.industries ?? currentProfileView.industries),
+      location: cleanString(body.location ?? currentProfileView.location, 160),
+      skills: cleanList(body.skills ?? currentProfileView.skills),
       titles,
-      tools: cleanList(body.tools),
-      work_preferences: typeof body.workPreferences === 'object' && body.workPreferences !== null
-        ? body.workPreferences
-        : {},
+      tools: cleanList(body.tools ?? currentProfileView.tools),
+      work_preferences: workPreferences,
       years_experience: yearsExperience,
     };
     let rows;
@@ -1362,7 +1570,7 @@ const handlers = {
 
     if (shouldNotifyAdmins) {
       notifyAdmins({
-        actionUrl: '/',
+        actionUrl: '/?tab=talent',
         body: `${fullName} submitted an updated professional profile for review.`,
         emailSubject: 'New PB Finance talent profile for review',
         metadata: {
@@ -1499,7 +1707,7 @@ const handlers = {
     const client = clientProfiles.get(opportunity.client_id) || {};
 
     notifyUser({
-      actionUrl: '/',
+      actionUrl: '/?tab=interviews',
       body: `${user.name || 'A professional'} ${status} your interview request for ${opportunity.title}.`,
       emailSubject: `Interview request ${formatStatusLabel(status)}`,
       metadata: {
@@ -1593,7 +1801,7 @@ const handlers = {
     const client = clientProfiles.get(interview.client_id) || {};
 
     notifyUser({
-      actionUrl: '/',
+      actionUrl: '/?tab=interviews',
       body: `${user.name || 'A professional'} cancelled an interview. Reason: ${reason}`,
       emailSubject: 'Interview cancelled',
       metadata: {
