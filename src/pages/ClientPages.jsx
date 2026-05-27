@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Search, MapPin, Building, Star, Filter, 
   CheckCircle, ArrowRight, User, Briefcase, 
@@ -22,6 +23,7 @@ const EMPTY_BILLING = Object.freeze({
   invoices: EMPTY_LIST,
   paymentMethods: EMPTY_LIST,
 });
+const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
@@ -79,18 +81,21 @@ function EmptyState({ icon, title, description }) {
 function PortalModal({ children, onClose, size = 'default', title }) {
   const widthClass = size === 'wide' ? 'max-w-2xl' : 'max-w-lg';
 
-  return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className={`w-full ${widthClass} rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900`}>
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
-            <X size={18} />
-          </button>
+  return createPortal(
+    <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/65 px-4 py-6 backdrop-blur-sm sm:py-10">
+      <div className="flex min-h-full items-start justify-center">
+        <div className={`w-full ${widthClass} rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900`}>
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
+            <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
+          {children}
         </div>
-        {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -763,10 +768,19 @@ function AppShortlistView() {
   const [actionMessage, setActionMessage] = useState('');
   const [scheduleTarget, setScheduleTarget] = useState(null);
   const [scheduleForm, setScheduleForm] = useState(getScheduleDefault);
+  const [scheduleFormError, setScheduleFormError] = useState('');
 
   useEffect(() => {
     setLocalShortlist(asList(shortlisted));
   }, [shortlisted]);
+
+  useEffect(() => {
+    if (!actionMessage) return undefined;
+
+    const timeoutId = window.setTimeout(() => setActionMessage(''), SUCCESS_MESSAGE_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [actionMessage]);
 
   const handleRemove = async (profile) => {
     setActionError('');
@@ -787,12 +801,14 @@ function AppShortlistView() {
   const openScheduleModal = (profile) => {
     setActionError('');
     setActionMessage('');
+    setScheduleFormError('');
     setScheduleTarget(profile);
     setScheduleForm(getScheduleDefault());
   };
 
   const closeScheduleModal = () => {
     if (busyAction) return;
+    setScheduleFormError('');
     setScheduleTarget(null);
   };
 
@@ -804,12 +820,13 @@ function AppShortlistView() {
     const scheduledFor = combineScheduleDateTime(scheduleForm);
 
     if (!scheduledFor) {
-      setActionError('Use a valid date and time, like 2026-05-24 and 09:00.');
+      setScheduleFormError('Use a valid date and time, like 2026-05-24 and 09:00.');
       return;
     }
 
     setActionError('');
     setActionMessage('');
+    setScheduleFormError('');
     setBusyAction(`schedule:${scheduleTarget.id}`);
 
     try {
@@ -823,7 +840,7 @@ function AppShortlistView() {
       setScheduleTarget(null);
       setActionMessage(`Interview request sent to ${scheduleTarget.name || scheduleTarget.fullName || 'the candidate'}.`);
     } catch (scheduleError) {
-      setActionError(scheduleError.message || 'Unable to request this interview.');
+      setScheduleFormError(scheduleError.message || 'Unable to request this interview.');
     } finally {
       setBusyAction('');
     }
@@ -847,7 +864,7 @@ function AppShortlistView() {
         </div>
       )}
       {actionMessage && (
-        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+        <div className="success-message mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
           {actionMessage}
         </div>
       )}
@@ -933,9 +950,14 @@ function AppShortlistView() {
           <form onSubmit={submitSchedule} className="space-y-5">
             <div>
               <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-300">Preferred date and time</div>
-              <InterviewDateTimePicker value={scheduleForm} onChange={setScheduleForm} />
+              <InterviewDateTimePicker value={scheduleForm} onChange={(nextSchedule) => { setScheduleForm(nextSchedule); setScheduleFormError(''); }} />
               <p className="mt-2 text-xs font-medium text-slate-500">Pick a date from the calendar, choose a time, or type both fields manually.</p>
             </div>
+            {scheduleFormError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                {scheduleFormError}
+              </div>
+            )}
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
               {scheduleTarget.name || scheduleTarget.fullName || 'Candidate'} will receive this as a request first. It becomes scheduled after they accept.
             </div>
@@ -967,11 +989,21 @@ function AppInterviewsView() {
   const [actionMenuId, setActionMenuId] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [cancelFormError, setCancelFormError] = useState('');
+
+  useEffect(() => {
+    if (!actionMessage) return undefined;
+
+    const timeoutId = window.setTimeout(() => setActionMessage(''), SUCCESS_MESSAGE_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [actionMessage]);
 
   const openCancelModal = (interview) => {
     setActionError('');
     setActionMessage('');
     setActionMenuId('');
+    setCancelFormError('');
     setCancelTarget(interview);
     setCancelReason('');
   };
@@ -984,12 +1016,13 @@ function AppInterviewsView() {
     const reason = cancelReason.trim();
 
     if (!reason) {
-      setActionError('Cancellation reason is required.');
+      setCancelFormError('Cancellation reason is required.');
       return;
     }
 
     setActionError('');
     setActionMessage('');
+    setCancelFormError('');
     setBusyAction(`cancel:${cancelTarget.id}`);
 
     try {
@@ -998,7 +1031,7 @@ function AppInterviewsView() {
       setCancelTarget(null);
       setActionMessage('Interview cancelled and the professional was notified.');
     } catch (cancelError) {
-      setActionError(cancelError.message || 'Unable to cancel this interview.');
+      setCancelFormError(cancelError.message || 'Unable to cancel this interview.');
     } finally {
       setBusyAction('');
     }
@@ -1044,7 +1077,7 @@ function AppInterviewsView() {
         </div>
       )}
       {actionMessage && (
-        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+        <div className="success-message mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
           {actionMessage}
         </div>
       )}
@@ -1132,7 +1165,7 @@ function AppInterviewsView() {
       )}
 
       {cancelTarget && (
-        <PortalModal title="Cancel Interview" onClose={() => setCancelTarget(null)}>
+        <PortalModal title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
           <form onSubmit={submitCancelInterview} className="space-y-5">
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
               This will notify {cancelTarget.name || cancelTarget.candidateName || 'the professional'} and keep the reason visible on the cancelled interview.
@@ -1141,13 +1174,18 @@ function AppInterviewsView() {
               Cancellation reason
               <textarea
                 value={cancelReason}
-                onChange={(event) => setCancelReason(event.target.value)}
+                onChange={(event) => { setCancelReason(event.target.value); setCancelFormError(''); }}
                 rows={4}
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-red-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
               />
             </label>
+            {cancelFormError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                {cancelFormError}
+              </div>
+            )}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => setCancelTarget(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+              <button type="button" onClick={() => { setCancelFormError(''); setCancelTarget(null); }} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
                 Keep Interview
               </button>
               <button type="submit" disabled={busyAction === `cancel:${cancelTarget.id}`} className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-70">

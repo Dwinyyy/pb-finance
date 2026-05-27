@@ -312,11 +312,11 @@ function HomeMarketingView({ navigateTo, openAuth }) {
             </p>
           </FadeIn>
 
-          <FadeIn delay={400} hover={true} className="w-full max-w-2xl flex flex-col sm:flex-row gap-4 justify-center mb-20">
-            <button onClick={() => openAuth('register')} className="bg-slate-950 dark:bg-primary-600 hover:bg-primary-600 dark:hover:bg-primary-500 text-white px-10 py-4 rounded-full font-semibold text-lg transition-all shadow-xl shadow-primary-900/10 flex items-center justify-center transform hover:-translate-y-1">
+          <FadeIn delay={400} className="w-full max-w-2xl flex flex-col sm:flex-row gap-4 justify-center mb-20">
+            <button onClick={() => openAuth('register')} className="bg-slate-950 dark:bg-primary-600 hover:bg-primary-600 dark:hover:bg-primary-500 text-white px-10 py-4 rounded-full font-semibold text-lg transition-all shadow-xl shadow-primary-900/10 flex items-center justify-center transform hover:-translate-y-1 hover:shadow-primary-900/20">
               Start Building Your Team
             </button>
-            <button onClick={() => navigateTo('talents')} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-primary-200 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-slate-800 dark:text-slate-200 px-10 py-4 rounded-full font-semibold text-lg transition-all shadow-sm flex items-center justify-center transform hover:-translate-y-1">
+            <button onClick={() => navigateTo('talents')} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-primary-200 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-slate-800 dark:text-slate-200 px-10 py-4 rounded-full font-semibold text-lg transition-all shadow-sm hover:shadow-md flex items-center justify-center transform hover:-translate-y-1">
               Browse Directory <ArrowRight size={20} className="ml-2 text-slate-400" />
             </button>
           </FadeIn>

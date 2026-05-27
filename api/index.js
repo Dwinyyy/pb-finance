@@ -23,6 +23,12 @@ const asList = (value) => (Array.isArray(value) ? value : []);
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
+const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
+const cleanProfileTitle = (value) => {
+  const title = cleanString(value, 160);
+
+  return title && !placeholderTitles.has(title) ? title : '';
+};
 
 const cleanList = (value, maxItems = 20) => {
   const list = Array.isArray(value)
@@ -207,10 +213,7 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
   const pending = usePending && profile.pending_profile ? profile.pending_profile : {};
   const viewProfile = { ...profile, ...pending };
   const displayName = pending.full_name || owner.full_name || owner.name || 'Unnamed profile';
-  const storedTitle = pending.title || owner.title || '';
-  const title = storedTitle && storedTitle !== 'Complete your profile'
-    ? storedTitle
-    : 'Finance Professional';
+  const title = cleanProfileTitle(pending.title || owner.title || '');
   const hourlyRate = toNumber(viewProfile.hourly_rate);
   const years = toNumber(viewProfile.years_experience);
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
@@ -910,10 +913,10 @@ const handlers = {
     const [profiles, opportunities, interviews] = await Promise.all([
       loadTalentProfiles(req, { ids: professionalIds }),
       professionalIds.length
-        ? readRows(req, `/opportunities?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&select=id,professional_id,status,title,received_at&order=received_at.desc&limit=100`)
+        ? readRows(req, `/opportunities?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&status=in.(invited,accepted,active)&select=id,professional_id,status,title,received_at&order=received_at.desc&limit=100`)
         : [],
       professionalIds.length
-        ? readRows(req, `/interviews?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&select=id,professional_id,status,created_at,scheduled_for&order=created_at.desc&limit=100`)
+        ? readRows(req, `/interviews?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&client_hidden_at=is.null&status=in.(requesting,requested,scheduled)&select=id,professional_id,status,created_at,scheduled_for&order=created_at.desc&limit=100`)
         : [],
     ]);
     const shortlistByProfessional = new Map(rows.map((row) => [row.professional_id, row]));
@@ -1281,8 +1284,9 @@ const handlers = {
     const body = await readJson(req);
     const currentProfile = await getProfessionalProfile(req, user.id);
     const fullName = cleanString(body.fullName || body.name || user.name, 160);
-    const fallbackTitle = user.title && user.title !== 'Complete your profile' ? user.title : 'Finance Professional';
-    const title = cleanString(body.title || body.role || fallbackTitle, 160);
+    const existingPendingProfile = currentProfile?.pending_profile || {};
+    const fallbackTitle = cleanProfileTitle(existingPendingProfile.title || user.title);
+    const title = cleanProfileTitle(body.title || body.role || fallbackTitle);
     const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate);
     const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience);
 
@@ -1386,6 +1390,7 @@ const handlers = {
     sendJson(res, 200, opportunityRows.map((opportunity) => {
       const client = clientProfiles.get(opportunity.client_id) || {};
       const interview = interviewsByOpportunity.get(opportunity.id) || {};
+      const effectiveStatus = interview.status === 'cancelled' ? 'cancelled' : opportunity.status;
 
       const scheduledParts = getMonthDay(interview.scheduled_for);
       const interviewSchedule = interview.scheduled_for
@@ -1409,7 +1414,7 @@ const handlers = {
         receivedAt: formatDate(opportunity.received_at),
         role: opportunity.title,
         schedule: interviewSchedule,
-        status: opportunity.status,
+        status: effectiveStatus,
         title: opportunity.title,
       };
     }));
@@ -1445,15 +1450,31 @@ const handlers = {
       return;
     }
 
+    const interviewRows = await readRows(
+      req,
+      `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`
+    );
+    const interview = asList(interviewRows)[0];
+
+    if (opportunity.status !== 'invited' || !['requesting', 'requested'].includes(interview?.status)) {
+      sendError(res, 409, 'This interview request is no longer available.');
+      return;
+    }
+
     const rows = await patchRows(
       req,
-      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}`,
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=eq.invited`,
       { status }
     );
 
+    if (!asList(rows)[0]) {
+      sendError(res, 409, 'This interview request is no longer available.');
+      return;
+    }
+
     await patchRows(
       req,
-      `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}`,
+      `/interviews?id=eq.${interview.id}&professional_id=eq.${user.id}&status=in.(requesting,requested)`,
       { status: status === 'accepted' ? 'scheduled' : 'cancelled' },
       { prefer: 'return=minimal' }
     ).catch(() => {});

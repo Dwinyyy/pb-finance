@@ -13,7 +13,7 @@ const getDisplayNameFromEmail = (email) => {
 };
 
 const createLocalSessionUser = (formData, role) => {
-  const email = String(formData.get('email') || '').trim();
+  const email = String(formData.get('pbWorkEmail') || formData.get('email') || '').trim();
   const fullName = String(formData.get('fullName') || '').trim();
   const company = String(formData.get('company') || '').trim();
   const name = fullName || getDisplayNameFromEmail(email);
@@ -107,8 +107,8 @@ export default function App() {
     if (isBackendConfigured()) {
       try {
         const credentials = {
-          email: String(formData.get('email') || '').trim(),
-          password: String(formData.get('password') || ''),
+          email: String(formData.get('pbWorkEmail') || formData.get('email') || '').trim(),
+          password: String(formData.get('pbAuthPasscode') || formData.get('password') || ''),
         };
         const payload = {
           ...credentials,
@@ -202,7 +202,7 @@ export default function App() {
                 </div>
               )}
 
-              <form onSubmit={(e) => handleAuthSubmit(e, authModal.view === 'register_pro' ? 'professional' : 'client', authModal.view)} className="space-y-4">
+              <form onSubmit={(e) => handleAuthSubmit(e, authModal.view === 'register_pro' ? 'professional' : 'client', authModal.view)} className="space-y-4" autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true">
                 {authModal.view !== 'login' && (
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Full Name</label>
@@ -217,11 +217,11 @@ export default function App() {
                 )}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Work Email</label>
-                  <input name="email" type="email" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="email@example.com" />
+                  <input name="pbWorkEmail" type="email" required autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="email@example.com" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Password</label>
-                  <input name="password" type="password" required className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="********" />
+                  <input name="pbAuthPasscode" type="password" required autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="********" />
                 </div>
                 
                 <button type="submit" className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-xl font-semibold transition-all mt-6 shadow-lg shadow-slate-900/10 text-sm">

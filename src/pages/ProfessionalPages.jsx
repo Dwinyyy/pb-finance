@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Search, MapPin, Building, Star, Filter, 
   CheckCircle, ArrowRight, User, Briefcase, 
@@ -23,11 +24,19 @@ const EMPTY_EARNINGS = Object.freeze({
   timesheets: EMPTY_LIST,
   totalEarnedYtd: 0,
 });
+const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
+const formatMoneyAmount = (value) => formatMoney(value).replace(/^\$/, '');
 const listToText = (value) => asList(value).join(', ');
 const textToList = (value) => String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
+const cleanProfileTitle = (value) => {
+  const title = String(value || '').trim();
+
+  return title && !placeholderTitles.has(title) ? title : '';
+};
 const availabilityToValue = (value) => {
   const label = String(value || '').toLowerCase();
   if (label.includes('2') || label.includes('soon')) return 'available_soon';
@@ -50,18 +59,21 @@ function EmptyState({ icon, title, description }) {
 }
 
 function PortalModal({ children, onClose, title }) {
-  return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
-            <X size={18} />
-          </button>
+  return createPortal(
+    <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/65 px-4 py-6 backdrop-blur-sm sm:py-10">
+      <div className="flex min-h-full items-start justify-center">
+        <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
+            <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
+          {children}
         </div>
-        {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -95,7 +107,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">
                   <div className="text-sm font-bold text-white leading-tight">{user.name || 'Profile pending'}</div>
-                  <div className="text-xs text-slate-400 font-medium">{user.title || 'Complete your profile'}</div>
+                  <div className="text-xs text-slate-400 font-medium">{cleanProfileTitle(user.title) || 'Complete your profile'}</div>
                 </div>
                 <div className="w-9 h-9 bg-gradient-to-tr from-cyan-500 to-primary-400 rounded-full flex items-center justify-center font-bold text-white shadow-md cursor-pointer border-2 border-slate-800">
                   {(user.name || '?').charAt(0)}
@@ -172,7 +184,7 @@ function AppTalentProfileView({ user }) {
     hourlyRate: displayProfile.rate || displayProfile.hourlyRate || '',
     location: displayProfile.location || '',
     skills: listToText(displayProfile.skills),
-    title: displayProfile.title || displayProfile.role || '',
+    title: cleanProfileTitle(displayProfile.title || displayProfile.role),
     tools: listToText(displayProfile.tools),
     yearsExperience: displayProfile.yearsExperience || '',
     ...overrides,
@@ -233,7 +245,7 @@ function AppTalentProfileView({ user }) {
             
             <div className="mt-12 mb-6">
               <h2 className="text-xl font-bold text-slate-950 dark:text-white leading-tight">{displayProfile.name || 'Profile pending'}</h2>
-              <p className="text-sm font-medium text-slate-500 mb-4">{displayProfile.title || displayProfile.role || 'Add your professional title'}</p>
+              <p className="text-sm font-medium text-slate-500 mb-4">{cleanProfileTitle(displayProfile.title || displayProfile.role) || 'Add your professional title'}</p>
               
               <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mb-2 font-medium">
                 <MapPin size={16} className="text-slate-400" /> {displayProfile.location || 'Add location'}
@@ -451,10 +463,19 @@ function AppTalentOpportunitiesView() {
   const [actionMessage, setActionMessage] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [cancelFormError, setCancelFormError] = useState('');
 
   useEffect(() => {
     setLocalOpportunities(asList(invites));
   }, [invites]);
+
+  useEffect(() => {
+    if (!actionMessage) return undefined;
+
+    const timeoutId = window.setTimeout(() => setActionMessage(''), SUCCESS_MESSAGE_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [actionMessage]);
 
   const handleOpportunityStatus = async (invite, status) => {
     setActionError('');
@@ -495,6 +516,7 @@ function AppTalentOpportunitiesView() {
   const openCancelModal = (invite) => {
     setActionError('');
     setActionMessage('');
+    setCancelFormError('');
     setCancelTarget(invite);
     setCancelReason('');
   };
@@ -507,12 +529,13 @@ function AppTalentOpportunitiesView() {
     const reason = cancelReason.trim();
 
     if (!reason) {
-      setActionError('Cancellation reason is required.');
+      setCancelFormError('Cancellation reason is required.');
       return;
     }
 
     setActionError('');
     setActionMessage('');
+    setCancelFormError('');
     setBusyAction(`cancel:${cancelTarget.id}`);
 
     try {
@@ -528,7 +551,7 @@ function AppTalentOpportunitiesView() {
       setCancelTarget(null);
       setActionMessage('Interview cancelled and the client was notified.');
     } catch (cancelError) {
-      setActionError(cancelError.message || 'Unable to cancel this interview.');
+      setCancelFormError(cancelError.message || 'Unable to cancel this interview.');
     } finally {
       setBusyAction('');
     }
@@ -552,7 +575,7 @@ function AppTalentOpportunitiesView() {
         </div>
       )}
       {actionMessage && (
-        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+        <div className="success-message mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
           {actionMessage}
         </div>
       )}
@@ -582,7 +605,7 @@ function AppTalentOpportunitiesView() {
               </p>
               <div className="flex gap-6 text-sm font-bold text-slate-700 dark:text-slate-300">
                 <div className="flex items-center gap-2"><Clock3 size={16} className="text-slate-400"/> {invite.duration || invite.schedule || 'Schedule pending'}</div>
-                <div className="flex items-center gap-2"><DollarSign size={16} className="text-slate-400"/> {formatMoney(invite.rate || invite.hourlyRate)}</div>
+                <div className="flex items-center gap-2"><DollarSign size={16} className="text-slate-400"/> {formatMoneyAmount(invite.rate || invite.hourlyRate)}</div>
               </div>
               {isCancelled && invite.cancellationReason && (
                 <p className="mt-5 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
@@ -596,7 +619,7 @@ function AppTalentOpportunitiesView() {
               <button
                 onClick={() => handleOpportunityStatus(invite, 'accepted')}
                 disabled={isAnswered || busyAction === `accepted:${invite.id}`}
-                className="w-full bg-slate-950 text-white hover:bg-cyan-600 py-3 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-70 disabled:cursor-default"
+                className="w-full bg-slate-950 text-white hover:bg-cyan-600 py-3 rounded-xl text-sm font-bold transition-colors shadow-md disabled:cursor-default disabled:border disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-800 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
               >
                 {busyAction === `accepted:${invite.id}` ? 'Accepting...' : invite.status === 'accepted' ? 'Accepted' : 'Accept Invite'}
               </button>
@@ -634,7 +657,7 @@ function AppTalentOpportunitiesView() {
       )}
 
       {cancelTarget && (
-        <PortalModal title="Cancel Interview" onClose={() => setCancelTarget(null)}>
+        <PortalModal title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
           <form onSubmit={submitCancelInterview} className="space-y-5">
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
               This will notify {cancelTarget.company || cancelTarget.clientName || 'the client'} and keep the reason visible on the cancelled request.
@@ -643,13 +666,18 @@ function AppTalentOpportunitiesView() {
               Cancellation reason
               <textarea
                 value={cancelReason}
-                onChange={(event) => setCancelReason(event.target.value)}
+                onChange={(event) => { setCancelReason(event.target.value); setCancelFormError(''); }}
                 rows={4}
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-red-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
               />
             </label>
+            {cancelFormError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                {cancelFormError}
+              </div>
+            )}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => setCancelTarget(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+              <button type="button" onClick={() => { setCancelFormError(''); setCancelTarget(null); }} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
                 Keep Interview
               </button>
               <button type="submit" disabled={busyAction === `cancel:${cancelTarget.id}`} className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-70">

@@ -58,6 +58,30 @@ html {
   }
 }
 
+@keyframes successMessageLifecycle {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  8% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
 @utility portal-fade-in {
   animation: portalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@utility success-message {
+  animation: successMessageLifecycle 2.5s ease-in-out forwards;
+  transform-origin: top center;
 }
