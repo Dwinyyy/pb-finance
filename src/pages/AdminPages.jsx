@@ -411,7 +411,7 @@ function AgenciesAdmin() {
                     <StatusBadge status={agency.status} />
                   </div>
                   <p className="text-sm font-bold text-cyan-700 dark:text-cyan-400">{agency.specialty || 'Specialty pending'}</p>
-                  <p className="mt-1 text-sm font-medium text-slate-500">{agency.location || 'Location pending'} · {agency.size || 'Team size pending'}</p>
+                  <p className="mt-1 text-sm font-medium text-slate-500">{agency.location || 'Location pending'} &middot; {agency.size || 'Team size pending'}</p>
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Pricing</div>

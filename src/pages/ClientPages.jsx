@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
+import { EmptyState } from '../components/EmptyState';
 import { motion as Motion } from 'framer-motion';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi, isBackendConfigured } from '../services/api';
@@ -64,19 +65,7 @@ const combineScheduleDateTime = ({ date, time }) => {
   return parsed.toISOString();
 };
 
-function EmptyState({ icon, title, description }) {
-  const emptyIcon = icon || FileText;
 
-  return (
-    <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-10 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center mx-auto mb-5 text-slate-500">
-        {React.createElement(emptyIcon, { size: 24 })}
-      </div>
-      <h3 className="text-lg font-bold text-slate-950 dark:text-white mb-2">{title}</h3>
-      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">{description}</p>
-    </div>
-  );
-}
 
 function PortalModal({ children, onClose, size = 'default', title }) {
   const widthClass = size === 'wide' ? 'max-w-2xl' : 'max-w-lg';
@@ -466,6 +455,9 @@ function AITalentMatchmaker() {
 // Sub-views for Client Portal
 function AppDiscoverView({ user }) {
   const [activeFilter, setActiveFilter] = useState('All');
+  const [selectedAvailabilities, setSelectedAvailabilities] = useState(new Set());
+  const [selectedSoftware, setSelectedSoftware] = useState(new Set());
+  const [maxRate, setMaxRate] = useState(50);
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [busyProfileId, setBusyProfileId] = useState('');
   const [actionError, setActionError] = useState('');
@@ -498,14 +490,36 @@ function AppDiscoverView({ user }) {
   
   const filteredProfiles = useMemo(() => {
     const profileList = asList(profiles);
-    if (activeFilter === 'All') return profileList;
-
+    
     return profileList.filter((profile) => {
-      const role = profile.role || profile.title || '';
-      const tools = asList(profile.tools || profile.skills);
-      return role.includes(activeFilter) || tools.some((tool) => String(tool).includes(activeFilter));
+      // 1. Role / Tab filter
+      if (activeFilter !== 'All') {
+        const role = profile.role || profile.title || '';
+        const tools = asList(profile.tools || profile.skills);
+        const matchesTab = role.includes(activeFilter) || tools.some((tool) => String(tool).includes(activeFilter));
+        if (!matchesTab) return false;
+      }
+      
+      // 2. Max Rate filter
+      const rate = profile.rate || profile.hourlyRate || 0;
+      if (rate > maxRate && maxRate < 50) return false;
+      
+      // 3. Availability filter
+      if (selectedAvailabilities.size > 0) {
+        const avail = profile.available || profile.availability || '';
+        if (!selectedAvailabilities.has(avail)) return false;
+      }
+
+      // 4. Software filter
+      if (selectedSoftware.size > 0) {
+        const tools = asList(profile.tools || profile.skills);
+        const hasMatchingTool = tools.some(tool => selectedSoftware.has(tool));
+        if (!hasMatchingTool) return false;
+      }
+
+      return true;
     });
-  }, [activeFilter, profiles]);
+  }, [activeFilter, profiles, selectedAvailabilities, selectedSoftware, maxRate]);
 
   const handleSaveProfile = async (profile) => {
     if (!profile?.id || savedIds.has(profile.id)) return;
@@ -531,35 +545,62 @@ function AppDiscoverView({ user }) {
         <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
             <h3 className="font-bold text-slate-950 dark:text-white flex items-center gap-2"><SlidersHorizontal size={18} className="text-primary-600"/> Filters</h3>
-            <button className="text-xs font-bold text-primary-600 hover:underline">Reset</button>
+            <button 
+              onClick={() => {
+                setSelectedAvailabilities(new Set());
+                setSelectedSoftware(new Set());
+                setMaxRate(50);
+              }}
+              className="text-xs font-bold text-primary-600 hover:underline"
+            >
+              Reset
+            </button>
           </div>
 
           <div className="space-y-8">
             <div>
               <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Availability</h4>
-              {['Immediate Start', 'Part-time OK', 'US Shift (EST)'].map((time, i) => (
-                <label key={i} className="flex items-center space-x-3 mb-3 cursor-pointer group">
-                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${i === 0 ? 'bg-primary-600 border-primary-600' : 'border-slate-300 group-hover:border-primary-400 bg-white dark:bg-slate-900'}`}>
-                    {i === 0 && <CheckCircle size={14} className="text-white" />}
+              {['Immediate Start', 'Part-time OK', 'US Shift (EST)'].map((time) => {
+                const isSelected = selectedAvailabilities.has(time);
+                return (
+                <label key={time} className="flex items-center space-x-3 mb-3 cursor-pointer group">
+                  <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
+                    const newSet = new Set(selectedAvailabilities);
+                    if (e.target.checked) newSet.add(time);
+                    else newSet.delete(time);
+                    setSelectedAvailabilities(newSet);
+                  }} />
+                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-primary-600 border-primary-600' : 'border-slate-300 group-hover:border-primary-400 bg-white dark:bg-slate-900'}`}>
+                    {isSelected && <CheckCircle size={14} className="text-white" />}
                   </div>
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-slate-950 dark:text-white transition-colors">{time}</span>
                 </label>
-              ))}
+              )})}
             </div>
 
             <div>
               <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Primary Software</h4>
-              {['QuickBooks Online', 'Xero', 'NetSuite', 'Oracle SAP'].map((software, i) => (
-                <label key={i} className="flex items-center space-x-3 mb-3 cursor-pointer group">
-                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors border-slate-300 group-hover:border-primary-400 bg-white dark:bg-slate-900`}></div>
+              {['QuickBooks Online', 'Xero', 'NetSuite', 'Oracle SAP'].map((software) => {
+                const isSelected = selectedSoftware.has(software);
+                return (
+                <label key={software} className="flex items-center space-x-3 mb-3 cursor-pointer group">
+                  <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
+                    const newSet = new Set(selectedSoftware);
+                    if (e.target.checked) newSet.add(software);
+                    else newSet.delete(software);
+                    setSelectedSoftware(newSet);
+                  }} />
+                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-primary-600 border-primary-600' : 'border-slate-300 group-hover:border-primary-400 bg-white dark:bg-slate-900'}`}>
+                    {isSelected && <CheckCircle size={14} className="text-white" />}
+                  </div>
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-slate-950 dark:text-white transition-colors">{software}</span>
                 </label>
-              ))}
+              )})}
             </div>
             
             <div>
-              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Max Hourly Rate</h4>
-              <input type="range" className="w-full accent-primary-600" min="5" max="50" defaultValue="25" />
+              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Max Hourly Rate: ${maxRate}{maxRate >= 50 ? '+' : ''}</h4>
+              <input type="range" className="w-full accent-primary-600" min="5" max="50" value={maxRate} onChange={(e) => setMaxRate(Number(e.target.value))} />
               <div className="flex justify-between text-xs font-bold text-slate-500 mt-2">
                 <span>$5</span>
                 <span>$25/hr</span>
@@ -613,7 +654,7 @@ function AppDiscoverView({ user }) {
         ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
           {filteredProfiles.map((profile, idx) => (
-            <FadeIn key={profile.id} delay={(idx % 6) * 50} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-xl hover:border-primary-200 transition-all duration-300 group flex flex-col h-full">
+            <FadeIn key={profile.id || `profile-${idx}`} delay={(idx % 6) * 50} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-xl hover:border-primary-200 transition-all duration-300 group flex flex-col h-full">
               
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
@@ -723,7 +764,7 @@ function AppAgenciesView() {
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {agencyList.map((agency, idx) => (
-          <FadeIn key={agency.id} delay={idx * 100} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 hover:shadow-xl hover:border-primary-200 transition-all duration-300 flex flex-col h-full">
+          <FadeIn key={agency.id || `agency-${idx}`} delay={idx * 100} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 hover:shadow-xl hover:border-primary-200 transition-all duration-300 flex flex-col h-full">
             <div className="flex items-start justify-between mb-6">
               <div className="w-16 h-16 bg-slate-950 rounded-2xl flex items-center justify-center shadow-md border border-slate-800">
                 <Building size={28} className="text-white" />
@@ -761,7 +802,7 @@ function AppAgenciesView() {
                 <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Pricing</div>
                 <div className="font-bold text-slate-950 dark:text-white">{formatMoney(agency.rate || agency.monthlyRate)}</div>
               </div>
-              <button className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-slate-950 text-slate-950 dark:text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">
+              <button onClick={() => alert('View Firm feature coming soon!')} className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-slate-950 text-slate-950 dark:text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">
                 View Firm
               </button>
             </div>

@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ShieldCheck, X } from 'lucide-react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
+import { ShieldCheck, X, Loader2 } from 'lucide-react';
 
-import { PublicSite } from './pages/PublicPages';
-import { ClientPortal } from './pages/ClientPages';
-import { ProfessionalPortal } from './pages/ProfessionalPages';
-import { AdminPortal } from './pages/AdminPages';
+const PublicSite = lazy(() => import('./pages/PublicPages').then(m => ({ default: m.PublicSite })));
+const ClientPortal = lazy(() => import('./pages/ClientPages').then(m => ({ default: m.ClientPortal })));
+const ProfessionalPortal = lazy(() => import('./pages/ProfessionalPages').then(m => ({ default: m.ProfessionalPortal })));
+const AdminPortal = lazy(() => import('./pages/AdminPages').then(m => ({ default: m.AdminPortal })));
+
 import { backendApi, clearAuthSession, isBackendConfigured, storeAuthSession } from './services/api';
 
 const getDisplayNameFromEmail = (email) => {
@@ -47,11 +48,28 @@ export default function App() {
   });
   const [authModal, setAuthModal] = useState({ isOpen: false, view: 'login' });
   const [authError, setAuthError] = useState('');
-  const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) {
+      if (saved === 'dark') document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+      return saved === 'dark';
+    }
+    return document.documentElement.classList.contains('dark');
+  });
+  const currentUserId = user?.id;
 
   const toggleDarkMode = () => {
-    document.documentElement.classList.toggle('dark');
-    setIsDarkMode(!isDarkMode);
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    if (newMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
   };
 
   const openAuth = (view = 'login') => {
@@ -99,8 +117,37 @@ export default function App() {
       });
   }, []);
 
+  useEffect(() => {
+    if (!currentUserId || !isBackendConfigured()) {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    backendApi.auth.me()
+      .then((result) => {
+        if (!isMounted || !result?.user) return;
+
+        setUser((currentUser) => {
+          const nextUser = {
+            ...(currentUser || {}),
+            ...result.user,
+          };
+
+          localStorage.setItem('pb_user', JSON.stringify(nextUser));
+          return nextUser;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUserId]);
+
   const handleAuthSubmit = async (e, role = 'client', view = 'login') => {
     e.preventDefault();
+    setIsAuthLoading(true);
     const formData = new FormData(e.currentTarget);
     let userData = createLocalSessionUser(formData, role);
 
@@ -123,6 +170,7 @@ export default function App() {
 
         if (result?.requiresEmailConfirmation) {
           setAuthError(result.message || 'Check your email to confirm your account before signing in.');
+          setIsAuthLoading(false);
           return;
         }
 
@@ -139,6 +187,7 @@ export default function App() {
         };
       } catch (error) {
         setAuthError(error.message || 'Unable to authenticate. Please try again.');
+        setIsAuthLoading(false);
         return;
       }
     }
@@ -146,6 +195,7 @@ export default function App() {
     setUser(userData);
     localStorage.setItem('pb_user', JSON.stringify(userData));
     closeAuth();
+    setIsAuthLoading(false);
     window.scrollTo(0, 0);
   };
 
@@ -163,21 +213,28 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 scroll-smooth selection:bg-primary-500/30">
       
       {/* Conditional Rendering: Entire UI changes if logged in */}
-      {user ? (
-        user.role === 'admin' ? (
-          <AdminPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
-        ) : user.role === 'professional' ? (
-          <ProfessionalPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+      <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary-500" size={32} /></div>}>
+        {user ? (
+          user.role === 'admin' ? (
+            <AdminPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+          ) : user.role === 'professional' ? (
+            <ProfessionalPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+          ) : (
+            <ClientPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+          )
         ) : (
-          <ClientPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
-        )
-      ) : (
-        <PublicSite openAuth={openAuth} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
-      )}
+          <PublicSite openAuth={openAuth} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+        )}
+      </Suspense>
 
       {/* Auth Modal Overlay - Shared across both modes */}
       {authModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4 animate-in fade-in duration-300"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeAuth();
+          }}
+        >
           <div className="bg-white dark:bg-slate-900 rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-200 dark:border-slate-800/50">
             <div className="p-6 pb-0 flex justify-between items-center">
               <div className="w-12 h-12 bg-gradient-to-br from-primary-50 to-cyan-50 rounded-xl flex items-center justify-center mb-2 border border-primary-100">
@@ -221,11 +278,12 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">Password</label>
-                  <input name="pbAuthPasscode" type="password" required autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="********" />
+                  <input name="pbAuthPasscode" type="password" minLength={8} required autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700 text-slate-900 dark:text-slate-100" placeholder="********" />
                 </div>
                 
-                <button type="submit" className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-xl font-semibold transition-all mt-6 shadow-lg shadow-slate-900/10 text-sm">
-                  {authModal.view === 'login' ? 'Sign In to Portal' : 'Continue to Dashboard'}
+                <button type="submit" disabled={isAuthLoading} className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-xl font-semibold transition-all mt-6 shadow-lg shadow-slate-900/10 text-sm disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center">
+                  {isAuthLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
+                  {isAuthLoading ? 'Please wait...' : authModal.view === 'login' ? 'Sign In to Portal' : 'Continue to Dashboard'}
                 </button>
               </form>
               

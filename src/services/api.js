@@ -9,7 +9,7 @@ const toQueryString = (params = {}) => {
   return query ? `?${query}` : '';
 };
 
-export const isBackendConfigured = () => API_BASE_URL.length > 0;
+export const isBackendConfigured = () => true;
 
 const getAccessToken = () => localStorage.getItem('pb_auth_token');
 const getRefreshToken = () => localStorage.getItem('pb_refresh_token');

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { isBackendConfigured } from '../services/api';
 import { isRealtimeConfigured, subscribeToDatabaseChanges } from '../services/realtime';
 
-const REALTIME_REFETCH_DELAY_MS = 250;
+const REALTIME_REFETCH_DELAY_MS = 1000;
 const hashRealtimeKey = (value) => {
   let hash = 0;
 

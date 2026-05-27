@@ -635,7 +635,7 @@ begin
     coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name'),
     new.raw_user_meta_data ->> 'company',
     case
-      when new.raw_user_meta_data ->> 'role' in ('admin', 'client', 'professional') then new.raw_user_meta_data ->> 'role'
+      when new.raw_user_meta_data ->> 'role' in ('client', 'professional') then new.raw_user_meta_data ->> 'role'
       else 'client'
     end,
     new.raw_user_meta_data ->> 'title'
@@ -682,7 +682,7 @@ select
   coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
   u.raw_user_meta_data ->> 'company',
   case
-    when u.raw_user_meta_data ->> 'role' in ('admin', 'client', 'professional') then u.raw_user_meta_data ->> 'role'
+    when u.raw_user_meta_data ->> 'role' in ('client', 'professional') then u.raw_user_meta_data ->> 'role'
     else 'client'
   end,
   u.raw_user_meta_data ->> 'title'

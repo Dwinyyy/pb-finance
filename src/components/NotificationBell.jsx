@@ -61,7 +61,7 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500', userId })
   useEffect(() => {
     loadNotifications({ showLoading: true });
 
-    const interval = window.setInterval(() => loadNotifications(), 15000);
+    const interval = window.setInterval(() => loadNotifications(), 60000);
     const handleFocus = () => loadNotifications();
 
     window.addEventListener('focus', handleFocus);

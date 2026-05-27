@@ -122,6 +122,15 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
           <Route path="/talents" element={<PreviewDirectoryView openAuth={openAuth} />} />
           <Route path="/agency" element={<AgencyMarketingView openAuth={openAuth} />} />
           <Route path="/pricing" element={<PricingView openAuth={openAuth} />} />
+          <Route path="*" element={
+            <div className="pt-32 pb-20 text-center flex flex-col items-center justify-center min-h-[50vh]">
+              <h1 className="text-4xl font-bold text-slate-950 dark:text-white mb-4">404 - Page Not Found</h1>
+              <p className="text-slate-600 dark:text-slate-400 mb-8 max-w-md">The page you are looking for doesn't exist or has been moved.</p>
+              <button onClick={() => navigateTo('home')} className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3 rounded-full font-bold transition-colors">
+                Return Home
+              </button>
+            </div>
+          } />
         </Routes>
       </main>
 
@@ -163,11 +172,11 @@ function ROICalculator() {
             
             <div className="grid grid-cols-2 gap-6">
               <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">2–4 wks</div>
+                <div className="text-3xl font-black text-slate-950 dark:text-white">2-4 wks</div>
                 <div className="mt-2 text-sm text-slate-500 font-bold">Typical launch timeline</div>
               </div>
               <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">30–45%</div>
+                <div className="text-3xl font-black text-slate-950 dark:text-white">30-45%</div>
                 <div className="mt-2 text-sm text-slate-500 font-bold">Average cost savings</div>
               </div>
               <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">

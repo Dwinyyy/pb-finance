@@ -16,7 +16,7 @@ const hasServiceRoleKey = () => Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const getDataOptions = (req) => ({
   token: getBearerToken(req),
-  useServiceRole: hasServiceRoleKey(),
+  useServiceRole: Boolean(req.useServiceRole),
 });
 
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -65,7 +65,7 @@ const getProfileUserForSession = async (session) => {
       `/profiles?id=eq.${user.id}&select=id,email,full_name,company,role,title&limit=1`,
       {
         token: session.access_token,
-        useServiceRole: hasServiceRoleKey(),
+        useServiceRole: false,
       }
     );
     const profile = asList(rows)[0];
@@ -166,6 +166,7 @@ const requireAdmin = async (req, res) => {
     return null;
   }
 
+  req.useServiceRole = true;
   return user;
 };
 
@@ -1635,8 +1636,35 @@ const allowedMethodsForPath = (routePath) => Object.keys(handlers)
   .filter(([, path]) => path === routePath)
   .map(([method]) => method);
 
+const requestCounts = new Map();
+const checkRateLimit = (req, res) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  
+  if (!requestCounts.has(ip)) {
+    requestCounts.set(ip, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  
+  const record = requestCounts.get(ip);
+  if (now > record.resetTime) {
+    record.count = 1;
+    record.resetTime = now + windowMs;
+    return true;
+  }
+  
+  record.count += 1;
+  if (record.count > 150) {
+    sendError(res, 429, 'Too many requests, please try again later.');
+    return false;
+  }
+  return true;
+};
+
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return;
+  if (!checkRateLimit(req, res)) return;
 
   const routePath = getRoutePath(req);
   const route = handlers[`${req.method} ${routePath}`];
