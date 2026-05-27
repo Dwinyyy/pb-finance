@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 
 import { backendApi, isBackendConfigured } from '../services/api';
+import { isRealtimeConfigured, subscribeToDatabaseChanges } from '../services/realtime';
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 
@@ -17,7 +18,7 @@ const formatTime = (value) => {
   });
 };
 
-export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
+export function NotificationBell({ unreadClassName = 'bg-primary-500', userId }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(isBackendConfigured());
   const [notifications, setNotifications] = useState([]);
@@ -35,7 +36,7 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
 
     setError('');
 
-    if (showLoading || notifications.length === 0) {
+    if (showLoading) {
       setIsLoading(true);
     }
 
@@ -55,7 +56,7 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
     } finally {
       setIsLoading(false);
     }
-  }, [notifications.length]);
+  }, []);
 
   useEffect(() => {
     loadNotifications({ showLoading: true });
@@ -70,6 +71,23 @@ export function NotificationBell({ unreadClassName = 'bg-primary-500' }) {
       window.removeEventListener('focus', handleFocus);
     };
   }, [loadNotifications]);
+
+  useEffect(() => {
+    if (!userId || !isBackendConfigured() || !isRealtimeConfigured()) {
+      return undefined;
+    }
+
+    return subscribeToDatabaseChanges({
+      channelName: `notifications:${userId}`,
+      changes: [
+        {
+          filter: `recipient_id=eq.${userId}`,
+          table: 'notifications',
+        },
+      ],
+      onChange: () => loadNotifications(),
+    });
+  }, [loadNotifications, userId]);
 
   const markAllRead = async () => {
     const unreadIds = notifications

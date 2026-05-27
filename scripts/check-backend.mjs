@@ -79,7 +79,7 @@ const run = async () => {
 
   try {
     await supabaseRestRequest(
-      '/professional_profiles?select=user_id,pending_profile,review_status,review_submitted_at&limit=1',
+      '/professional_profiles?select=user_id,titles,pending_profile,review_status,review_submitted_at&limit=1',
       { useServiceRole: true }
     );
     tableChecks.professional_profile_review_columns = { ok: true };

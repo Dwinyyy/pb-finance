@@ -31,6 +31,7 @@ create table if not exists public.professional_profiles (
   status text not null default 'draft' check (status in ('draft', 'pending_review', 'approved', 'hidden', 'rejected')),
   rating numeric(3, 2),
   review_count integer not null default 0,
+  titles text[] not null default '{}',
   tools text[] not null default '{}',
   skills text[] not null default '{}',
   certifications text[] not null default '{}',
@@ -44,12 +45,65 @@ create table if not exists public.professional_profiles (
   updated_at timestamptz not null default now()
 );
 
+alter table public.professional_profiles add column if not exists titles text[] not null default '{}';
 alter table public.professional_profiles add column if not exists pending_profile jsonb not null default '{}'::jsonb;
 alter table public.professional_profiles add column if not exists review_status text;
 alter table public.professional_profiles add column if not exists review_submitted_at timestamptz;
 alter table public.professional_profiles drop constraint if exists professional_profiles_review_status_check;
 alter table public.professional_profiles add constraint professional_profiles_review_status_check
   check (review_status is null or review_status in ('pending_review', 'rejected'));
+
+update public.professional_profiles pp
+set titles = candidate.titles
+from (
+  select
+    pp_inner.user_id,
+    array(
+      select distinct clean_title
+      from (
+        select nullif(jsonb_array_elements_text(
+          case
+            when jsonb_typeof(pp_inner.pending_profile -> 'titles') = 'array'
+              then pp_inner.pending_profile -> 'titles'
+            else '[]'::jsonb
+          end
+        ), '') as clean_title
+        union all
+        select nullif(pp_inner.pending_profile ->> 'title', '')
+        union all
+        select nullif(p.title, '')
+      ) raw_titles
+      where clean_title is not null
+        and clean_title not in ('Complete your profile', 'Finance Professional')
+    ) as titles
+  from public.professional_profiles pp_inner
+  join public.profiles p on p.id = pp_inner.user_id
+) candidate
+where pp.user_id = candidate.user_id
+  and coalesce(cardinality(pp.titles), 0) = 0
+  and cardinality(candidate.titles) > 0;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'professional_profiles'
+      and column_name = 'title'
+  ) then
+    execute $sql$
+      update public.professional_profiles
+      set titles = array[title]
+      where title is not null
+        and title <> ''
+        and title not in ('Complete your profile', 'Finance Professional')
+        and coalesce(cardinality(titles), 0) = 0
+    $sql$;
+
+    alter table public.professional_profiles drop column title;
+  end if;
+end $$;
 
 create table if not exists public.client_companies (
   id uuid primary key default gen_random_uuid(),
@@ -233,6 +287,28 @@ create index if not exists match_requests_client_id_idx on public.match_requests
 create index if not exists notifications_recipient_id_idx on public.notifications(recipient_id);
 create index if not exists notifications_unread_idx on public.notifications(recipient_id, created_at desc)
   where read_at is null;
+
+do $$
+declare
+  realtime_table regclass;
+begin
+  foreach realtime_table in array array[
+    'public.agencies'::regclass,
+    'public.interviews'::regclass,
+    'public.notifications'::regclass,
+    'public.opportunities'::regclass,
+    'public.professional_profiles'::regclass,
+    'public.shortlists'::regclass
+  ]
+  loop
+    begin
+      execute format('alter publication supabase_realtime add table %s', realtime_table);
+    exception
+      when duplicate_object then null;
+      when undefined_object then null;
+    end;
+  end loop;
+end $$;
 
 alter table public.profiles enable row level security;
 alter table public.professional_profiles enable row level security;

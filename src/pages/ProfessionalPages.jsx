@@ -37,6 +37,38 @@ const cleanProfileTitle = (value) => {
 
   return title && !placeholderTitles.has(title) ? title : '';
 };
+const PROFESSIONAL_TITLE_OPTIONS = [
+  'Bookkeeper',
+  'Accounting Specialist',
+  'Senior Accountant',
+  'CPA',
+  'Tax Accountant',
+  'Payroll Specialist',
+  'Accounts Payable Specialist',
+  'Accounts Receivable Specialist',
+  'Financial Reporting Specialist',
+  'Month-End Close Specialist',
+  'Finance Analyst',
+  'FP&A Analyst',
+  'Revenue Accountant',
+  'Cost Accountant',
+  'Management Accountant',
+  'Audit Associate',
+  'Financial Controller',
+  'Fractional CFO',
+  'QuickBooks ProAdvisor',
+  'Xero Advisor',
+  'NetSuite Consultant',
+];
+const cleanProfileTitles = (value, fallback = []) => {
+  const source = value === undefined ? fallback : value;
+  const rawTitles = Array.isArray(source)
+    ? source
+    : String(source || '').split(',');
+
+  return [...new Set(rawTitles.map(cleanProfileTitle).filter(Boolean))];
+};
+const formatProfileTitles = (titles) => cleanProfileTitles(titles).join(', ');
 const availabilityToValue = (value) => {
   const label = String(value || '').toLowerCase();
   if (label.includes('2') || label.includes('soon')) return 'available_soon';
@@ -77,6 +109,74 @@ function PortalModal({ children, onClose, title }) {
   );
 }
 
+function ProfessionalTitlePicker({ value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedTitles = cleanProfileTitles(value);
+  const selectedSet = new Set(selectedTitles);
+  const options = [...new Set([...selectedTitles, ...PROFESSIONAL_TITLE_OPTIONS])];
+  const toggleTitle = (title) => {
+    const nextTitles = selectedSet.has(title)
+      ? selectedTitles.filter((item) => item !== title)
+      : [...selectedTitles, title];
+
+    onChange(nextTitles);
+  };
+
+  return (
+    <div className="relative mt-2">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 outline-none transition-colors hover:border-cyan-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
+      >
+        <span>{selectedTitles.length ? `${selectedTitles.length} selected` : 'Select professional titles'}</span>
+        <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {selectedTitles.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selectedTitles.map((title) => (
+            <button
+              key={title}
+              type="button"
+              onClick={() => toggleTitle(title)}
+              className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-700 transition-colors hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300"
+            >
+              {title} <span className="ml-1 text-cyan-500">x</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-14 z-30 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+          {options.map((title) => {
+            const isSelected = selectedSet.has(title);
+
+            return (
+              <button
+                key={title}
+                type="button"
+                onClick={() => toggleTitle(title)}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition-colors ${
+                  isSelected
+                    ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-300'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                }`}
+              >
+                <span>{title}</span>
+                <span className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${isSelected ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 dark:border-slate-700'}`}>
+                  {isSelected ? <CheckCircle size={11} /> : ''}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ==========================================
 // 3. PROFESSIONAL PORTAL (TALENT EXPERIENCE)
 // ==========================================
@@ -102,7 +202,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
               <button onClick={toggleDarkMode} className="text-slate-400 hover:text-white transition-colors" title="Toggle Dark Mode">
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
-              <NotificationBell unreadClassName="bg-emerald-500" />
+              <NotificationBell unreadClassName="bg-emerald-500" userId={user.id} />
               
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">
@@ -145,7 +245,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
       {/* App Workspace */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {appView === 'profile' && <AppTalentProfileView user={user} />}
-        {appView === 'opportunities' && <AppTalentOpportunitiesView />}
+        {appView === 'opportunities' && <AppTalentOpportunitiesView user={user} />}
         {appView === 'earnings' && <AppTalentEarningsView />}
       </div>
     </div>
@@ -156,7 +256,12 @@ function AppTalentProfileView({ user }) {
   const { data: profile } = useBackendResource(
     backendApi.talent.getMyProfile,
     EMPTY_PROFILE,
-    { refreshInterval: 15000 }
+    {
+      realtime: [
+        user?.id ? { filter: `user_id=eq.${user.id}`, table: 'professional_profiles' } : null,
+      ],
+      refreshInterval: 15000,
+    }
   );
   const [savedProfile, setSavedProfile] = useState(EMPTY_PROFILE);
   const [isEditing, setIsEditing] = useState(false);
@@ -174,6 +279,8 @@ function AppTalentProfileView({ user }) {
     ...user,
     ...savedProfile,
   };
+  const profileTitles = cleanProfileTitles(displayProfile.titles, cleanProfileTitles(displayProfile.title || displayProfile.role));
+  const profileTitleText = formatProfileTitles(profileTitles);
   const skills = asList(displayProfile.tools || displayProfile.skills);
 
   const buildProfileForm = (overrides = {}) => ({
@@ -184,7 +291,7 @@ function AppTalentProfileView({ user }) {
     hourlyRate: displayProfile.rate || displayProfile.hourlyRate || '',
     location: displayProfile.location || '',
     skills: listToText(displayProfile.skills),
-    title: cleanProfileTitle(displayProfile.title || displayProfile.role),
+    titles: profileTitles,
     tools: listToText(displayProfile.tools),
     yearsExperience: displayProfile.yearsExperience || '',
     ...overrides,
@@ -217,6 +324,7 @@ function AppTalentProfileView({ user }) {
         certifications: textToList(profileForm.certifications),
         hourlyRate: profileForm.hourlyRate === '' ? null : Number(profileForm.hourlyRate),
         skills: textToList(profileForm.skills),
+        titles: cleanProfileTitles(profileForm.titles),
         tools: textToList(profileForm.tools),
         yearsExperience: profileForm.yearsExperience === '' ? null : Number(profileForm.yearsExperience),
       });
@@ -245,7 +353,7 @@ function AppTalentProfileView({ user }) {
             
             <div className="mt-12 mb-6">
               <h2 className="text-xl font-bold text-slate-950 dark:text-white leading-tight">{displayProfile.name || 'Profile pending'}</h2>
-              <p className="text-sm font-medium text-slate-500 mb-4">{cleanProfileTitle(displayProfile.title || displayProfile.role) || 'Add your professional title'}</p>
+              <p className="text-sm font-medium text-slate-500 mb-4">{profileTitleText || 'Add your professional title'}</p>
               
               <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mb-2 font-medium">
                 <MapPin size={16} className="text-slate-400" /> {displayProfile.location || 'Add location'}
@@ -279,8 +387,8 @@ function AppTalentProfileView({ user }) {
                     <input value={profileForm.fullName || ''} onChange={(event) => handleProfileChange('fullName', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Professional title
-                    <input value={profileForm.title || ''} onChange={(event) => handleProfileChange('title', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                    Professional titles
+                    <ProfessionalTitlePicker value={profileForm.titles || []} onChange={(titles) => handleProfileChange('titles', titles)} />
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Location
@@ -450,11 +558,17 @@ function AppTalentProfileView({ user }) {
   );
 }
 
-function AppTalentOpportunitiesView() {
+function AppTalentOpportunitiesView({ user }) {
   const { data: invites, error, isLoading } = useBackendResource(
     backendApi.talent.listOpportunities,
     EMPTY_LIST,
-    { refreshInterval: 10000 }
+    {
+      realtime: [
+        user?.id ? { filter: `professional_id=eq.${user.id}`, table: 'opportunities' } : null,
+        user?.id ? { filter: `professional_id=eq.${user.id}`, table: 'interviews' } : null,
+      ],
+      refreshInterval: 10000,
+    }
   );
   const opportunities = asList(invites);
   const [localOpportunities, setLocalOpportunities] = useState(opportunities);

@@ -254,7 +254,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
               <button onClick={toggleDarkMode} className="text-slate-400 hover:text-white transition-colors" title="Toggle Dark Mode">
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
-              <NotificationBell unreadClassName="bg-primary-500" />
+              <NotificationBell unreadClassName="bg-primary-500" userId={user.id} />
               
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">
@@ -298,10 +298,10 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
 
       {/* App Workspace */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative scroll-smooth">
-        {appView === 'discover' && <AppDiscoverView />}
+        {appView === 'discover' && <AppDiscoverView user={user} />}
         {appView === 'agencies' && <AppAgenciesView />}
-        {appView === 'shortlist' && <AppShortlistView />}
-        {appView === 'interviews' && <AppInterviewsView />}
+        {appView === 'shortlist' && <AppShortlistView user={user} />}
+        {appView === 'interviews' && <AppInterviewsView user={user} />}
         {appView === 'billing' && <AppBillingView />}
       </div>
 
@@ -464,7 +464,7 @@ function AITalentMatchmaker() {
 }
 
 // Sub-views for Client Portal
-function AppDiscoverView() {
+function AppDiscoverView({ user }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [busyProfileId, setBusyProfileId] = useState('');
@@ -472,12 +472,24 @@ function AppDiscoverView() {
   const { data: profiles, error, isConfigured, isLoading } = useBackendResource(
     backendApi.talent.listProfiles,
     EMPTY_LIST,
-    { refreshInterval: 30000 }
+    {
+      realtime: [
+        { table: 'professional_profiles' },
+      ],
+      refreshInterval: 30000,
+    }
   );
   const { data: shortlistSnapshot } = useBackendResource(
     backendApi.client.listShortlist,
     EMPTY_LIST,
-    { refreshInterval: 15000 }
+    {
+      realtime: [
+        user?.id ? { filter: `client_id=eq.${user.id}`, table: 'shortlists' } : null,
+        user?.id ? { filter: `client_id=eq.${user.id}`, table: 'opportunities' } : null,
+        user?.id ? { filter: `client_id=eq.${user.id}`, table: 'interviews' } : null,
+      ],
+      refreshInterval: 15000,
+    }
   );
 
   useEffect(() => {
@@ -678,7 +690,15 @@ function AppDiscoverView() {
 }
 
 function AppAgenciesView() {
-  const { data: agencies, error, isConfigured, isLoading } = useBackendResource(backendApi.client.listAgencies, EMPTY_LIST);
+  const { data: agencies, error, isConfigured, isLoading } = useBackendResource(
+    backendApi.client.listAgencies,
+    EMPTY_LIST,
+    {
+      realtime: [
+        { table: 'agencies' },
+      ],
+    }
+  );
   const agencyList = asList(agencies);
 
   return (
@@ -753,14 +773,22 @@ function AppAgenciesView() {
   );
 }
 
-function AppShortlistView() {
+function AppShortlistView({ user }) {
   const {
     data: shortlisted,
     error,
     isConfigured,
     isLoading,
     refetch,
-  } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST, { refreshInterval: 10000 });
+  } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST, {
+    realtime: [
+      user?.id ? { filter: `client_id=eq.${user.id}`, table: 'shortlists' } : null,
+      user?.id ? { filter: `client_id=eq.${user.id}`, table: 'opportunities' } : null,
+      user?.id ? { filter: `client_id=eq.${user.id}`, table: 'interviews' } : null,
+      { table: 'professional_profiles' },
+    ],
+    refreshInterval: 10000,
+  });
   const shortlist = asList(shortlisted);
   const [localShortlist, setLocalShortlist] = useState(shortlist);
   const [busyAction, setBusyAction] = useState('');
@@ -976,11 +1004,17 @@ function AppShortlistView() {
   );
 }
 
-function AppInterviewsView() {
+function AppInterviewsView({ user }) {
   const { data: interviews, error, isConfigured, isLoading, refetch } = useBackendResource(
     backendApi.client.listInterviews,
     EMPTY_LIST,
-    { refreshInterval: 10000 }
+    {
+      realtime: [
+        user?.id ? { filter: `client_id=eq.${user.id}`, table: 'interviews' } : null,
+        user?.id ? { filter: `client_id=eq.${user.id}`, table: 'opportunities' } : null,
+      ],
+      refreshInterval: 10000,
+    }
   );
   const interviewList = asList(interviews);
   const [busyAction, setBusyAction] = useState('');

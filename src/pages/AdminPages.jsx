@@ -58,7 +58,7 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
         </div>
 
         <div className="flex items-center gap-4">
-          <NotificationBell unreadClassName="bg-cyan-500" />
+          <NotificationBell unreadClassName="bg-cyan-500" userId={user.id} />
           <button onClick={toggleDarkMode} className="text-slate-400 transition-colors hover:text-white" title="Toggle Dark Mode">
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -115,7 +115,12 @@ function TalentReview() {
   const { data, error, isLoading } = useBackendResource(
     backendApi.admin.listTalent,
     EMPTY_LIST,
-    { refreshInterval: 10000 }
+    {
+      realtime: [
+        { table: 'professional_profiles' },
+      ],
+      refreshInterval: 10000,
+    }
   );
   const [talent, setTalent] = useState(EMPTY_LIST);
   const [busyId, setBusyId] = useState('');
@@ -239,7 +244,12 @@ function AgenciesAdmin() {
   const { data, error, isLoading } = useBackendResource(
     backendApi.admin.listAgencies,
     EMPTY_LIST,
-    { refreshInterval: 30000 }
+    {
+      realtime: [
+        { table: 'agencies' },
+      ],
+      refreshInterval: 30000,
+    }
   );
   const [agencies, setAgencies] = useState(EMPTY_LIST);
   const [busyAction, setBusyAction] = useState('');

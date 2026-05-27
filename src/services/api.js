@@ -13,6 +13,11 @@ export const isBackendConfigured = () => API_BASE_URL.length > 0;
 
 const getAccessToken = () => localStorage.getItem('pb_auth_token');
 const getRefreshToken = () => localStorage.getItem('pb_refresh_token');
+const notifyAuthUpdated = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('pb-auth-updated'));
+  }
+};
 
 export const storeAuthSession = (session) => {
   if (session?.token) {
@@ -22,11 +27,14 @@ export const storeAuthSession = (session) => {
   if (session?.refreshToken) {
     localStorage.setItem('pb_refresh_token', session.refreshToken);
   }
+
+  notifyAuthUpdated();
 };
 
 export const clearAuthSession = () => {
   localStorage.removeItem('pb_auth_token');
   localStorage.removeItem('pb_refresh_token');
+  notifyAuthUpdated();
 };
 
 const parseBody = async (response) => {

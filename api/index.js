@@ -40,6 +40,18 @@ const cleanList = (value, maxItems = 20) => {
     .filter(Boolean))]
     .slice(0, maxItems);
 };
+const cleanProfessionalTitles = (value, fallback = []) => {
+  const source = value === undefined ? fallback : value;
+  const rawTitles = Array.isArray(source)
+    ? source
+    : String(source || '').split(',');
+
+  return [...new Set(rawTitles
+    .map(cleanProfileTitle)
+    .filter(Boolean))]
+    .slice(0, 8);
+};
+const formatProfessionalTitles = (titles) => cleanProfessionalTitles(titles).join(', ');
 
 const getProfileUserForSession = async (session) => {
   const user = publicUser(session.user);
@@ -202,6 +214,7 @@ const toProfilePatch = (profile) => ({
   industries: cleanList(profile.industries),
   location: profile.location,
   skills: cleanList(profile.skills),
+  titles: cleanProfessionalTitles(profile.titles ?? profile.title),
   tools: cleanList(profile.tools),
   work_preferences: typeof profile.work_preferences === 'object' && profile.work_preferences !== null
     ? profile.work_preferences
@@ -213,7 +226,11 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
   const pending = usePending && profile.pending_profile ? profile.pending_profile : {};
   const viewProfile = { ...profile, ...pending };
   const displayName = pending.full_name || owner.full_name || owner.name || 'Unnamed profile';
-  const title = cleanProfileTitle(pending.title || owner.title || '');
+  const pendingHasTitles = Object.hasOwn(pending, 'titles') || Object.hasOwn(pending, 'title');
+  const titles = pendingHasTitles
+    ? cleanProfessionalTitles(pending.titles ?? pending.title)
+    : cleanProfessionalTitles(viewProfile.titles, cleanProfessionalTitles(owner.title));
+  const title = formatProfessionalTitles(titles);
   const hourlyRate = toNumber(viewProfile.hourly_rate);
   const years = toNumber(viewProfile.years_experience);
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
@@ -240,6 +257,7 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
     skills: asList(viewProfile.skills),
     status: usePending ? (reviewStatus || profile.status) : profile.status,
     title,
+    titles,
     tools: asList(viewProfile.tools),
     yearsExperience: years,
   };
@@ -688,9 +706,13 @@ const handlers = {
     };
 
     if (status === 'approved' && hasPendingChanges) {
+      const pendingTitles = cleanProfessionalTitles(pendingProfile.titles ?? pendingProfile.title);
+
       await patchRows(req, `/profiles?id=eq.${professionalId}`, {
         ...(pendingProfile.full_name ? { full_name: pendingProfile.full_name } : {}),
-        ...(pendingProfile.title ? { title: pendingProfile.title } : {}),
+        ...(Object.hasOwn(pendingProfile, 'titles') || Object.hasOwn(pendingProfile, 'title')
+          ? { title: pendingTitles[0] || null }
+          : {}),
       }, { prefer: 'return=minimal' });
 
       payload = {
@@ -1285,8 +1307,12 @@ const handlers = {
     const currentProfile = await getProfessionalProfile(req, user.id);
     const fullName = cleanString(body.fullName || body.name || user.name, 160);
     const existingPendingProfile = currentProfile?.pending_profile || {};
-    const fallbackTitle = cleanProfileTitle(existingPendingProfile.title || user.title);
-    const title = cleanProfileTitle(body.title || body.role || fallbackTitle);
+    const fallbackTitles = cleanProfessionalTitles(
+      existingPendingProfile.titles ?? existingPendingProfile.title,
+      cleanProfessionalTitles(currentProfile?.titles, cleanProfessionalTitles(user.title))
+    );
+    const titles = cleanProfessionalTitles(body.titles ?? body.title ?? body.role, fallbackTitles);
+    const primaryTitle = titles[0] || '';
     const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate);
     const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience);
 
@@ -1300,7 +1326,7 @@ const handlers = {
       industries: cleanList(body.industries),
       location: cleanString(body.location, 160),
       skills: cleanList(body.skills),
-      title,
+      titles,
       tools: cleanList(body.tools),
       work_preferences: typeof body.workPreferences === 'object' && body.workPreferences !== null
         ? body.workPreferences
@@ -1322,7 +1348,7 @@ const handlers = {
     } else {
       await patchRows(req, `/profiles?id=eq.${user.id}`, {
         full_name: fullName,
-        title,
+        title: primaryTitle || null,
       }, { prefer: 'return=minimal' });
 
       rows = await writeRows(
@@ -1361,7 +1387,7 @@ const handlers = {
     sendJson(res, 200, mapTalentProfile(savedProfile, {
       email: user.email,
       full_name: fullName,
-      title,
+      title: primaryTitle,
     }, { usePending: true }));
   },
 
