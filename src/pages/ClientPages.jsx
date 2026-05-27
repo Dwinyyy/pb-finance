@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { 
-  Search, MapPin, Building, Star, Filter, 
-  CheckCircle, ArrowRight, User, Briefcase, 
-  Menu, X, Calculator, PieChart, ShieldCheck, 
-  Mail, Lock, LogOut, Sparkles, Layers3, 
-  BarChart3, BadgeCheck, Clock3, Handshake, 
+import {
+  Search, MapPin, Building, Star, Filter,
+  CheckCircle, ArrowRight, User, Briefcase,
+  Menu, X, Calculator, PieChart, ShieldCheck,
+  Mail, Lock, LogOut, Sparkles, Layers3,
+  BarChart3, BadgeCheck, Clock3, Handshake,
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, SlidersHorizontal,
   ChevronLeft, ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
@@ -14,9 +15,10 @@ import {
 import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
-import { motion as Motion } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi, isBackendConfigured } from '../services/api';
+import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS } from '../data/constants';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_BILLING = Object.freeze({
@@ -212,7 +214,9 @@ function InterviewDateTimePicker({ value, onChange }) {
 // 2. CLIENT PORTAL (LOGGED IN EXPERIENCE)
 // ==========================================
 export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
-  const [appView, setAppView] = useState('discover');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const appView = searchParams.get('tab') || 'discover';
+  const setAppView = (tab) => setSearchParams({ tab });
   const [matchmakerVisible, setMatchmakerVisible] = useState(true);
 
   return (
@@ -227,7 +231,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
                 PB
               </div>
               <span className="font-bold tracking-tight">Client Portal</span>
-              
+
               {/* App Global Search */}
               <div className="hidden lg:flex items-center ml-8 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1.5 focus-within:border-primary-500 focus-within:bg-slate-800 transition-all w-96">
                 <Search size={16} className="text-slate-400 mr-2" />
@@ -244,7 +248,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
               <NotificationBell unreadClassName="bg-primary-500" userId={user.id} />
-              
+
               <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
                 <div className="text-right hidden md:block">
                   <div className="text-sm font-bold text-white leading-tight">{user.name}</div>
@@ -272,7 +276,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
                 { id: 'interviews', label: 'Interviews' },
                 { id: 'billing', label: 'Billing & Contracts' },
               ].map(tab => (
-                <button 
+                <button
                   key={tab.id}
                   onClick={() => setAppView(tab.id)}
                   className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${appView === tab.id ? 'border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200 hover:border-slate-300'}`}
@@ -308,7 +312,7 @@ function AITalentMatchmaker() {
   const [messages, setMessages] = useState([
     { id: 1, sender: 'ai', text: "Hi there! I'm your AI Matchmaker. Describe the problem you're trying to solve (e.g., 'I need help with tax season', 'Looking for an FP&A agency') and I'll find the perfect fit." }
   ]);
-  
+
   const endOfMessagesRef = useRef(null);
 
   useEffect(() => {
@@ -328,7 +332,7 @@ function AITalentMatchmaker() {
 
     if (!isBackendConfigured()) {
       setMessages(prev => [...prev, {
-        id: Date.now() + 1,
+        id: crypto.randomUUID(),
         sender: 'ai',
         text: 'Request captured. Matching suggestions will appear here once recommendations are available.',
       }]);
@@ -341,7 +345,7 @@ function AITalentMatchmaker() {
       const matchData = result?.match || result?.matches?.[0] || null;
 
       setMessages(prev => [...prev, {
-        id: Date.now() + 1,
+        id: crypto.randomUUID(),
         sender: 'ai',
         text: result?.message || result?.text || 'Matching suggestions are ready.',
         type: result?.type || matchData?.type || 'talent',
@@ -349,7 +353,7 @@ function AITalentMatchmaker() {
       }]);
     } catch (error) {
       setMessages(prev => [...prev, {
-        id: Date.now() + 1,
+        id: crypto.randomUUID(),
         sender: 'ai',
         text: error.message || 'Unable to load matching suggestions right now.',
       }]);
@@ -361,7 +365,7 @@ function AITalentMatchmaker() {
   return (
     <>
       {/* Floating Action Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(true)}
         className={`fixed bottom-8 right-8 w-16 h-16 bg-slate-950 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-105 transition-transform z-50 ${isOpen ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
       >
@@ -370,7 +374,7 @@ function AITalentMatchmaker() {
 
       {/* AI Chat Window */}
       <Motion.div drag dragMomentum={false} className={`fixed bottom-8 right-8 w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}>
-        
+
         {/* Chat Header */}
         <div className="bg-slate-950 p-4 rounded-t-3xl flex justify-between items-center shrink-0 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/30 blur-[30px] rounded-full pointer-events-none"></div>
@@ -394,7 +398,7 @@ function AITalentMatchmaker() {
             <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] ${msg.sender === 'user' ? 'bg-primary-600 text-white rounded-2xl rounded-tr-sm px-4 py-3' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm'}`}>
                 <p className="text-sm">{msg.text}</p>
-                
+
                 {/* AI Rendered Mini-Card Match */}
                 {msg.matchData && (
                   <div className="mt-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm cursor-pointer hover:border-primary-300 transition-colors group">
@@ -431,15 +435,15 @@ function AITalentMatchmaker() {
         {/* Chat Input */}
                 <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0">
           <form onSubmit={handleSend} className="flex gap-2">
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={inputMsg}
               onChange={(e) => setInputMsg(e.target.value)}
-              placeholder="Describe your needs..." 
+              placeholder="Describe your needs..."
               className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary-500 transition-colors"
             />
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={!inputMsg.trim() || isTyping}
               className="w-12 h-12 bg-slate-950 text-white rounded-xl flex items-center justify-center hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -456,11 +460,25 @@ function AITalentMatchmaker() {
 function AppDiscoverView({ user }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [selectedAvailabilities, setSelectedAvailabilities] = useState(new Set());
+  const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
+  const availabilityDropdownRef = useRef(null);
   const [selectedSoftware, setSelectedSoftware] = useState(new Set());
   const [maxRate, setMaxRate] = useState(50);
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [busyProfileId, setBusyProfileId] = useState('');
   const [actionError, setActionError] = useState('');
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (availabilityDropdownRef.current && !availabilityDropdownRef.current.contains(event.target)) {
+        setIsAvailabilityOpen(false);
+      }
+    };
+    if (isAvailabilityOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAvailabilityOpen]);
   const { data: profiles, error, isConfigured, isLoading } = useBackendResource(
     backendApi.talent.listProfiles,
     EMPTY_LIST,
@@ -487,23 +505,24 @@ function AppDiscoverView({ user }) {
   useEffect(() => {
     setSavedIds(new Set(asList(shortlistSnapshot).map((profile) => profile.id)));
   }, [shortlistSnapshot]);
-  
+
   const filteredProfiles = useMemo(() => {
     const profileList = asList(profiles);
-    
+
     return profileList.filter((profile) => {
       // 1. Role / Tab filter
       if (activeFilter !== 'All') {
         const role = profile.role || profile.title || '';
-        const tools = asList(profile.tools || profile.skills);
-        const matchesTab = role.includes(activeFilter) || tools.some((tool) => String(tool).includes(activeFilter));
+        const allTags = [...asList(profile.tools), ...asList(profile.skills)];
+        const lowerFilter = activeFilter.toLowerCase();
+        const matchesTab = role.toLowerCase().includes(lowerFilter) || allTags.some((tag) => String(tag).toLowerCase().includes(lowerFilter));
         if (!matchesTab) return false;
       }
-      
+
       // 2. Max Rate filter
       const rate = profile.rate || profile.hourlyRate || 0;
       if (rate > maxRate && maxRate < 50) return false;
-      
+
       // 3. Availability filter
       if (selectedAvailabilities.size > 0) {
         const avail = profile.available || profile.availability || '';
@@ -512,8 +531,8 @@ function AppDiscoverView({ user }) {
 
       // 4. Software filter
       if (selectedSoftware.size > 0) {
-        const tools = asList(profile.tools || profile.skills);
-        const hasMatchingTool = tools.some(tool => selectedSoftware.has(tool));
+        const allTags = [...asList(profile.tools), ...asList(profile.skills)];
+        const hasMatchingTool = allTags.some(tag => selectedSoftware.has(tag));
         if (!hasMatchingTool) return false;
       }
 
@@ -536,16 +555,16 @@ function AppDiscoverView({ user }) {
       setBusyProfileId('');
     }
   };
-  
+
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in">
-      
+
       {/* Sticky Advanced Filters Sidebar */}
       <div className="w-full lg:w-72 flex-shrink-0 sticky top-[150px]">
         <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
             <h3 className="font-bold text-slate-950 dark:text-white flex items-center gap-2"><SlidersHorizontal size={18} className="text-primary-600"/> Filters</h3>
-            <button 
+            <button
               onClick={() => {
                 setSelectedAvailabilities(new Set());
                 setSelectedSoftware(new Set());
@@ -560,27 +579,107 @@ function AppDiscoverView({ user }) {
           <div className="space-y-8">
             <div>
               <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Availability</h4>
-              {['Immediate Start', 'Part-time OK', 'US Shift (EST)'].map((time) => {
-                const isSelected = selectedAvailabilities.has(time);
-                return (
-                <label key={time} className="flex items-center space-x-3 mb-3 cursor-pointer group">
-                  <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
-                    const newSet = new Set(selectedAvailabilities);
-                    if (e.target.checked) newSet.add(time);
-                    else newSet.delete(time);
-                    setSelectedAvailabilities(newSet);
-                  }} />
-                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-primary-600 border-primary-600' : 'border-slate-300 group-hover:border-primary-400 bg-white dark:bg-slate-900'}`}>
-                    {isSelected && <CheckCircle size={14} className="text-white" />}
-                  </div>
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-slate-950 dark:text-white transition-colors">{time}</span>
-                </label>
-              )})}
+              <div
+                ref={availabilityDropdownRef}
+                onClick={() => setIsAvailabilityOpen(!isAvailabilityOpen)}
+                className="relative border border-slate-200 dark:border-slate-800 rounded-xl bg-transparent min-h-[50px] flex flex-wrap items-center gap-2 p-2 pr-10 focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10 transition-all duration-300 cursor-pointer"
+              >
+
+                <AnimatePresence>
+                  {[...selectedAvailabilities].map(val => (
+                    <Motion.button
+                      key={val}
+                      initial={{ opacity: 0, scale: 0.8, y: 5 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.8, y: -5 }}
+                      transition={{ duration: 0.2, type: "spring", stiffness: 300, damping: 20 }}
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newSet = new Set(selectedAvailabilities);
+                        newSet.delete(val);
+                        setSelectedAvailabilities(newSet);
+                      }}
+                      className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors border border-emerald-100 dark:border-emerald-800/50 z-10 relative shadow-sm"
+                    >
+                      {val} <X size={12} className="opacity-70 hover:opacity-100 transition-opacity"/>
+                    </Motion.button>
+                  ))}
+                </AnimatePresence>
+
+                {selectedAvailabilities.size === 0 && (
+                  <Motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-sm font-bold text-slate-400 pl-2 pointer-events-none z-0"
+                  >
+                    Add availability filter
+                  </Motion.span>
+                )}
+
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                  <ChevronDown size={16} className={`transition-transform duration-200 ${isAvailabilityOpen ? 'rotate-180' : ''}`} />
+                </div>
+
+                {/* Custom Dropdown Menu */}
+                <AnimatePresence>
+                  {isAvailabilityOpen && (
+                    <Motion.div
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 overflow-hidden"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {selectedAvailabilities.size > 0 && (
+                        <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAvailabilities(new Set());
+                              setIsAvailabilityOpen(false);
+                            }}
+                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 py-2 rounded-lg transition-colors"
+                          >
+                            <X size={14} /> Deselect All
+                          </button>
+                        </div>
+                      )}
+                      <div className="max-h-64 overflow-y-auto p-2 space-y-1">
+                        {AVAILABILITY_OPTIONS.map((opt) => {
+                          const isSelected = selectedAvailabilities.has(opt);
+                          return (
+                            <button
+                              key={opt}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newSet = new Set(selectedAvailabilities);
+                                if (isSelected) {
+                                  newSet.delete(opt);
+                                } else {
+                                  newSet.add(opt);
+                                }
+                                setSelectedAvailabilities(newSet);
+                              }}
+                              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                            >
+                              {opt}
+                              {isSelected && <CheckCircle size={16} className="text-emerald-500" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
             <div>
               <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Primary Software</h4>
-              {['QuickBooks Online', 'Xero', 'NetSuite', 'Oracle SAP'].map((software) => {
+              {SOFTWARE_OPTIONS.map((software) => {
                 const isSelected = selectedSoftware.has(software);
                 return (
                 <label key={software} className="flex items-center space-x-3 mb-3 cursor-pointer group">
@@ -597,7 +696,7 @@ function AppDiscoverView({ user }) {
                 </label>
               )})}
             </div>
-            
+
             <div>
               <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-4">Max Hourly Rate: ${maxRate}{maxRate >= 50 ? '+' : ''}</h4>
               <input type="range" className="w-full accent-primary-600" min="5" max="50" value={maxRate} onChange={(e) => setMaxRate(Number(e.target.value))} />
@@ -614,14 +713,14 @@ function AppDiscoverView({ user }) {
       {/* Main Grid */}
       <div className="flex-1 w-full">
         <div className="flex justify-between items-center mb-6">
-          <div className="flex space-x-2 overflow-x-auto scrollbar-hide pb-2">
-            {['All', 'Tax', 'Audit', 'FP&A', 'Bookkeeping'].map(filter => (
-              <button 
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+            {['All', 'Bookkeeper', 'CPA', 'Financial Controller', 'Fractional CFO'].map((filter) => (
+              <button
                 key={filter}
                 onClick={() => setActiveFilter(filter)}
                 className={`px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
-                  activeFilter === filter 
-                    ? 'bg-slate-900 text-white shadow-md' 
+                  activeFilter === filter
+                    ? 'bg-slate-900 text-white shadow-md'
                     : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-50'
                 }`}
               >
@@ -655,7 +754,7 @@ function AppDiscoverView({ user }) {
         <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
           {filteredProfiles.map((profile, idx) => (
             <FadeIn key={profile.id || `profile-${idx}`} delay={(idx % 6) * 50} direction="up" hover={true} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-xl hover:border-primary-200 transition-all duration-300 group flex flex-col h-full">
-              
+
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-xl border border-slate-200 dark:border-slate-800">
@@ -675,7 +774,7 @@ function AppDiscoverView({ user }) {
                   <Bookmark fill={savedIds.has(profile.id) ? 'currentColor' : 'none'} className="w-6 h-6 opacity-80 hover:opacity-100" />
                 </button>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3 mb-6 flex-grow">
                 <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
                    <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">Experience</div>
@@ -773,7 +872,7 @@ function AppAgenciesView() {
                 <Star size={12} className="mr-1 fill-current" /> {agency.rating || 'New'}
               </div>
             </div>
-            
+
             <h3 className="font-bold text-2xl text-slate-950 dark:text-white mb-2 leading-tight">{agency.name || 'Unnamed agency'}</h3>
             <p className="text-sm font-bold text-primary-600 mb-6">{agency.specialty || 'Specialty pending'}</p>
 
@@ -949,7 +1048,7 @@ function AppShortlistView({ user }) {
         {localShortlist.map((profile, idx) => {
           const hasActiveOpportunity = ['accepted', 'active', 'invited'].includes(profile.opportunityStatus);
           const currentStatus = hasActiveOpportunity
-            ? (['requesting', 'requested', 'scheduled'].includes(profile.interviewStatus) ? profile.interviewStatus : profile.opportunityStatus)
+            ? (['requesting', 'requested', 'scheduled', 'cancelled'].includes(profile.interviewStatus) ? profile.interviewStatus : profile.opportunityStatus)
             : profile.interviewStatus || profile.opportunityStatus || profile.shortlistStatus;
           const hasActiveRequest = ['invited', 'accepted', 'active', 'requesting', 'requested', 'scheduled'].includes(currentStatus);
 
@@ -1313,7 +1412,7 @@ function AppBillingView() {
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{primaryContract.billingInterval || 'Billing'}</div>
               </div>
             </div>
-            
+
             <div className="space-y-4 mb-8">
               <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Assigned Talent</h5>
               <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">

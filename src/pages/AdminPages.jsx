@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Building,
   CheckCircle,
@@ -201,8 +202,8 @@ function TalentReview() {
                   <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">{profile.experience || profile.exp || 'Pending'}</div>
                 </div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Availability</div>
-                  <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">{profile.availability || profile.available || 'Pending'}</div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Work Availability</div>
+                  <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">{profile.availability || profile.available || 'Not Specified'}</div>
                 </div>
               </div>
 
@@ -453,7 +454,9 @@ function AgenciesAdmin() {
 }
 
 export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
-  const [activeTab, setActiveTab] = useState('talent');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'talent';
+  const setActiveTab = (tab) => setSearchParams({ tab });
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans dark:bg-slate-950">

@@ -53,6 +53,10 @@ const parseBody = async (response) => {
 
 const getErrorMessage = (body, status) => {
   if (typeof body === 'string') {
+    const isHtml = body.trim().startsWith('<') && body.toLowerCase().includes('html');
+    if (isHtml) {
+      return `A server error occurred (Status ${status}). Please try again later.`;
+    }
     return body;
   }
 

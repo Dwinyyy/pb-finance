@@ -14,6 +14,7 @@ import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { FAQ_ITEMS, MATCHING_WORKFLOW, PROCESS_STEPS, SERVICE_CARDS } from '../data/staticContent';
 import FadeIn from '../components/FadeIn';
 import { motion as Motion } from 'framer-motion';
+import { Button } from '../components/ui/Button';
 
 // ==========================================
 // 1. PUBLIC MARKETING SITE
@@ -39,6 +40,17 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
+
 
 
   const getActiveTab = () => {
@@ -48,6 +60,12 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
     return 'home';
   };
   const activeTab = getActiveTab();
+  const navItems = [
+    { id: 'home', label: 'Overview' },
+    { id: 'talents', label: 'Directory' },
+    { id: 'agency', label: 'Enterprise' },
+    { id: 'pricing', label: 'Pricing' },
+  ];
 
   const navigateTo = (tab) => {
     const path = tab === 'home' ? '/' : `/${tab}`;
@@ -56,13 +74,18 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const openMobileAuth = (view) => {
+    setMobileMenuOpen(false);
+    openAuth(view);
+  };
+
   return (
     <>
       <Motion.nav initial={{y:0}} animate={{y: isNavVisible ? 0 : '-100%'}} transition={{duration: 0.3}} className="bg-white dark:bg-slate-900/90 backdrop-blur-xl fixed w-full top-0 z-50 border-b border-slate-200 dark:border-slate-800/80 transition-colors text-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-20 items-center">
+          <div className="flex justify-between h-16 md:h-20 items-center">
             <div className="flex items-center cursor-pointer gap-3" onClick={() => navigateTo('home')}>
-              <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-primary-500/20">
+              <div className="w-9 h-9 md:w-10 md:h-10 bg-slate-950 rounded-xl flex items-center justify-center text-white font-bold text-base md:text-lg shadow-lg shadow-primary-500/20">
                 PB
               </div>
               <div>
@@ -71,17 +94,17 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
             </div>
 
             <div className="hidden md:flex items-center space-x-1">
-              {['home', 'talents', 'agency', 'pricing'].map((tab) => (
+              {navItems.map((tab) => (
                 <button 
-                  key={tab}
-                  onClick={() => navigateTo(tab)} 
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${activeTab === tab ? 'bg-slate-100 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  key={tab.id}
+                  onClick={() => navigateTo(tab.id)} 
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${activeTab === tab.id ? 'bg-slate-100 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                 >
-                  {tab === 'home' ? 'Overview' : tab === 'talents' ? 'Directory' : tab === 'pricing' ? 'Pricing' : 'Enterprise'}
+                  {tab.label}
                 </button>
               ))}
               
-              <button onClick={toggleDarkMode} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-2">
+              <button onClick={toggleDarkMode} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-2" aria-label="Toggle dark mode">
                 {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
 
@@ -93,8 +116,11 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
               </div>
             </div>
 
-            <div className="md:hidden flex items-center">
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <div className="md:hidden flex items-center gap-2">
+              <button onClick={toggleDarkMode} className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Toggle dark mode">
+                {isDarkMode ? <Sun size={21} /> : <Moon size={21} />}
+              </button>
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Toggle navigation menu" aria-expanded={mobileMenuOpen}>
                 {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
@@ -104,19 +130,29 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
         {mobileMenuOpen && (
           <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 shadow-xl absolute w-full z-50">
             <div className="px-4 pt-4 pb-6 space-y-2">
-              <button onClick={() => navigateTo('home')} className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'home' ? 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>Overview</button>
-              <button onClick={() => navigateTo('talents')} className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'talents' ? 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>Directory</button>
-              <button onClick={() => navigateTo('agency')} className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'agency' ? 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>Enterprise Teams</button>
+              {navItems.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => navigateTo(tab.id)}
+                  className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === tab.id ? 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                >
+                  {tab.id === 'agency' ? 'Enterprise Teams' : tab.label}
+                </button>
+              ))}
+              <button onClick={toggleDarkMode} className="flex w-full items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+                {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
               <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid gap-2">
-                <button onClick={() => openAuth('login')} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 px-4 py-3 rounded-xl text-sm font-bold">Client Login</button>
-                <button onClick={() => openAuth('register')} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl text-sm font-bold">Start Hiring</button>
+                <button onClick={() => openMobileAuth('login')} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 px-4 py-3 rounded-xl text-sm font-bold">Client Login</button>
+                <button onClick={() => openMobileAuth('register')} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl text-sm font-bold">Start Hiring</button>
               </div>
             </div>
           </div>
         )}
       </Motion.nav>
 
-      <main className="min-h-screen pt-20">
+      <main className="min-h-screen pt-16 md:pt-20">
         <Routes>
           <Route path="/" element={<HomeMarketingView navigateTo={navigateTo} openAuth={openAuth} />} />
           <Route path="/talents" element={<PreviewDirectoryView openAuth={openAuth} />} />
@@ -295,61 +331,108 @@ function FAQAccordion() {
 }
 
 function HomeMarketingView({ navigateTo, openAuth }) {
+  const audiencePaths = [
+    {
+      icon: Briefcase,
+      label: 'Hire Talent',
+      text: 'Browse vetted CPAs and analysts',
+      action: () => openAuth('register'),
+    },
+    {
+      icon: Layers3,
+      label: 'Build a Pod',
+      text: 'See managed finance teams',
+      action: () => navigateTo('agency'),
+    },
+    {
+      icon: User,
+      label: 'Apply as Talent',
+      text: 'Join the PB network',
+      action: () => openAuth('register_pro'),
+    },
+  ];
+
   return (
     <div className="overflow-hidden">
       {/* Hero Section */}
-      <section className="relative pt-24 pb-32 lg:pt-36 lg:pb-40 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800/50">
+      <section className="relative pt-10 pb-12 sm:pt-12 sm:pb-14 lg:pt-16 lg:pb-16 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800/50">
         <div className="absolute inset-0 bg-grid-pattern opacity-50"></div>
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-3xl h-[600px] opacity-40 rounded-full bg-gradient-to-tr from-primary-200 via-cyan-100 to-transparent blur-3xl pointer-events-none -z-10"></div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center flex flex-col items-center">
           <FadeIn delay={100}>
-            <div className="inline-flex items-center mb-8 rounded-full border border-primary-200 bg-white dark:bg-slate-900/60 backdrop-blur px-4 py-2 text-sm font-semibold text-primary-800 dark:text-primary-300 shadow-sm">
+            <div className="inline-flex items-center mb-5 rounded-full border border-primary-200 bg-white dark:bg-slate-900/60 backdrop-blur px-4 py-2 text-xs sm:text-sm font-semibold text-primary-800 dark:text-primary-300 shadow-sm">
               <Sparkles className="mr-2 h-4 w-4 text-primary-500" /> Redefining Global Finance Outsourcing
             </div>
           </FadeIn>
           
           <FadeIn delay={200}>
-            <h1 className="text-5xl md:text-7xl font-bold text-slate-950 dark:text-white tracking-tight leading-[1.05] mb-8 max-w-5xl">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-950 dark:text-white tracking-tight leading-[1.04] mb-5 max-w-5xl">
               Elite financial talent, seamlessly integrated into your <span className="bg-gradient-to-r from-primary-600 to-cyan-500 bg-clip-text text-transparent">operations.</span>
             </h1>
           </FadeIn>
           
           <FadeIn delay={300}>
-            <p className="text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto mb-12 leading-relaxed">
+            <p className="text-base sm:text-lg md:text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto mb-6 leading-relaxed">
               We connect scaling companies with top-tier, rigorously vetted CPAs and analysts from the Philippines. Scale your capacity without compromising on quality.
             </p>
           </FadeIn>
 
-          <FadeIn delay={400} className="w-full max-w-2xl flex flex-col sm:flex-row gap-4 justify-center mb-20">
-            <button onClick={() => openAuth('register')} className="bg-slate-950 dark:bg-primary-600 hover:bg-primary-600 dark:hover:bg-primary-500 text-white px-10 py-4 rounded-full font-semibold text-lg transition-all shadow-xl shadow-primary-900/10 flex items-center justify-center transform hover:-translate-y-1 hover:shadow-primary-900/20">
+          <FadeIn delay={400} className="w-full max-w-2xl flex flex-col sm:flex-row gap-3 justify-center mb-5">
+            <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto shadow-xl shadow-primary-900/10">
               Start Building Your Team
-            </button>
-            <button onClick={() => navigateTo('talents')} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-primary-200 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-slate-800 dark:text-slate-200 px-10 py-4 rounded-full font-semibold text-lg transition-all shadow-sm hover:shadow-md flex items-center justify-center transform hover:-translate-y-1">
+            </Button>
+            <Button variant="outline" size="lg" onClick={() => navigateTo('talents')} className="w-full sm:w-auto bg-white dark:bg-slate-800 shadow-sm hover:shadow-md">
               Browse Directory <ArrowRight size={20} className="ml-2 text-slate-400" />
-            </button>
+            </Button>
+          </FadeIn>
+
+        </div>
+      </section>
+
+      <section className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <div className="relative z-20 mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+          <FadeIn delay={100} className="-mt-7 flex w-full gap-3 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible">
+            {audiencePaths.map((path) => {
+              const Icon = path.icon;
+
+              return (
+                <button
+                  key={path.label}
+                  onClick={path.action}
+                  className="flex min-w-[230px] flex-1 items-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left shadow-sm transition-all hover:border-primary-200 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-900/80 dark:hover:bg-slate-900"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-primary-600">
+                    <Icon size={18} />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-black text-slate-950 dark:text-white">{path.label}</span>
+                    <span className="block text-xs font-semibold leading-snug text-slate-500 dark:text-slate-400">{path.text}</span>
+                  </span>
+                </button>
+              );
+            })}
           </FadeIn>
 
           {/* Value Props Bar */}
-          <FadeIn delay={600} hover={true} className="w-full max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-3xl p-4 md:p-6 border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
-            <div className="flex items-center justify-center gap-4 py-4 md:py-2 md:px-6">
-              <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 flex-shrink-0"><ShieldCheck size={24}/></div>
-              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-base">Top 1% Talent</p><p className="text-sm font-medium text-slate-500">Rigorously vetted</p></div>
+          <FadeIn delay={200} hover={true} className="mt-4 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-3 md:p-4 border border-slate-200 dark:border-slate-800 shadow-lg shadow-slate-200/40 dark:shadow-slate-900/40 flex gap-3 overflow-x-auto scrollbar-hide md:grid md:grid-cols-3 md:overflow-visible md:divide-x divide-slate-200 dark:divide-slate-800">
+            <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
+              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 flex-shrink-0"><ShieldCheck size={20}/></div>
+              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-sm">Top 1% Talent</p><p className="text-xs font-medium text-slate-500">Rigorously vetted</p></div>
             </div>
-            <div className="flex items-center justify-center gap-4 py-6 md:py-2 md:px-6">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 flex-shrink-0"><Globe2 size={24}/></div>
-              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-base">US/UK GAAP</p><p className="text-sm font-medium text-slate-500">Fully compliant</p></div>
+            <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
+              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 flex-shrink-0"><Globe2 size={20}/></div>
+              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-sm">US/UK GAAP</p><p className="text-xs font-medium text-slate-500">Fully compliant</p></div>
             </div>
-            <div className="flex items-center justify-center gap-4 py-4 md:py-2 md:px-6">
-              <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 flex-shrink-0"><TrendingDown size={24}/></div>
-              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-base">40%+ Savings</p><p className="text-sm font-medium text-slate-500">Optimized ROI</p></div>
+            <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
+              <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600 flex-shrink-0"><TrendingDown size={20}/></div>
+              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-sm">40%+ Savings</p><p className="text-xs font-medium text-slate-500">Optimized ROI</p></div>
             </div>
           </FadeIn>
         </div>
       </section>
 
       {/* Dynamic Scrolling Sections */}
-      <section className="py-32 bg-white dark:bg-slate-900">
+      <section className="py-24 bg-white dark:bg-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <FadeIn>
             <div className="text-center max-w-3xl mx-auto mb-20">

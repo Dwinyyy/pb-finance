@@ -84,3 +84,22 @@ html {
   animation: successMessageLifecycle 2.5s ease-in-out forwards;
   transform-origin: top center;
 }
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+@utility animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@utility animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}

@@ -27,7 +27,7 @@ create table if not exists public.professional_profiles (
   timezone text,
   years_experience integer,
   hourly_rate numeric(10, 2),
-  availability text not null default 'available_now' check (availability in ('available_now', 'available_soon', 'not_available')),
+  availability text not null default 'Immediate Start' check (availability in ('Immediate Start', '1-2 Weeks Notice', '3-4 Weeks Notice', 'Part-time OK', 'Full-time', 'US Shift (EST)', 'US Shift (PST)', 'UK/Europe Shift', 'Not Available')),
   status text not null default 'draft' check (status in ('draft', 'pending_review', 'approved', 'hidden', 'rejected')),
   rating numeric(3, 2),
   review_count integer not null default 0,
@@ -44,6 +44,21 @@ create table if not exists public.professional_profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.professional_profiles drop constraint if exists professional_profiles_availability_check;
+
+update public.professional_profiles
+set availability = case
+  when availability = 'available_now' then 'Immediate Start'
+  when availability = 'available_soon' then '1-2 Weeks Notice'
+  when availability = 'not_available' then 'Not Available'
+  else 'Immediate Start'
+end
+where availability not in ('Immediate Start', '1-2 Weeks Notice', '3-4 Weeks Notice', 'Part-time OK', 'Full-time', 'US Shift (EST)', 'US Shift (PST)', 'UK/Europe Shift', 'Not Available');
+
+alter table public.professional_profiles add constraint professional_profiles_availability_check
+  check (availability in ('Immediate Start', '1-2 Weeks Notice', '3-4 Weeks Notice', 'Part-time OK', 'Full-time', 'US Shift (EST)', 'US Shift (PST)', 'UK/Europe Shift', 'Not Available'));
+alter table public.professional_profiles alter column availability set default 'Immediate Start';
 
 alter table public.professional_profiles add column if not exists titles text[] not null default '{}';
 alter table public.professional_profiles add column if not exists pending_profile jsonb not null default '{}'::jsonb;
@@ -469,6 +484,13 @@ create policy "Interviews are managed by clients"
   for all
   using (auth.uid() = client_id)
   with check (auth.uid() = client_id);
+
+drop policy if exists "Interviews can be updated by professionals" on public.interviews;
+create policy "Interviews can be updated by professionals"
+  on public.interviews
+  for update
+  using (auth.uid() = professional_id)
+  with check (auth.uid() = professional_id);
 
 drop policy if exists "Contracts are visible to related users" on public.contracts;
 create policy "Contracts are visible to related users"

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   Search, MapPin, Building, Star, Filter, 
@@ -38,29 +39,8 @@ const cleanProfileTitle = (value) => {
 
   return title && !placeholderTitles.has(title) ? title : '';
 };
-const PROFESSIONAL_TITLE_OPTIONS = [
-  'Bookkeeper',
-  'Accounting Specialist',
-  'Senior Accountant',
-  'CPA',
-  'Tax Accountant',
-  'Payroll Specialist',
-  'Accounts Payable Specialist',
-  'Accounts Receivable Specialist',
-  'Financial Reporting Specialist',
-  'Month-End Close Specialist',
-  'Finance Analyst',
-  'FP&A Analyst',
-  'Revenue Accountant',
-  'Cost Accountant',
-  'Management Accountant',
-  'Audit Associate',
-  'Financial Controller',
-  'Fractional CFO',
-  'QuickBooks ProAdvisor',
-  'Xero Advisor',
-  'NetSuite Consultant',
-];
+import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS, SKILLS_OPTIONS, PROFESSIONAL_TITLE_OPTIONS } from '../data/constants';
+
 const cleanProfileTitles = (value, fallback = []) => {
   const source = value === undefined ? fallback : value;
   const rawTitles = Array.isArray(source)
@@ -70,12 +50,6 @@ const cleanProfileTitles = (value, fallback = []) => {
   return [...new Set(rawTitles.map(cleanProfileTitle).filter(Boolean))];
 };
 const formatProfileTitles = (titles) => cleanProfileTitles(titles).join(', ');
-const availabilityToValue = (value) => {
-  const label = String(value || '').toLowerCase();
-  if (label.includes('2') || label.includes('soon')) return 'available_soon';
-  if (label.includes('not')) return 'not_available';
-  return 'available_now';
-};
 
 
 
@@ -98,17 +72,17 @@ function PortalModal({ children, onClose, title }) {
   );
 }
 
-function ProfessionalTitlePicker({ value, onChange }) {
+function MultiSelectPicker({ value, onChange, optionsList, placeholder }) {
   const [isOpen, setIsOpen] = useState(false);
-  const selectedTitles = cleanProfileTitles(value);
-  const selectedSet = new Set(selectedTitles);
-  const options = [...new Set([...selectedTitles, ...PROFESSIONAL_TITLE_OPTIONS])];
-  const toggleTitle = (title) => {
-    const nextTitles = selectedSet.has(title)
-      ? selectedTitles.filter((item) => item !== title)
-      : [...selectedTitles, title];
+  const selectedItems = cleanProfileTitles(value);
+  const selectedSet = new Set(selectedItems);
+  const options = [...new Set([...selectedItems, ...optionsList])];
+  const toggleItem = (item) => {
+    const nextItems = selectedSet.has(item)
+      ? selectedItems.filter((i) => i !== item)
+      : [...selectedItems, item];
 
-    onChange(nextTitles);
+    onChange(nextItems);
   };
 
   return (
@@ -118,20 +92,20 @@ function ProfessionalTitlePicker({ value, onChange }) {
         onClick={() => setIsOpen((current) => !current)}
         className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 outline-none transition-colors hover:border-cyan-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
       >
-        <span>{selectedTitles.length ? `${selectedTitles.length} selected` : 'Select professional titles'}</span>
+        <span>{selectedItems.length ? `${selectedItems.length} selected` : placeholder}</span>
         <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {selectedTitles.length > 0 && (
+      {selectedItems.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {selectedTitles.map((title) => (
+          {selectedItems.map((item) => (
             <button
-              key={title}
+              key={item}
               type="button"
-              onClick={() => toggleTitle(title)}
+              onClick={() => toggleItem(item)}
               className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-700 transition-colors hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300"
             >
-              {title} <span className="ml-1 text-cyan-500">x</span>
+              {item} <span className="ml-1 text-cyan-500">x</span>
             </button>
           ))}
         </div>
@@ -139,21 +113,21 @@ function ProfessionalTitlePicker({ value, onChange }) {
 
       {isOpen && (
         <div className="absolute left-0 right-0 top-14 z-30 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-          {options.map((title) => {
-            const isSelected = selectedSet.has(title);
+          {options.map((item) => {
+            const isSelected = selectedSet.has(item);
 
             return (
               <button
-                key={title}
+                key={item}
                 type="button"
-                onClick={() => toggleTitle(title)}
+                onClick={() => toggleItem(item)}
                 className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition-colors ${
                   isSelected
                     ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-300'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
                 }`}
               >
-                <span>{title}</span>
+                <span>{item}</span>
                 <span className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${isSelected ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 dark:border-slate-700'}`}>
                   {isSelected ? <CheckCircle size={11} /> : ''}
                 </span>
@@ -170,7 +144,9 @@ function ProfessionalTitlePicker({ value, onChange }) {
 // 3. PROFESSIONAL PORTAL (TALENT EXPERIENCE)
 // ==========================================
 export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
-  const [appView, setAppView] = useState('profile');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const appView = searchParams.get('tab') || 'profile';
+  const setAppView = (tab) => setSearchParams({ tab });
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans">
@@ -273,14 +249,14 @@ function AppTalentProfileView({ user }) {
   const skills = asList(displayProfile.tools || displayProfile.skills);
 
   const buildProfileForm = (overrides = {}) => ({
-    availability: availabilityToValue(displayProfile.availability || displayProfile.available),
+    titles: profileTitles,
+    availability: displayProfile.availability || displayProfile.available || 'Immediate Start',
     bio: displayProfile.bio || '',
     certifications: listToText(displayProfile.certifications),
     fullName: displayProfile.name || displayProfile.fullName || '',
     hourlyRate: displayProfile.rate || displayProfile.hourlyRate || '',
     location: displayProfile.location || '',
     skills: listToText(displayProfile.skills),
-    titles: profileTitles,
     tools: listToText(displayProfile.tools),
     yearsExperience: displayProfile.yearsExperience || '',
     ...overrides,
@@ -357,15 +333,16 @@ function AppTalentProfileView({ user }) {
                   <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                 </div>
                 <select
-                  value={availabilityToValue(displayProfile.availability || displayProfile.available)}
+                  className="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold border-none outline-none appearance-none pr-8 cursor-pointer relative"
+                  value={displayProfile.availability || displayProfile.available || 'Immediate Start'}
                   onChange={(event) => {
                     openEditor('profile', { availability: event.target.value });
                   }}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-50 text-sm font-bold rounded-lg px-3 py-2 outline-none focus:border-cyan-500"
                 >
-                  <option value="available_now">Available Now</option>
-                  <option value="available_soon">Available in 2 Weeks</option>
-                  <option value="not_available">Not Available</option>
+                  <option value="" disabled>Select Availability</option>
+                  {AVAILABILITY_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
                 </select>
               </div>
 
@@ -377,7 +354,7 @@ function AppTalentProfileView({ user }) {
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Professional titles
-                    <ProfessionalTitlePicker value={profileForm.titles || []} onChange={(titles) => handleProfileChange('titles', titles)} />
+                    <MultiSelectPicker value={profileForm.titles || []} onChange={(titles) => handleProfileChange('titles', titles)} optionsList={PROFESSIONAL_TITLE_OPTIONS} placeholder="Select professional titles" />
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Location
@@ -385,10 +362,10 @@ function AppTalentProfileView({ user }) {
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Availability
-                    <select value={profileForm.availability || 'available_now'} onChange={(event) => handleProfileChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500">
-                      <option value="available_now">Available Now</option>
-                      <option value="available_soon">Available in 2 Weeks</option>
-                      <option value="not_available">Not Available</option>
+                    <select value={profileForm.availability || 'Immediate Start'} onChange={(event) => handleProfileChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500">
+                      {AVAILABILITY_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
                     </select>
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -478,12 +455,12 @@ function AppTalentProfileView({ user }) {
 
                 <div className="grid gap-4 md:grid-cols-3">
                   <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Tools
-                    <input value={profileForm.tools || ''} onChange={(event) => handleProfileChange('tools', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                    Tools / Software
+                    <MultiSelectPicker value={profileForm.tools || []} onChange={(val) => handleProfileChange('tools', val)} optionsList={SOFTWARE_OPTIONS} placeholder="Select software" />
                   </label>
                   <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
                     Skills
-                    <input value={profileForm.skills || ''} onChange={(event) => handleProfileChange('skills', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
+                    <MultiSelectPicker value={profileForm.skills || []} onChange={(val) => handleProfileChange('skills', val)} optionsList={SKILLS_OPTIONS} placeholder="Select skills" />
                   </label>
                   <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
                     Certifications

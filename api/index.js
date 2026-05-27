@@ -104,12 +104,6 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const availabilityLabels = {
-  available_now: 'Immediate Start',
-  available_soon: 'Available in 2 Weeks',
-  not_available: 'Not Available',
-};
-
 const formatDate = (value) => {
   if (!value) return '';
 
@@ -237,8 +231,8 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
 
   return {
-    available: availabilityLabels[viewProfile.availability] || 'Availability pending',
-    availability: availabilityLabels[viewProfile.availability] || 'Availability pending',
+    available: viewProfile.availability || 'Immediate Start',
+    availability: viewProfile.availability || 'Immediate Start',
     bio: viewProfile.bio || '',
     certifications: asList(viewProfile.certifications),
     email: owner.email || '',
@@ -351,17 +345,7 @@ const getPrimaryClientCompanyName = async (req, clientId, fallback = '') => {
 };
 
 const normalizeAvailability = (value) => {
-  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
-  const labels = {
-    available_in_2_weeks: 'available_soon',
-    available_now: 'available_now',
-    immediate_start: 'available_now',
-    not_available: 'not_available',
-  };
-
-  return labels[normalized] || (['available_now', 'available_soon', 'not_available'].includes(normalized)
-    ? normalized
-    : 'available_now');
+  return value || 'Immediate Start';
 };
 
 const talentStatuses = new Set(['draft', 'pending_review', 'approved', 'hidden', 'rejected']);
@@ -939,7 +923,7 @@ const handlers = {
         ? readRows(req, `/opportunities?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&status=in.(invited,accepted,active)&select=id,professional_id,status,title,received_at&order=received_at.desc&limit=100`)
         : [],
       professionalIds.length
-        ? readRows(req, `/interviews?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&client_hidden_at=is.null&status=in.(requesting,requested,scheduled)&select=id,professional_id,status,created_at,scheduled_for&order=created_at.desc&limit=100`)
+        ? readRows(req, `/interviews?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&client_hidden_at=is.null&status=in.(requesting,requested,scheduled,cancelled)&select=id,professional_id,status,created_at,scheduled_for&order=created_at.desc&limit=100`)
         : [],
     ]);
     const shortlistByProfessional = new Map(rows.map((row) => [row.professional_id, row]));
@@ -1047,7 +1031,7 @@ const handlers = {
       ),
     ]);
 
-    if (asList(activeOpportunities).length || asList(activeInterviews).length) {
+    if (asList(activeInterviews).length) {
       sendError(res, 409, 'There is already an active interview request for this professional.');
       return;
     }
@@ -1062,17 +1046,22 @@ const handlers = {
       : 'Interview requested';
     const companyName = await getPrimaryClientCompanyName(req, user.id, user.company);
     const durationMinutes = Number(body.durationMinutes || body.duration_minutes || 30);
-    const opportunityRows = await writeRows(req, '/opportunities', {
-      client_id: user.id,
-      company_name: companyName,
-      description: cleanString(body.description || `Interview requested by ${companyName}.`, 1000),
-      hourly_rate: toNumber(body.hourlyRate || body.hourly_rate || professionalProfile.hourly_rate),
-      professional_id: professionalId,
-      schedule,
-      status: 'invited',
-      title,
-    });
-    const opportunity = asList(opportunityRows)[0];
+
+    let opportunity = asList(activeOpportunities)[0];
+
+    if (!opportunity) {
+      const opportunityRows = await writeRows(req, '/opportunities', {
+        client_id: user.id,
+        company_name: companyName,
+        description: cleanString(body.description || `Interview requested by ${companyName}.`, 1000),
+        hourly_rate: toNumber(body.hourlyRate || body.hourly_rate || professionalProfile.hourly_rate),
+        professional_id: professionalId,
+        schedule,
+        status: 'invited',
+        title,
+      });
+      opportunity = asList(opportunityRows)[0];
+    }
     const interviewRows = await writeRows(req, '/interviews', {
       client_id: user.id,
       duration_minutes: Number.isFinite(durationMinutes) ? durationMinutes : 30,
@@ -1641,19 +1630,19 @@ const checkRateLimit = (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const now = Date.now();
   const windowMs = 60 * 1000;
-  
+
   if (!requestCounts.has(ip)) {
     requestCounts.set(ip, { count: 1, resetTime: now + windowMs });
     return true;
   }
-  
+
   const record = requestCounts.get(ip);
   if (now > record.resetTime) {
     record.count = 1;
     record.resetTime = now + windowMs;
     return true;
   }
-  
+
   record.count += 1;
   if (record.count > 150) {
     sendError(res, 429, 'Too many requests, please try again later.');
