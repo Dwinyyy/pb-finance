@@ -62,6 +62,8 @@ const run = async () => {
       || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
     ),
     serviceRoleConfigured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    redisConfigured: Boolean(process.env.REDIS_URL || process.env.KV_URL),
+    registrationJwtSecretConfigured: Boolean(process.env.REGISTRATION_JWT_SECRET),
     emailConfigured: Boolean(process.env.BREVO_API_KEY && process.env.NOTIFICATION_FROM_EMAIL),
     adminNotificationEmailConfigured: Boolean(process.env.ADMIN_NOTIFICATION_EMAIL),
   };
@@ -75,6 +77,16 @@ const run = async () => {
     } catch (error) {
       tableChecks[table] = { ok: false, error: error.message };
     }
+  }
+
+  try {
+    await supabaseRestRequest(
+      '/profiles?select=id,manual_triage_required,manual_triage_status,manual_triage_reason,manual_triage_source,manual_triage_domain,manual_triage_flagged_at,manual_triage_resolved_at&limit=1',
+      { useServiceRole: true }
+    );
+    tableChecks.profile_manual_triage_columns = { ok: true };
+  } catch (error) {
+    tableChecks.profile_manual_triage_columns = { ok: false, error: error.message };
   }
 
   try {

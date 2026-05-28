@@ -87,6 +87,27 @@ export const supabaseAuthRequest = async (path, { body, method, token } = {}) =>
   return parseResponse(response);
 };
 
+export const supabaseAuthAdminRequest = async (path, { body, method } = {}) => {
+  const { authUrl, key, serviceRoleKey } = getSupabaseConfig();
+
+  if (!serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for account linking.');
+  }
+
+  const response = await fetch(`${authUrl}${path}`, {
+    method: method || (body ? 'POST' : 'GET'),
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/json',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  return parseResponse(response);
+};
+
 export const supabaseRestRequest = async (path, {
   body,
   method,
@@ -165,6 +186,19 @@ export const signInWithPassword = ({ email, password }) => supabaseAuthRequest('
   },
 });
 
+export const getOAuthSignInUrl = ({ provider = 'google', redirectTo } = {}) => {
+  const { authUrl, key } = getSupabaseConfig();
+  const url = new URL(`${authUrl}/authorize`);
+  url.searchParams.set('apikey', key);
+  url.searchParams.set('provider', provider);
+
+  if (redirectTo) {
+    url.searchParams.set('redirect_to', redirectTo);
+  }
+
+  return url.href;
+};
+
 export const refreshSession = (refreshToken) => supabaseAuthRequest('/token?grant_type=refresh_token', {
   body: {
     refresh_token: refreshToken,
@@ -172,5 +206,26 @@ export const refreshSession = (refreshToken) => supabaseAuthRequest('/token?gran
 });
 
 export const getSupabaseUser = (token) => supabaseAuthRequest('/user', { token });
+
+export const updateCurrentSupabaseUser = (token, body) => supabaseAuthRequest('/user', {
+  body,
+  method: 'PUT',
+  token,
+});
+
+export const getSupabaseAuthUserById = async (userId) => {
+  const data = await supabaseAuthAdminRequest(`/admin/users/${encodeURIComponent(userId)}`);
+
+  return data?.user || data;
+};
+
+export const updateSupabaseAuthUserById = async (userId, body) => {
+  const data = await supabaseAuthAdminRequest(`/admin/users/${encodeURIComponent(userId)}`, {
+    body,
+    method: 'PUT',
+  });
+
+  return data?.user || data;
+};
 
 export const signOut = (token) => supabaseAuthRequest('/logout', { method: 'POST', token });

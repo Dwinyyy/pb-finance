@@ -31,6 +31,9 @@ Implemented endpoints:
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `POST /api/auth/register`
+- `POST /api/auth/register/verify`
+- `POST /api/auth/google`
+- `POST /api/auth/oauth/finalize`
 - `POST /api/auth/refresh`
 - `GET /api/auth/me`
 - `GET /api/admin/talent`
@@ -60,11 +63,14 @@ Auth is backed by Supabase Auth. For production, set these in Vercel Project Set
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-or-publishable-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+REDIS_URL=rediss://default:your-redis-password@your-redis-host:6379
+REGISTRATION_JWT_SECRET=generate-at-least-32-random-characters
 PUBLIC_APP_URL=https://your-production-domain.com
 BREVO_API_KEY=your-brevo-api-key
 NOTIFICATION_FROM_EMAIL=your-verified-sender@email.com
 NOTIFICATION_FROM_NAME=PB Finance
 ADMIN_NOTIFICATION_EMAIL=your-admin@email.com
+MANUAL_TRIAGE_EMAIL_DOMAINS=deloitte.com,ey.com,pwc.com,kpmg.com
 ```
 
 The backend also accepts `SUPABASE_PUBLISHABLE_KEY` if your Supabase project uses publishable keys instead of the older anon key naming.
@@ -74,7 +80,9 @@ User accounts are visible in Supabase Dashboard -> Authentication -> Users. Pass
 
 Set Supabase Dashboard -> Authentication -> URL Configuration -> Site URL to your production URL, such as `https://pb-finance.vercel.app`. Add local and preview domains to Redirect URLs only when you need them.
 
-If Supabase email confirmation is enabled, registration returns a confirmation-required response and the user must confirm their email before signing in. For immediate portal access during early testing, disable Confirm email in Supabase Dashboard -> Authentication -> Providers -> Email.
+Email/password registration now starts with a Redis-backed 6-digit verification code. `/api/auth/register` creates a 10-minute encrypted registration JWT, stores the pending payload in Redis, and sends the OTP through Brevo. `/api/auth/register/verify` creates the Supabase Auth user only after the matching OTP is submitted. If Supabase email confirmation is also enabled, the user may still need to complete Supabase's confirmation email after the OTP step.
+
+Google Sign-In is available from login and signup. Professional Google accounts whose email domains match `MANUAL_TRIAGE_EMAIL_DOMAINS` or the built-in CPA watchlist are flagged on `profiles` for manual admin triage and admins are notified.
 
 For production confirmation emails, use Brevo as the free SMTP provider. See `docs/smtp-brevo.md` and `scripts/configure-supabase-brevo-smtp.ps1`.
 Runtime workflow emails also support Brevo. If `BREVO_API_KEY` and `NOTIFICATION_FROM_EMAIL` are missing, the app still creates in-app notifications and silently skips email sending.

@@ -1,8 +1,20 @@
 import { getRoutePath, handleOptions, readJson, sendError, sendJson } from '../server/http.js';
+import {
+  completePasswordSetupWithGoogle,
+  getPasswordSetupRequirement,
+  requestGooglePasswordLinkVerification,
+  requestPasswordSetupVerification,
+  verifyGooglePasswordLinkOtp,
+  verifyPasswordSetupOtp,
+} from '../server/accountLinking.js';
+import { finalizeOAuthAccount, flagGoogleProfessionalAccount, getAuthProviders } from '../server/authTriage.js';
 import { notifyAdmins, notifyUser } from '../server/notifications.js';
+import { requestRegistrationVerification, verifyRegistrationOtp } from '../server/registrationVerification.js';
 import { getSessionUser } from '../server/session.js';
 import {
   getBearerToken,
+  getOAuthSignInUrl,
+  getSupabaseUser,
   normalizeEmail,
   publicUser,
   refreshSession,
@@ -11,6 +23,7 @@ import {
   signUpWithPassword,
   supabaseRestRequest,
   supabaseStorageRequest,
+  updateCurrentSupabaseUser,
 } from '../server/supabase.js';
 import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS } from '../src/data/constants.js';
 
@@ -270,10 +283,23 @@ const loadProfilesById = async (req, ids) => {
     return new Map();
   }
 
-  const rows = await readRows(
-    req,
-    `/profiles?id=${byIdFilter(uniqueIds)}&select=id,email,full_name,company,role,title`
-  );
+  let rows;
+
+  try {
+    rows = await readRows(
+      req,
+      `/profiles?id=${byIdFilter(uniqueIds)}&select=id,email,full_name,company,role,title,manual_triage_required,manual_triage_status,manual_triage_reason,manual_triage_domain`
+    );
+  } catch (error) {
+    if (!String(error.message || '').includes('manual_triage')) {
+      throw error;
+    }
+
+    rows = await readRows(
+      req,
+      `/profiles?id=${byIdFilter(uniqueIds)}&select=id,email,full_name,company,role,title`
+    );
+  }
 
   return new Map(asList(rows).map((profile) => [profile.id, profile]));
 };
@@ -330,6 +356,10 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
     hasPendingChanges: hasPendingProfile(profile),
     industries: asList(viewProfile.industries),
     location: viewProfile.location || viewProfile.country || '',
+    manualTriageDomain: owner.manual_triage_domain || '',
+    manualTriageReason: owner.manual_triage_reason || '',
+    manualTriageRequired: Boolean(owner.manual_triage_required),
+    manualTriageStatus: owner.manual_triage_status || 'clear',
     name: displayName,
     rate: hourlyRate,
     rating: toNumber(viewProfile.rating),
@@ -901,15 +931,36 @@ const handlers = {
   },
 
   'POST /auth/login': async (req, res) => {
+    let email = '';
+
     try {
       const body = await readJson(req);
-      const email = normalizeEmail(body.email);
+      email = normalizeEmail(body.email);
       const password = String(body.password || '');
       const session = await signInWithPassword({ email, password });
+      const providers = getAuthProviders(session.user);
+
+      if (session.access_token && providers.includes('google') && !providers.includes('email')) {
+        await updateCurrentSupabaseUser(session.access_token, { password }).catch(() => undefined);
+      }
 
       sendJson(res, 200, await sessionPayload(session));
     } catch (error) {
-      sendError(res, 500, error.message || 'Unable to sign in.');
+      try {
+        const setupRequirement = await getPasswordSetupRequirement(email);
+
+        if (setupRequirement.requiresPasswordSetup) {
+          sendJson(res, 409, {
+            ...setupRequirement,
+            code: 'password_setup_required',
+          });
+          return;
+        }
+      } catch {
+        // Keep the normal invalid-login response if the account lookup is unavailable.
+      }
+
+      sendError(res, error.status || 401, error.message || 'Unable to sign in.');
     }
   },
 
@@ -937,7 +988,89 @@ const handlers = {
       return;
     }
 
+    const token = getBearerToken(req);
+
+    try {
+      const authUser = await getSupabaseUser(token);
+      await flagGoogleProfessionalAccount({ authUser, sessionUser: user, token });
+    } catch {
+      // Account triage should never block an otherwise valid session.
+    }
+
     sendJson(res, 200, { provider: 'supabase', user });
+  },
+
+  'POST /auth/google': async (req, res) => {
+    try {
+      const body = await readJson(req);
+      const redirectTo = cleanUrl(body.redirectTo) || cleanUrl(process.env.PUBLIC_APP_URL) || '';
+      const requestedRole = body.role === 'professional' || body.role === 'client' ? body.role : '';
+      const company = cleanString(body.company, 180);
+
+      if (requestedRole === 'client' && !company) {
+        sendError(res, 400, 'Company is required for Google client sign-up.');
+        return;
+      }
+
+      sendJson(res, 200, {
+        provider: 'google',
+        requestedRole,
+        url: getOAuthSignInUrl({
+          provider: 'google',
+          redirectTo,
+        }),
+      });
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to start Google Sign-In.');
+    }
+  },
+
+  'POST /auth/oauth/finalize': async (req, res) => {
+    const token = getBearerToken(req);
+
+    if (!token) {
+      sendError(res, 401, 'Authentication required.');
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      const requestedRole = body.role === 'professional' || body.role === 'client' ? body.role : '';
+      const company = cleanString(body.company, 180);
+      const authUser = await getSupabaseUser(token);
+      const oauthResult = await finalizeOAuthAccount({
+        authUser,
+        company,
+        requestedRole,
+        token,
+      });
+
+      if (oauthResult.linkRequirement?.requiresAccountLink) {
+        sendJson(res, 200, {
+          ...oauthResult.linkRequirement,
+          provider: 'supabase',
+        });
+        return;
+      }
+
+      if (oauthResult.companyRequirement?.requiresCompany) {
+        sendJson(res, 200, {
+          ...oauthResult.companyRequirement,
+          provider: 'supabase',
+        });
+        return;
+      }
+
+      const user = await getSessionUser(req);
+
+      sendJson(res, 200, {
+        provider: 'supabase',
+        triage: oauthResult.triage,
+        user,
+      });
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to finalize Google Sign-In.');
+    }
   },
 
   'POST /auth/refresh': async (req, res) => {
@@ -957,39 +1090,141 @@ const handlers = {
     }
   },
 
+  'POST /auth/link/google/request': async (req, res) => {
+    const token = getBearerToken(req);
+
+    if (!token) {
+      sendError(res, 401, 'Google session is required before linking.');
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      const requestedRole = body.role === 'professional' || body.role === 'client' ? body.role : '';
+      const authUser = await getSupabaseUser(token);
+      const verification = await requestGooglePasswordLinkVerification({
+        authUser,
+        company: cleanString(body.company, 180),
+        password: String(body.password || ''),
+        requestedRole,
+        token,
+      });
+
+      sendJson(res, 202, {
+        ...verification,
+        message: 'Password accepted. Verification code sent. Enter it to link Google Sign-In.',
+        provider: 'redis',
+      });
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to start Google account linking.');
+    }
+  },
+
+  'POST /auth/link/google/verify': async (req, res) => {
+    const token = getBearerToken(req);
+
+    if (!token) {
+      sendError(res, 401, 'Google session is required before linking.');
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      const authUser = await getSupabaseUser(token);
+      const result = await verifyGooglePasswordLinkOtp({
+        authUser,
+        otp: body.otp,
+        token,
+        verificationToken: body.verificationToken || body.token,
+      });
+
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to verify Google account linking.');
+    }
+  },
+
+  'POST /auth/password/setup/request': async (req, res) => {
+    try {
+      const body = await readJson(req);
+      const verification = await requestPasswordSetupVerification({
+        email: body.email,
+        password: String(body.password || ''),
+      });
+
+      sendJson(res, 202, {
+        ...verification,
+        message: 'Verification code sent. Enter it to add email/password login.',
+        provider: 'redis',
+      });
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to start password setup.');
+    }
+  },
+
+  'POST /auth/password/setup/verify': async (req, res) => {
+    try {
+      const body = await readJson(req);
+      const result = await verifyPasswordSetupOtp({
+        otp: body.otp,
+        verificationToken: body.verificationToken || body.token,
+      });
+
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to verify password setup.');
+    }
+  },
+
+  'POST /auth/password/setup/complete': async (req, res) => {
+    const token = getBearerToken(req);
+
+    if (!token) {
+      sendError(res, 401, 'Google session is required to finish password setup.');
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      const session = await completePasswordSetupWithGoogle({
+        passwordSetupToken: body.passwordSetupToken,
+        token,
+      });
+
+      sendJson(res, 200, await sessionPayload(session));
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to finish password setup.');
+    }
+  },
+
   'POST /auth/register': async (req, res) => {
     try {
       const body = await readJson(req);
-      const email = normalizeEmail(body.email);
-      const password = String(body.password || '');
-      const role = body.role === 'professional' ? 'professional' : 'client';
-      const fullName = String(body.fullName || '').trim();
-      const company = String(body.company || '').trim();
-      const redirectTo = String(body.redirectTo || '').trim();
+      const verification = await requestRegistrationVerification(body);
 
-      if (!email || !email.includes('@')) {
-        sendError(res, 400, 'A valid work email is required.');
-        return;
-      }
-
-      if (password.length < 8) {
-        sendError(res, 400, 'Password must be at least 8 characters.');
-        return;
-      }
-
-      const session = await signUpWithPassword({
-        company,
-        email,
-        fullName,
-        password,
-        redirectTo,
-        role,
+      sendJson(res, 202, {
+        ...verification,
+        message: 'Verification code sent. Enter the 6-digit code to finish creating your account.',
+        provider: 'redis',
       });
+    } catch (error) {
+      sendError(res, error.status || 500, error.message || 'Unable to send verification code.');
+    }
+  },
+
+  'POST /auth/register/verify': async (req, res) => {
+    try {
+      const body = await readJson(req);
+      const registration = await verifyRegistrationOtp({
+        otp: body.otp,
+        verificationToken: body.verificationToken || body.token,
+      });
+      const session = await signUpWithPassword(registration);
       const user = session.user || session;
 
       if (!session.access_token) {
         sendJson(res, 202, {
-          message: 'Account created. Check your email to confirm your account before signing in.',
+          message: 'Email verified. Check your inbox to confirm your account before signing in.',
           provider: 'supabase',
           requiresEmailConfirmation: true,
           user: publicUser(user),
@@ -999,7 +1234,7 @@ const handlers = {
 
       sendJson(res, 201, await sessionPayload(session));
     } catch (error) {
-      sendError(res, 500, error.message || 'Unable to create account.');
+      sendError(res, error.status || 500, error.message || 'Unable to verify registration.');
     }
   },
 

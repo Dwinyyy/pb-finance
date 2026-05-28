@@ -133,7 +133,10 @@ async function request(path, { method = 'GET', body, headers = {}, retryAuth = t
   const responseBody = await parseBody(response);
 
   if (!response.ok) {
-    throw new Error(getErrorMessage(responseBody, response.status));
+    const error = new Error(getErrorMessage(responseBody, response.status));
+    error.status = response.status;
+    error.body = responseBody;
+    throw error;
   }
 
   if (response.status === 204) {
@@ -145,9 +148,17 @@ async function request(path, { method = 'GET', body, headers = {}, retryAuth = t
 
 export const backendApi = {
   auth: {
+    finalizeOAuth: (payload) => request('/auth/oauth/finalize', { method: 'POST', body: payload }),
+    google: (payload) => request('/auth/google', { method: 'POST', body: payload, retryAuth: false }),
+    completePasswordSetup: (payload) => request('/auth/password/setup/complete', { method: 'POST', body: payload }),
+    requestGoogleLink: (payload) => request('/auth/link/google/request', { method: 'POST', body: payload }),
+    requestPasswordSetup: (payload) => request('/auth/password/setup/request', { method: 'POST', body: payload, retryAuth: false }),
     login: (credentials) => request('/auth/login', { method: 'POST', body: credentials }),
     logout: () => request('/auth/logout', { method: 'POST', retryAuth: false }),
     register: (payload) => request('/auth/register', { method: 'POST', body: payload }),
+    verifyGoogleLink: (payload) => request('/auth/link/google/verify', { method: 'POST', body: payload }),
+    verifyPasswordSetup: (payload) => request('/auth/password/setup/verify', { method: 'POST', body: payload, retryAuth: false }),
+    verifyRegistration: (payload) => request('/auth/register/verify', { method: 'POST', body: payload, retryAuth: false }),
     me: () => request('/auth/me'),
     refresh: (refreshToken) => request('/auth/refresh', { method: 'POST', body: { refreshToken }, retryAuth: false }),
   },

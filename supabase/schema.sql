@@ -9,15 +9,36 @@ create table if not exists public.profiles (
   title text,
   phone text,
   avatar_url text,
+  google_link_verified_at timestamptz,
+  password_login_enabled_at timestamptz,
+  manual_triage_required boolean not null default false,
+  manual_triage_status text not null default 'clear',
+  manual_triage_reason text,
+  manual_triage_source text,
+  manual_triage_domain text,
+  manual_triage_flagged_at timestamptz,
+  manual_triage_resolved_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.profiles add column if not exists phone text;
 alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists google_link_verified_at timestamptz;
+alter table public.profiles add column if not exists password_login_enabled_at timestamptz;
+alter table public.profiles add column if not exists manual_triage_required boolean not null default false;
+alter table public.profiles add column if not exists manual_triage_status text not null default 'clear';
+alter table public.profiles add column if not exists manual_triage_reason text;
+alter table public.profiles add column if not exists manual_triage_source text;
+alter table public.profiles add column if not exists manual_triage_domain text;
+alter table public.profiles add column if not exists manual_triage_flagged_at timestamptz;
+alter table public.profiles add column if not exists manual_triage_resolved_at timestamptz;
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
   check (role in ('admin', 'client', 'professional'));
+alter table public.profiles drop constraint if exists profiles_manual_triage_status_check;
+alter table public.profiles add constraint profiles_manual_triage_status_check
+  check (manual_triage_status in ('clear', 'pending', 'approved', 'rejected'));
 
 create table if not exists public.professional_profiles (
   user_id uuid primary key references public.profiles(id) on delete cascade,
@@ -291,6 +312,7 @@ create table if not exists public.notifications (
 );
 
 create index if not exists professional_profiles_status_idx on public.professional_profiles(status);
+create index if not exists profiles_manual_triage_idx on public.profiles(manual_triage_required, manual_triage_status);
 create index if not exists agencies_status_idx on public.agencies(status);
 create index if not exists shortlists_client_id_idx on public.shortlists(client_id);
 create index if not exists opportunities_professional_id_idx on public.opportunities(professional_id);

@@ -72,6 +72,57 @@ const sendEmail = async ({ actionUrl, body, subject, title, toEmail, toName }) =
   return response.json();
 };
 
+export const sendRegistrationOtpEmail = async ({ email, name, otp }) => {
+  const apiKey = process.env.BREVO_API_KEY;
+  const fromEmail = normalizeEmail(process.env.NOTIFICATION_FROM_EMAIL);
+  const fromName = process.env.NOTIFICATION_FROM_NAME || 'PB Finance';
+  const recipientEmail = normalizeEmail(email);
+  const safeOtp = String(otp || '').padStart(6, '0').slice(0, 6);
+
+  if (!apiKey || !fromEmail || !recipientEmail) {
+    throw new Error('Registration email delivery is not configured.');
+  }
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'api-key': apiKey,
+    },
+    body: JSON.stringify({
+      htmlContent: [
+        '<h2>Verify your PB Finance account</h2>',
+        `<p>Your verification code is <strong>${escapeHtml(safeOtp)}</strong>.</p>`,
+        '<p>This code expires in 10 minutes. If you did not request it, you can ignore this email.</p>',
+      ].join(''),
+      sender: {
+        email: fromEmail,
+        name: fromName,
+      },
+      subject: 'Your PB Finance verification code',
+      textContent: [
+        'Verify your PB Finance account',
+        `Your verification code is ${safeOtp}.`,
+        'This code expires in 10 minutes.',
+      ].join('\n\n'),
+      to: [
+        {
+          email: recipientEmail,
+          ...(name ? { name } : {}),
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Unable to send verification code.');
+  }
+
+  return response.json();
+};
+
 export const createNotification = async ({
   actionUrl = '/',
   body,

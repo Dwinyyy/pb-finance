@@ -751,6 +751,12 @@ function TalentReview() {
                 </div>
               </div>
 
+              {profile.manualTriageRequired && (
+                <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                  Manual triage required{profile.manualTriageDomain ? ` for ${profile.manualTriageDomain}` : ''}. {profile.manualTriageReason || 'Review this account before approval.'}
+                </div>
+              )}
+
               <p className="mb-5 line-clamp-3 text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">
                 {profile.bio || 'No bio submitted yet.'}
               </p>
