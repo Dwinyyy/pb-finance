@@ -37,25 +37,54 @@ export const PROFESSIONAL_TITLE_OPTIONS = [
   'Financial Controller',
   'Senior Tax Manager',
   'Audit Senior',
-  'Full-charge Bookkeeper',
+  'Bookkeeper',
+  'Accounting Specialist',
   'FP&A Director',
   'QuickBooks ProAdvisor',
   'Xero Advisor',
   'NetSuite Consultant'
 ];
 
-export const CERTIFICATION_OPTIONS = [
-  'CPA License / Board Certificate',
-  'QuickBooks ProAdvisor Certification',
-  'Xero Advisor Certification',
-  'NetSuite ERP Consultant Certification',
-  'Tax Practitioner Accreditation',
-  'Payroll Compliance Certification',
-  'Audit Methodology Training',
-  'FP&A / Financial Modeling Certification',
-  'Power BI / Data Analytics Certification',
-  'AML / Compliance Training'
-];
+export const PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS = {
+  'Bookkeeper': [
+    'Bookkeeping certificate or training record'
+  ],
+  'Accounting Specialist': [
+    'Accounting diploma, certification, or role verification'
+  ],
+  'Certified Public Accountant': [
+    'CPA License / Board Certificate',
+    'PRC/BOA ID or license verification'
+  ],
+  'Fractional CFO': [
+    'Finance leadership role verification'
+  ],
+  'Financial Controller': [
+    'Controller role verification'
+  ],
+  'Senior Tax Manager': [
+    'Tax practitioner accreditation'
+  ],
+  'Audit Senior': [
+    'Audit Methodology Training',
+    'Independence or ethics training record'
+  ],
+  'Full-charge Bookkeeper': [
+    'Bookkeeping certificate or training record'
+  ],
+  'FP&A Director': [
+    'FP&A or financial modeling certification'
+  ],
+  'QuickBooks ProAdvisor': [
+    'QuickBooks ProAdvisor certificate'
+  ],
+  'Xero Advisor': [
+    'Xero Advisor certificate'
+  ],
+  'NetSuite Consultant': [
+    'NetSuite consultant certification'
+  ],
+};
 
 export const EXTERNAL_LINK_OPTIONS = [
   { id: 'linkedin', label: 'LinkedIn', placeholder: 'https://www.linkedin.com/in/your-profile' },
@@ -65,55 +94,65 @@ export const EXTERNAL_LINK_OPTIONS = [
   { id: 'other', label: 'Other', placeholder: 'https://example.com' }
 ];
 
-export const PROFESSIONAL_TITLE_DOCUMENT_OPTIONS = {
+export const PROFESSIONAL_TITLE_OTHER_DOCUMENT_OPTIONS = {
+  'Bookkeeper': [
+    'Bank reconciliation sample',
+    'Payroll processing sample',
+    'Client bookkeeping reference'
+  ],
+  'Accounting Specialist': [
+    'Month-end close or reconciliation sample',
+    'ERP or accounting system work sample',
+    'Accounts payable or receivable process sample'
+  ],
   'Certified Public Accountant': [
-    'CPA license or board certificate',
-    'PRC/BOA ID or license verification',
-    'Continuing professional education record'
+    'Continuing professional education record',
+    'Tax or audit work sample',
+    'Client accounting reference'
   ],
   'Fractional CFO': [
-    'Executive finance resume',
     'Board or advisory reference',
-    'Financial strategy case summary'
+    'Financial strategy case summary',
+    'Forecasting or board reporting sample'
   ],
   'Financial Controller': [
-    'Controller role verification',
     'Month-end close sample checklist',
-    'ERP or accounting system certification'
+    'ERP implementation or cleanup summary',
+    'Finance team leadership reference'
   ],
   'Senior Tax Manager': [
-    'Tax practitioner accreditation',
     'Tax compliance work sample',
-    'Continuing tax education record'
+    'Continuing tax education record',
+    'Tax planning memo sample'
   ],
   'Audit Senior': [
-    'Audit methodology training certificate',
     'External audit engagement summary',
-    'Independence or ethics training record'
+    'Audit workpaper sample',
+    'Client or firm reference'
   ],
   'Full-charge Bookkeeper': [
-    'Bookkeeping certification',
     'Payroll or bank reconciliation sample',
-    'Accounting software certification'
+    'Payroll processing sample',
+    'Client bookkeeping reference'
   ],
   'FP&A Director': [
-    'FP&A or financial modeling certification',
     'Forecasting or board reporting sample',
-    'Analytics platform certification'
+    'Analytics dashboard sample',
+    'Budget planning case summary'
   ],
   'QuickBooks ProAdvisor': [
-    'QuickBooks ProAdvisor certificate',
     'QuickBooks Online profile link',
-    'Client setup or cleanup sample'
+    'Client setup or cleanup sample',
+    'QuickBooks workflow sample'
   ],
   'Xero Advisor': [
-    'Xero Advisor certificate',
     'Xero partner profile link',
-    'Xero migration or setup sample'
+    'Xero migration or setup sample',
+    'Xero reconciliation sample'
   ],
   'NetSuite Consultant': [
-    'NetSuite consultant certification',
     'ERP implementation project summary',
-    'SuiteAnalytics or reporting sample'
+    'SuiteAnalytics or reporting sample',
+    'NetSuite workflow sample'
   ],
 };

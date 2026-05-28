@@ -5,8 +5,10 @@ import {
   CheckCircle,
   Clock3,
   EyeOff,
+  FileText,
   Loader2,
   LogOut,
+  MessageSquare,
   Moon,
   Plus,
   ShieldCheck,
@@ -19,11 +21,19 @@ import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { useNotifications } from '../hooks/useNotifications';
+import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS } from '../data/constants';
 import { backendApi } from '../services/api';
 import { countUnreadNotificationsByTab, getUnreadNotificationsForTab } from '../utils/notificationRouting';
 
 const EMPTY_LIST = Object.freeze([]);
 const STATUS_OPTIONS = ['pending_review', 'approved', 'hidden', 'rejected'];
+const DOCUMENT_REJECTION_MESSAGES = [
+  'Document is unreadable or blurry.',
+  'Document does not match the selected professional title.',
+  'Name or identifying details do not match the profile.',
+  'Document appears expired or incomplete.',
+  'Please upload the official certificate, license, or verification page.',
+];
 const ADMIN_TABS = ['overview', 'talent', 'agencies'];
 const ADMIN_NOTIFICATION_TAB_FALLBACKS = {
   agency_submitted: 'agencies',
@@ -40,6 +50,97 @@ const asList = (value) => {
 };
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
 const statusLabel = (status) => String(status || 'draft').replace(/_/g, ' ');
+const formatFileSize = (value) => {
+  const size = Number(value || 0);
+
+  if (!Number.isFinite(size) || size <= 0) return '';
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+const getCredentialStatusStyle = (status) => ({
+  approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  pending_review: 'border-amber-200 bg-amber-50 text-amber-700',
+  rejected: 'border-red-200 bg-red-50 text-red-700',
+}[status] || 'border-slate-200 bg-slate-50 text-slate-600');
+const getDocumentIdentity = (document) => document.key || document.id || document.label || document.fileName;
+const getExpectedDocumentLabels = (profile) => {
+  const titles = asList(profile.titles).length ? asList(profile.titles) : asList(profile.title || profile.role);
+
+  return [...new Set(titles.flatMap((title) => asList(PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS[title])))];
+};
+const documentMatchesLabel = (document, label) => (
+  document?.label === label
+  || document?.key === label
+  || String(document?.key || '').endsWith(`:${label}`)
+);
+const documentMatchesAnyLabel = (document, labels) => asList(labels).some((label) => documentMatchesLabel(document, label));
+const hasUploadedDocument = (documents, label) => documents.some((document) => documentMatchesLabel(document, label));
+const getReviewDocuments = (profile) => {
+  const requiredLabels = getExpectedDocumentLabels(profile);
+
+  return [
+    ...(profile.resume ? [{
+      ...profile.resume,
+      documentType: 'resume',
+      reviewLabel: 'Resume',
+      reviewScope: 'required',
+    }] : []),
+    ...asList(profile.supportingDocuments).map((document) => {
+      const isRequired = documentMatchesAnyLabel(document, requiredLabels);
+
+      return {
+        ...document,
+        documentType: document.kind || (isRequired ? 'certification' : 'other_document'),
+        reviewLabel: document.label || (isRequired ? 'Certification document' : 'Other document'),
+        reviewScope: isRequired ? 'required' : 'optional',
+      };
+    }),
+  ];
+};
+const getReviewDocumentKindLabel = (document) => {
+  if (document.documentType === 'resume' || document.kind === 'resume') return 'Resume';
+  if (document.documentType === 'certification' || document.kind === 'certification' || document.reviewScope === 'required') return 'Certification';
+  if (document.documentType === 'other_document' || document.kind === 'other_document') return 'Other document';
+
+  return 'Supporting document';
+};
+const getCredentialReviewState = (profile, documents = getReviewDocuments(profile)) => {
+  const resume = documents.find((document) => document.documentType === 'resume');
+  const supportingDocuments = documents.filter((document) => document.documentType !== 'resume');
+  const missingDocuments = getExpectedDocumentLabels(profile)
+    .filter((label) => !hasUploadedDocument(supportingDocuments, label));
+  const requiredDocuments = documents.filter((document) => (
+    document.documentType === 'resume' || document.reviewScope === 'required'
+  ));
+  const pendingDocuments = requiredDocuments.filter((document) => (document.status || 'pending_review') === 'pending_review');
+  const rejectedDocuments = requiredDocuments.filter((document) => document.status === 'rejected');
+  const approvedDocuments = requiredDocuments.filter((document) => document.status === 'approved');
+  const optionalCount = documents.filter((document) => document.reviewScope === 'optional').length;
+  let approvalBlocker = '';
+
+  if (!resume) {
+    approvalBlocker = 'Resume approval is required before this profile can be approved.';
+  } else if (missingDocuments.length) {
+    approvalBlocker = `${missingDocuments.length} required certification document${missingDocuments.length === 1 ? '' : 's'} still need to be uploaded.`;
+  } else if (rejectedDocuments.length) {
+    approvalBlocker = `${rejectedDocuments.length} required document${rejectedDocuments.length === 1 ? '' : 's'} need a replacement upload.`;
+  } else if (pendingDocuments.length) {
+    approvalBlocker = `${pendingDocuments.length} required document${pendingDocuments.length === 1 ? '' : 's'} still need admin review.`;
+  }
+
+  return {
+    approvalBlocker,
+    approvedCount: approvedDocuments.length,
+    missingDocuments,
+    optionalCount,
+    pendingCount: pendingDocuments.length,
+    rejectedCount: rejectedDocuments.length,
+    resume,
+    requiredCount: requiredDocuments.length,
+    totalCount: documents.length,
+  };
+};
 
 const statusStyles = {
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -82,7 +183,7 @@ function StatusSummary({ records }) {
   );
 }
 
-function StatusActions({ busyKey, currentStatus, onUpdate, record, rejected = true }) {
+function StatusActions({ busyKey, currentStatus, disabledStatusReasons = {}, onUpdate, record, rejected = true }) {
   const availableActions = STATUS_ACTIONS.filter((action) => (
     action.status !== currentStatus && (rejected || action.status !== 'rejected')
   ));
@@ -93,6 +194,7 @@ function StatusActions({ busyKey, currentStatus, onUpdate, record, rejected = tr
       {availableActions.map((action) => {
         const Icon = action.icon;
         const actionBusy = busyKey === `${record.id}:${action.status}`;
+        const disabledReason = disabledStatusReasons[action.status] || '';
         const className = action.variant === 'primary'
           ? 'bg-slate-950 text-white hover:bg-emerald-600 disabled:opacity-70'
           : action.variant === 'danger'
@@ -103,7 +205,8 @@ function StatusActions({ busyKey, currentStatus, onUpdate, record, rejected = tr
           <button
             key={action.status}
             onClick={() => onUpdate(record, action.status)}
-            disabled={recordBusy}
+            disabled={recordBusy || Boolean(disabledReason)}
+            title={disabledReason || action.label}
             className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors disabled:cursor-default ${className}`}
           >
             {actionBusy ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} />}
@@ -111,6 +214,170 @@ function StatusActions({ busyKey, currentStatus, onUpdate, record, rejected = tr
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function CredentialReviewPanel({
+  busyKey,
+  documents,
+  onApprove,
+  onReject,
+  profile,
+  rejectDraft,
+  reviewState,
+  setRejectDraft,
+}) {
+  if (!documents.length) {
+    return (
+      <div className="mb-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+        No resume or supporting documents uploaded yet.
+      </div>
+    );
+  }
+
+  const rejectKey = (document) => `${profile.id}:${document.documentType}:${getDocumentIdentity(document)}`;
+  const state = reviewState || getCredentialReviewState(profile, documents);
+
+  return (
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-xs font-black uppercase tracking-wider text-slate-400">Documents</div>
+          <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+            {state.requiredCount} required / {state.optionalCount} optional submitted
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700">{state.approvedCount} required approved</span>
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700">{state.pendingCount} required pending</span>
+          {state.rejectedCount > 0 && (
+            <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-black text-red-700">{state.rejectedCount} required rejected</span>
+          )}
+          <FileText size={19} className="text-cyan-600" />
+        </div>
+      </div>
+
+      {state.missingDocuments.length > 0 && (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+          Missing required certifications: {state.missingDocuments.slice(0, 4).join(', ')}
+          {state.missingDocuments.length > 4 ? ` and ${state.missingDocuments.length - 4} more` : ''}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {documents.map((document) => {
+          const documentKey = rejectKey(document);
+          const isRejecting = rejectDraft?.key === documentKey;
+          const approveBusy = busyKey === `${documentKey}:approved`;
+          const rejectBusy = busyKey === `${documentKey}:rejected`;
+          const selectedPreset = isRejecting ? rejectDraft.preset : DOCUMENT_REJECTION_MESSAGES[0];
+          const customMessage = isRejecting ? rejectDraft.custom : '';
+          const rejectMessage = selectedPreset === 'custom' ? customMessage.trim() : selectedPreset;
+
+          return (
+            <div key={documentKey} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-black text-slate-950 dark:text-white">{document.reviewLabel}</span>
+                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black capitalize ${getCredentialStatusStyle(document.status)}`}>
+                      {statusLabel(document.status || 'pending_review')}
+                    </span>
+                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black uppercase tracking-wider ${
+                      document.reviewScope === 'required'
+                        ? 'border-amber-100 bg-amber-50 text-amber-700'
+                        : 'border-cyan-100 bg-cyan-50 text-cyan-700'
+                    }`}>
+                      {document.reviewScope === 'required' ? 'Required' : 'Optional'}
+                    </span>
+                  </div>
+                  <div className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{document.fileName || 'Uploaded file'}</div>
+                  <div className="mt-1 text-xs font-bold text-slate-400">
+                    {[getReviewDocumentKindLabel(document), formatFileSize(document.fileSize)].filter(Boolean).join(' - ')}
+                  </div>
+                  {(document.rejectionReason || document.reviewMessage) && (
+                    <div className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold leading-relaxed ${
+                      document.status === 'rejected'
+                        ? 'border-red-100 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300'
+                        : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400'
+                    }`}>
+                      {document.rejectionReason || document.reviewMessage}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {document.status !== 'approved' && (
+                    <button
+                      onClick={() => onApprove(profile, document)}
+                      disabled={Boolean(busyKey)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-emerald-700 disabled:cursor-default disabled:opacity-70"
+                    >
+                      {approveBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      Approve
+                    </button>
+                  )}
+                  {document.status !== 'rejected' && (
+                    <button
+                      onClick={() => setRejectDraft({ custom: '', key: documentKey, preset: DOCUMENT_REJECTION_MESSAGES[0] })}
+                      disabled={Boolean(busyKey)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20"
+                    >
+                      {rejectBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                      Reject
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {isRejecting && (
+                <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-black text-red-700 dark:text-red-300">
+                    <MessageSquare size={15} />
+                    Rejection message
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+                    <select
+                      value={selectedPreset}
+                      onChange={(event) => setRejectDraft((current) => ({ ...current, preset: event.target.value }))}
+                      className="rounded-xl border border-red-100 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-red-400 dark:border-red-900/40 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                      {DOCUMENT_REJECTION_MESSAGES.map((message) => (
+                        <option key={message} value={message}>{message}</option>
+                      ))}
+                      <option value="custom">Custom message</option>
+                    </select>
+                    <textarea
+                      value={customMessage}
+                      onChange={(event) => setRejectDraft((current) => ({ ...current, custom: event.target.value }))}
+                      disabled={selectedPreset !== 'custom'}
+                      rows={2}
+                      placeholder="Write a custom reason"
+                      className="rounded-xl border border-red-100 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/40 dark:bg-slate-900 dark:text-slate-200"
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      onClick={() => setRejectDraft(null)}
+                      className="rounded-xl border border-red-100 bg-white px-4 py-2 text-xs font-black text-slate-600 transition-colors hover:text-slate-950 dark:border-red-900/40 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => onReject(profile, document, rejectMessage)}
+                      disabled={!rejectMessage || Boolean(busyKey)}
+                      className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black text-white transition-colors hover:bg-red-700 disabled:cursor-default disabled:opacity-70"
+                    >
+                      Reject Document
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -382,6 +649,7 @@ function TalentReview() {
   const [talent, setTalent] = useState(EMPTY_LIST);
   const [busyId, setBusyId] = useState('');
   const [actionError, setActionError] = useState('');
+  const [rejectDraft, setRejectDraft] = useState(null);
 
   useEffect(() => {
     setTalent(asList(data));
@@ -402,6 +670,35 @@ function TalentReview() {
       )));
     } catch (updateError) {
       setActionError(updateError.message || 'Unable to update talent status.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const updateCredentialStatus = async (profile, document, status, message = '') => {
+    const documentKey = document.key || document.id || document.label;
+    const busyKey = `${profile.id}:${document.documentType}:${documentKey}:${status}`;
+
+    setBusyId(busyKey);
+    setActionError('');
+
+    try {
+      const updated = await backendApi.admin.updateTalentStatus({
+        credentialReview: {
+          documentKey,
+          message,
+          status,
+          targetType: document.documentType,
+        },
+        professionalId: profile.id,
+      });
+
+      setTalent((current) => current.map((item) => (
+        item.id === profile.id ? { ...item, ...updated } : item
+      )));
+      setRejectDraft(null);
+    } catch (updateError) {
+      setActionError(updateError.message || 'Unable to update this document.');
     } finally {
       setBusyId('');
     }
@@ -433,7 +730,11 @@ function TalentReview() {
         <EmptyPanel icon={Users} title={isLoading ? 'Loading talent' : 'No talent profiles yet'} description="Submitted professional profiles will appear here after talent completes onboarding." />
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
-          {talent.map((profile, index) => (
+          {talent.map((profile, index) => {
+            const reviewDocuments = getReviewDocuments(profile);
+            const reviewState = getCredentialReviewState(profile, reviewDocuments);
+
+            return (
             <FadeIn key={profile.id} delay={(index % 6) * 50} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="mb-5 flex items-start justify-between gap-4">
                 <div>
@@ -473,14 +774,33 @@ function TalentReview() {
                 ))}
               </div>
 
+              <CredentialReviewPanel
+                busyKey={busyId}
+                documents={reviewDocuments}
+                onApprove={(record, document) => updateCredentialStatus(record, document, 'approved')}
+                onReject={(record, document, message) => updateCredentialStatus(record, document, 'rejected', message)}
+                profile={profile}
+                rejectDraft={rejectDraft}
+                reviewState={reviewState}
+                setRejectDraft={setRejectDraft}
+              />
+
+              {reviewState.approvalBlocker && profile.status !== 'approved' && (
+                <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                  {reviewState.approvalBlocker}
+                </div>
+              )}
+
               <StatusActions
                 busyKey={busyId}
                 currentStatus={profile.status}
+                disabledStatusReasons={{ approved: reviewState.approvalBlocker }}
                 onUpdate={updateTalentStatus}
                 record={profile}
               />
             </FadeIn>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -10,7 +10,7 @@ import {
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, SlidersHorizontal,
   ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
-  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2,
+  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2, Plus,
   Upload, Link2, ExternalLink
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
@@ -30,13 +30,13 @@ const EMPTY_EARNINGS = Object.freeze({
   totalEarnedYtd: 0,
 });
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
-const PROFESSIONAL_TABS = ['profile', 'credentials', 'opportunities', 'earnings'];
+const PROFESSIONAL_TABS = ['profile', 'opportunities', 'earnings'];
 const PROFESSIONAL_NOTIFICATION_TAB_FALLBACKS = {
-  document_status_updated: 'credentials',
+  document_status_updated: 'profile',
   interview_cancelled: 'opportunities',
   interview_requested: 'opportunities',
   profile_status_updated: 'profile',
-  resume_status_updated: 'credentials',
+  resume_status_updated: 'profile',
 };
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
 const EMPTY_CREDENTIAL_FORM = Object.freeze({
@@ -44,6 +44,10 @@ const EMPTY_CREDENTIAL_FORM = Object.freeze({
   externalLinks: EMPTY_LIST,
   resume: null,
   supportingDocuments: EMPTY_LIST,
+});
+const createOtherDocumentRow = () => ({
+  id: `other-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  label: '',
 });
 
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -59,9 +63,9 @@ const cleanProfileTitle = (value) => {
 };
 import {
   AVAILABILITY_OPTIONS,
-  CERTIFICATION_OPTIONS,
   EXTERNAL_LINK_OPTIONS,
-  PROFESSIONAL_TITLE_DOCUMENT_OPTIONS,
+  PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS,
+  PROFESSIONAL_TITLE_OTHER_DOCUMENT_OPTIONS,
   PROFESSIONAL_TITLE_OPTIONS,
   SKILLS_OPTIONS,
   SOFTWARE_OPTIONS,
@@ -114,6 +118,22 @@ const formatFileSize = (value) => {
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
+const getCredentialStatusLabel = (status) => String(status || 'pending_review').replace(/_/g, ' ');
+const getCredentialStatusStyle = (status) => ({
+  approved: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300',
+  pending_review: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300',
+  rejected: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300',
+}[status || 'pending_review'] || 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400');
+const getCredentialStatusHint = (credential, missingText) => {
+  if (!credential) return missingText;
+  if (credential.status === 'approved') return 'Approved by admin';
+  if (credential.status === 'rejected') return 'Needs a replacement upload';
+
+  return 'Pending admin review';
+};
+const getCredentialReviewMessage = (credential) => (
+  credential?.rejectionReason || (credential?.status === 'rejected' ? credential?.reviewMessage : '')
+);
 const getUploadDate = (value) => {
   if (!value) return '';
 
@@ -155,25 +175,72 @@ const getContentTypeForFile = (file) => {
 
   return 'application/octet-stream';
 };
-const buildCredentialRequirements = (titles, uploadedDocuments = []) => {
-  const uploadedMap = new Map(asList(uploadedDocuments).map((document) => [document.key || document.label, document]));
-  const requirements = cleanProfileTitles(titles).flatMap((title) => (
-    asList(PROFESSIONAL_TITLE_DOCUMENT_OPTIONS[title]).map((label) => ({
-      key: `${title}:${label}`,
-      label,
-      title,
-    }))
-  ));
-  const defaultRequirements = requirements.length
-    ? requirements
-    : [
-      { key: 'general:professional-resume', label: 'Professional resume', title: 'General profile' },
-      { key: 'general:identity-or-license', label: 'Identity or license verification', title: 'General profile' },
-    ];
+const documentMatchesLabel = (document, label) => (
+  document?.label === label
+  || document?.key === label
+  || String(document?.key || '').endsWith(`:${label}`)
+);
+const documentMatchesAnyLabel = (document, labels) => asList(labels).some((label) => documentMatchesLabel(document, label));
+const getDocumentOptionsForTitles = (titles, optionsByTitle, excludedLabels = []) => {
+  const excluded = new Set(excludedLabels);
+  const optionsByLabel = new Map();
 
-  return defaultRequirements.map((requirement) => ({
+  cleanProfileTitles(titles).forEach((title) => {
+    asList(optionsByTitle[title]).forEach((label) => {
+      if (excluded.has(label)) return;
+
+      const existing = optionsByLabel.get(label);
+
+      if (existing) {
+        existing.titles.push(title);
+        return;
+      }
+
+      optionsByLabel.set(label, {
+        label,
+        titles: [title],
+      });
+    });
+  });
+
+  return [...optionsByLabel.values()];
+};
+const buildCredentialRequirements = (titles, uploadedDocuments = [], optionsByTitle = PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS) => {
+  const uploadedRecords = asList(uploadedDocuments);
+  const uploadedMap = new Map();
+
+  uploadedRecords.forEach((document) => {
+    [document.key, document.label].filter(Boolean).forEach((identity) => {
+      uploadedMap.set(identity, document);
+    });
+  });
+
+  const requirementsByLabel = new Map();
+
+  cleanProfileTitles(titles).forEach((title) => {
+    asList(optionsByTitle[title]).forEach((label) => {
+      const existing = requirementsByLabel.get(label);
+
+      if (existing) {
+        existing.titles.push(title);
+        return;
+      }
+
+      requirementsByLabel.set(label, {
+        key: label,
+        label,
+        titles: [title],
+      });
+    });
+  });
+
+  return [...requirementsByLabel.values()].map((requirement) => ({
     ...requirement,
-    upload: uploadedMap.get(requirement.key) || uploadedMap.get(requirement.label) || null,
+    title: requirement.titles.join(' / '),
+    upload: uploadedMap.get(requirement.key)
+      || uploadedMap.get(requirement.label)
+      || uploadedRecords.find((document) => documentMatchesLabel(document, requirement.label))
+      || null,
   }));
 };
 const fileToDataUrl = (file) => new Promise((resolve, reject) => {
@@ -187,6 +254,10 @@ const buildProfileSavePayload = (profile, overrides = {}) => {
     ...getWorkPreferences(profile),
     ...(overrides.workPreferences || {}),
   };
+  const titles = cleanProfileTitles(
+    overrides.titles ?? profile.titles,
+    cleanProfileTitles(profile.title || profile.role)
+  );
 
   return {
     availability: profile.availability || profile.available || 'Immediate Start',
@@ -196,7 +267,7 @@ const buildProfileSavePayload = (profile, overrides = {}) => {
     hourlyRate: profile.rate || profile.hourlyRate || null,
     location: profile.location || '',
     skills: asList(profile.skills),
-    titles: cleanProfileTitles(profile.titles, cleanProfileTitles(profile.title || profile.role)),
+    titles,
     tools: asList(profile.tools),
     workPreferences,
     yearsExperience: profile.yearsExperience || null,
@@ -224,12 +295,14 @@ function PortalModal({ children, onClose, title }) {
   );
 }
 
-function MultiSelectPicker({ value, onChange, optionsList, placeholder }) {
+function MultiSelectPicker({ disabled = false, value, onChange, optionsList, placeholder }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedItems = cleanProfileTitles(value);
   const selectedSet = new Set(selectedItems);
-  const options = [...new Set([...selectedItems, ...optionsList])];
+  const options = [...new Set([...selectedItems, ...asList(optionsList)])];
   const toggleItem = (item) => {
+    if (disabled) return;
+
     const nextItems = selectedSet.has(item)
       ? selectedItems.filter((i) => i !== item)
       : [...selectedItems, item];
@@ -241,8 +314,11 @@ function MultiSelectPicker({ value, onChange, optionsList, placeholder }) {
     <div className="relative mt-2">
       <button
         type="button"
-        onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 outline-none transition-colors hover:border-cyan-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
+        onClick={() => {
+          if (!disabled) setIsOpen((current) => !current);
+        }}
+        disabled={disabled}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 outline-none transition-colors hover:border-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 dark:disabled:bg-slate-950 dark:disabled:text-slate-500"
       >
         <span>{selectedItems.length ? `${selectedItems.length} selected` : placeholder}</span>
         <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -255,6 +331,7 @@ function MultiSelectPicker({ value, onChange, optionsList, placeholder }) {
               key={item}
               type="button"
               onClick={() => toggleItem(item)}
+              disabled={disabled}
               className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-700 transition-colors hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300"
             >
               {item} <span className="ml-1 text-cyan-500">x</span>
@@ -263,7 +340,7 @@ function MultiSelectPicker({ value, onChange, optionsList, placeholder }) {
         </div>
       )}
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute left-0 right-0 top-14 z-30 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
           {options.map((item) => {
             const isSelected = selectedSet.has(item);
@@ -288,6 +365,95 @@ function MultiSelectPicker({ value, onChange, optionsList, placeholder }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function CredentialUploadRow({
+  busyUpload,
+  detail,
+  documentKey,
+  documentLabel,
+  documentType,
+  isRequired = false,
+  onUpload,
+  upload,
+}) {
+  const isBusy = busyUpload === documentKey;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-black text-slate-950 dark:text-white">{documentLabel}</div>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black uppercase tracking-wider ${
+              isRequired
+                ? 'border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
+                : 'border-cyan-100 bg-cyan-50 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300'
+            }`}>
+              {isRequired ? 'Required' : 'Optional'}
+            </span>
+          </div>
+          <div className="mt-1 text-xs font-bold text-slate-400">
+            {upload
+              ? `${upload.fileName} ${formatFileSize(upload.fileSize) ? `- ${formatFileSize(upload.fileSize)}` : ''}`
+              : detail}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {upload && (
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-black capitalize ${getCredentialStatusStyle(upload.status)}`}>
+              {getCredentialStatusLabel(upload.status || 'pending_review')}
+            </span>
+          )}
+          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+            {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {upload ? 'Replace' : 'Upload'}
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+              className="hidden"
+              onChange={(event) => {
+                onUpload({
+                  documentKey,
+                  documentType,
+                  file: event.target.files?.[0],
+                  label: documentLabel,
+                });
+                event.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+      </div>
+      {getCredentialReviewMessage(upload) && (
+        <div className="mt-3 flex gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+          <MessageSquare size={14} className="mt-0.5 shrink-0" />
+          <span>{getCredentialReviewMessage(upload)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashboardMetric({ detail, icon, label, value, variant = 'slate' }) {
+  const MetricIcon = icon;
+  const variantStyles = {
+    amber: 'border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300',
+    cyan: 'border-cyan-100 bg-cyan-50 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300',
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300',
+    slate: 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200',
+  };
+
+  return (
+    <div className={`rounded-2xl border p-4 shadow-sm ${variantStyles[variant] || variantStyles.slate}`}>
+      <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider opacity-80">
+        <MetricIcon size={14} />
+        {label}
+      </div>
+      <div className="text-xl font-black leading-tight tracking-tight">{value}</div>
+      {detail && <div className="mt-1 text-xs font-bold opacity-75">{detail}</div>}
     </div>
   );
 }
@@ -364,7 +530,6 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
             <div className="flex space-x-8 pt-4">
               {[
                 { id: 'profile', label: 'My Profile' },
-                { id: 'credentials', label: 'Credentials & Links' },
                 { id: 'opportunities', label: 'Opportunities' },
                 { id: 'earnings', label: 'Timesheets & Earnings' },
               ].map(tab => {
@@ -393,7 +558,6 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
       {/* App Workspace */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {appView === 'profile' && <AppTalentProfileView user={user} />}
-        {appView === 'credentials' && <AppTalentCredentialsView user={user} />}
         {appView === 'opportunities' && <AppTalentOpportunitiesView user={user} />}
         {appView === 'earnings' && <AppTalentEarningsView />}
       </div>
@@ -402,7 +566,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
 }
 
 function AppTalentProfileView({ user }) {
-  const { data: profile } = useBackendResource(
+  const { data: profile, isLoading: isProfileLoading } = useBackendResource(
     backendApi.talent.getMyProfile,
     EMPTY_PROFILE,
     {
@@ -436,6 +600,16 @@ function AppTalentProfileView({ user }) {
   const readiness = getProfileReadiness(displayProfile, profileTitles);
   const profileStatus = displayProfile.reviewStatus || displayProfile.status || 'Complete onboarding to publish your profile.';
   const isProfileApproved = String(profileStatus).toLowerCase() === 'approved';
+  const profileRequirements = buildCredentialRequirements(profileTitles, getSupportingDocuments(displayProfile));
+  const resume = getProfileResume(displayProfile);
+  const approvedRequiredCount = [resume, ...profileRequirements.map((requirement) => requirement.upload)]
+    .filter((upload) => upload?.status === 'approved').length;
+  const credentialTotal = 1 + profileRequirements.length;
+  const credentialComplete = approvedRequiredCount;
+  const credentialPercent = credentialTotal ? Math.round((credentialComplete / credentialTotal) * 100) : 0;
+  const activeCredentialTitles = isEditing && editingSection === 'profile'
+    ? cleanProfileTitles(profileForm.titles, profileTitles)
+    : profileTitles;
 
   const buildProfileForm = (overrides = {}) => ({
     titles: profileTitles,
@@ -473,12 +647,13 @@ function AppTalentProfileView({ user }) {
     setProfileMessage('');
 
     try {
+      const nextTitles = cleanProfileTitles(profileForm.titles);
       const updated = await backendApi.talent.updateMyProfile({
         ...profileForm,
         certifications: textToList(profileForm.certifications),
         hourlyRate: profileForm.hourlyRate === '' ? null : Number(profileForm.hourlyRate),
         skills: textToList(profileForm.skills),
-        titles: cleanProfileTitles(profileForm.titles),
+        titles: nextTitles,
         tools: textToList(profileForm.tools),
         yearsExperience: profileForm.yearsExperience === '' ? null : Number(profileForm.yearsExperience),
       });
@@ -495,9 +670,52 @@ function AppTalentProfileView({ user }) {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in max-w-6xl">
+    <div className="portal-fade-in mx-auto max-w-7xl space-y-6">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className={`mb-3 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider ${
+              isProfileApproved
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
+                : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
+            }`}>
+              <ShieldCheck size={13} />
+              {isProfileApproved ? 'Client visible' : 'Admin review required'}
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Professional Dashboard</h1>
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+              {displayProfile.name || 'Your profile'} {profileTitleText ? `- ${profileTitleText}` : '- complete your title, credentials, and availability.'}
+            </p>
+          </div>
+          <div className="grid w-full gap-3 sm:grid-cols-3 lg:max-w-2xl">
+            <DashboardMetric
+              detail={`${readiness.completed}/${readiness.checks.length} profile fields`}
+              icon={CheckSquare}
+              label="Profile"
+              value={`${readiness.percent}%`}
+              variant={readiness.percent >= 80 ? 'emerald' : 'cyan'}
+            />
+            <DashboardMetric
+              detail={`${credentialComplete}/${credentialTotal} required items approved`}
+              icon={BadgeCheck}
+              label="Credentials"
+              value={`${credentialPercent}%`}
+              variant={credentialPercent >= 80 ? 'emerald' : 'amber'}
+            />
+            <DashboardMetric
+              detail={displayProfile.availability || displayProfile.available || 'Availability pending'}
+              icon={DollarSign}
+              label="Rate"
+              value={displayProfile.rate || displayProfile.hourlyRate ? `${formatMoney(displayProfile.rate || displayProfile.hourlyRate)}/hr` : 'Pending'}
+              variant="slate"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
       {/* Left Column: Quick Profile Card */}
-      <div className="w-full lg:w-80 flex-shrink-0">
+      <div className="w-full">
         <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div className="bg-slate-950 h-24"></div>
           <div className="p-6 relative">
@@ -718,43 +936,31 @@ function AppTalentProfileView({ user }) {
         </FadeIn>
 
         <FadeIn delay={200}>
-          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800 border border-emerald-100 dark:border-slate-700 rounded-3xl p-8 flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-emerald-950 dark:text-emerald-300 text-lg mb-1 flex items-center gap-2"><CheckSquare size={18} className="text-emerald-600 dark:text-emerald-400"/> Profile Status</h3>
-              <p className="text-emerald-800 dark:text-emerald-400 text-sm font-medium">{profileStatus}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-bold text-emerald-700 shadow-sm dark:border-slate-600 dark:bg-slate-700 dark:text-emerald-300">
-              {isProfileApproved ? 'Visible to clients' : 'Pending review'}
-            </div>
-          </div>
+          <AppTalentCredentialsSection
+            isLoading={isProfileLoading}
+            onProfileUpdated={setSavedProfile}
+            profile={savedProfile}
+            selectedTitles={activeCredentialTitles}
+            user={user}
+          />
         </FadeIn>
+      </div>
       </div>
     </div>
   );
 }
 
-function AppTalentCredentialsView({ user }) {
-  const { data: profile, isLoading } = useBackendResource(
-    backendApi.talent.getMyProfile,
-    EMPTY_PROFILE,
-    {
-      realtime: [
-        user?.id ? { filter: `user_id=eq.${user.id}`, table: 'professional_profiles' } : null,
-      ],
-      refreshInterval: 15000,
-    }
-  );
-  const [savedProfile, setSavedProfile] = useState(EMPTY_PROFILE);
+function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, selectedTitles, user }) {
   const [credentialForm, setCredentialForm] = useState(EMPTY_CREDENTIAL_FORM);
   const [isSaving, setIsSaving] = useState(false);
   const [busyUpload, setBusyUpload] = useState('');
   const [credentialError, setCredentialError] = useState('');
   const [credentialMessage, setCredentialMessage] = useState('');
+  const [documentTab, setDocumentTab] = useState('certifications');
+  const [otherDocumentRows, setOtherDocumentRows] = useState(() => [createOtherDocumentRow()]);
 
   useEffect(() => {
     const nextProfile = profile || EMPTY_PROFILE;
-
-    setSavedProfile(nextProfile);
     setCredentialForm({
       certifications: asList(nextProfile.certifications),
       externalLinks: normalizeLinkFields(getExternalLinks(nextProfile)),
@@ -773,11 +979,51 @@ function AppTalentCredentialsView({ user }) {
 
   const displayProfile = {
     ...user,
-    ...savedProfile,
+    ...(profile || EMPTY_PROFILE),
   };
-  const profileTitles = cleanProfileTitles(displayProfile.titles, cleanProfileTitles(displayProfile.title || displayProfile.role));
-  const requirements = buildCredentialRequirements(profileTitles, credentialForm.supportingDocuments);
+  const savedProfileTitles = cleanProfileTitles(displayProfile.titles, cleanProfileTitles(displayProfile.title || displayProfile.role));
+  const profileTitles = cleanProfileTitles(selectedTitles, savedProfileTitles);
+  const profileTitleKey = profileTitles.join('|');
+  const certificationRequirements = buildCredentialRequirements(
+    profileTitles,
+    credentialForm.supportingDocuments,
+    PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS
+  );
+  const requiredLabels = certificationRequirements.map((requirement) => requirement.label);
+  const otherDocumentOptions = getDocumentOptionsForTitles(
+    profileTitles,
+    PROFESSIONAL_TITLE_OTHER_DOCUMENT_OPTIONS,
+    requiredLabels
+  );
+  const otherDocuments = credentialForm.supportingDocuments.filter((document) => (
+    !documentMatchesAnyLabel(document, requiredLabels)
+  ));
+  const certificationHelperText = certificationRequirements.length
+    ? `Hard requirements for: ${formatProfileTitles(profileTitles)}.`
+    : profileTitles.length
+      ? 'No hard certification requirements are mapped for the selected title yet.'
+      : 'Choose at least one professional title to see required certifications.';
+  const otherDocumentHelperText = otherDocumentOptions.length
+    ? `Optional supporting documents for: ${formatProfileTitles(profileTitles)}.`
+    : profileTitles.length
+      ? 'No optional supporting documents are mapped for the selected title yet.'
+      : 'Choose a professional title to see optional supporting documents.';
+  const approvalRequirementText = certificationRequirements.length
+    ? `To get approved, upload your resume and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required item. Other Documents are optional and will not block approval.`
+    : 'To get approved, upload your resume. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.';
   const resume = credentialForm.resume;
+  const uploadedCertificationCount = certificationRequirements.filter((requirement) => requirement.upload).length;
+  const missingCertificationCount = certificationRequirements.length - uploadedCertificationCount;
+  const approvedUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
+    .filter((upload) => upload?.status === 'approved').length;
+  const rejectedUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
+    .filter((upload) => upload?.status === 'rejected').length;
+  const pendingUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
+    .filter((upload) => (upload?.status || '') === 'pending_review').length;
+
+  useEffect(() => {
+    setOtherDocumentRows([createOtherDocumentRow()]);
+  }, [profileTitleKey]);
 
   const updateCredentialForm = (field, value) => {
     setCredentialForm((current) => ({
@@ -791,6 +1037,36 @@ function AppTalentCredentialsView({ user }) {
       link.id === linkId ? { ...link, url } : link
     )));
   };
+
+  const updateOtherDocumentRow = (rowId, label) => {
+    setOtherDocumentRows((current) => current.map((row) => (
+      row.id === rowId ? { ...row, label } : row
+    )));
+  };
+
+  const removeOtherDocumentRow = (rowId) => {
+    setOtherDocumentRows((current) => (
+      current.length > 1 ? current.filter((row) => row.id !== rowId) : [{ ...current[0], label: '' }]
+    ));
+  };
+
+  const getOtherDocumentOptionsForRow = (row) => {
+    const selectedLabels = new Set(otherDocumentRows
+      .filter((item) => item.id !== row.id)
+      .map((item) => item.label)
+      .filter(Boolean));
+
+    return otherDocumentOptions.filter((option) => (
+      !selectedLabels.has(option.label)
+      && (option.label === row.label || !otherDocuments.some((document) => documentMatchesLabel(document, option.label)))
+    ));
+  };
+
+  const hasEmptyOtherDocumentRow = otherDocumentRows.some((row) => !row.label);
+  const canAddOtherDocumentRow = !hasEmptyOtherDocumentRow && otherDocumentOptions.some((option) => (
+    !otherDocumentRows.some((row) => row.label === option.label)
+    && !otherDocuments.some((document) => documentMatchesLabel(document, option.label))
+  ));
 
   const saveCredentialForm = async (nextForm = credentialForm) => {
     setIsSaving(true);
@@ -813,10 +1089,11 @@ function AppTalentCredentialsView({ user }) {
 
     try {
       const updated = await backendApi.talent.updateMyProfile(buildProfileSavePayload(displayProfile, {
-        certifications: nextForm.certifications,
+        certifications: asList(nextForm.certifications),
+        titles: profileTitles,
         workPreferences,
       }));
-      setSavedProfile(updated);
+      onProfileUpdated(updated);
       setCredentialForm({
         certifications: asList(updated.certifications),
         externalLinks: normalizeLinkFields(getExternalLinks(updated)),
@@ -825,9 +1102,11 @@ function AppTalentCredentialsView({ user }) {
       });
       setCredentialMessage(updated.status === 'approved'
         ? 'Credentials saved.'
-        : 'Credentials saved and marked pending review.');
+        : 'Credentials saved and sent for review.');
+      return updated;
     } catch (saveError) {
       setCredentialError(saveError.message || 'Unable to save credentials.');
+      return null;
     } finally {
       setIsSaving(false);
     }
@@ -860,203 +1139,373 @@ function AppTalentCredentialsView({ user }) {
         : {
           ...credentialForm,
           supportingDocuments: [
-            ...credentialForm.supportingDocuments.filter((document) => document.key !== documentKey),
+            ...credentialForm.supportingDocuments.filter((document) => (
+              document.key !== documentKey
+              && document.label !== label
+              && !String(document.key || '').endsWith(`:${label}`)
+            )),
             upload,
           ],
         };
 
       setCredentialForm(nextForm);
-      await saveCredentialForm(nextForm);
+      const saved = await saveCredentialForm(nextForm);
+
+      return saved ? upload : null;
     } catch (uploadError) {
       setCredentialError(uploadError.message || 'Unable to upload this file.');
+      return null;
     } finally {
       setBusyUpload('');
     }
   };
 
+  const uploadOtherDocumentRow = async (row, file) => {
+    if (!row.label) return;
+
+    const upload = await uploadCredentialFile({
+      documentKey: `other:${row.label}`,
+      documentType: 'other_document',
+      file,
+      label: row.label,
+    });
+
+    if (upload) {
+      removeOtherDocumentRow(row.id);
+    }
+  };
+
   return (
-    <div className="portal-fade-in max-w-6xl">
-      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="mb-2 text-2xl font-bold text-slate-950 dark:text-white">Credentials & Links</h2>
-          <p className="text-slate-600 dark:text-slate-400">Manage your resume, professional links, certifications, and title-specific documents.</p>
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+            <ShieldCheck size={14} />
+            Verification
+          </div>
+          <h3 className="text-xl font-bold text-slate-950 dark:text-white">Credential Review</h3>
+          <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
         </div>
         <button
           onClick={() => saveCredentialForm()}
           disabled={isSaving || Boolean(busyUpload)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-cyan-600 disabled:cursor-default disabled:opacity-70"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:cursor-default disabled:opacity-70"
         >
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-          {isSaving ? 'Saving...' : 'Save Credentials'}
+          {isSaving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
 
       {credentialError && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
           {credentialError}
         </div>
       )}
       {credentialMessage && (
-        <div className="success-message mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+        <div className="success-message mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
           {credentialMessage}
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <FadeIn>
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-slate-950 dark:text-white">Resume</h3>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{resume ? 'Pending admin review' : isLoading ? 'Loading profile' : 'Required for profile review'}</p>
-              </div>
-              <div className={`rounded-full border px-3 py-1 text-xs font-black capitalize ${
-                resume
-                  ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
-                  : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400'
-              }`}>
-                {resume?.status ? String(resume.status).replace(/_/g, ' ') : 'Missing'}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-950">
-              <div className="mb-4 flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-cyan-600 shadow-sm dark:bg-slate-900">
-                  <FileText size={22} />
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-black text-slate-950 dark:text-white">{resume?.fileName || 'Resume not uploaded'}</div>
-                  <div className="mt-1 text-xs font-bold text-slate-400">
-                    {[formatFileSize(resume?.fileSize), getUploadDate(resume?.uploadedAt)].filter(Boolean).join(' · ') || 'PDF or Word document'}
-                  </div>
-                </div>
-              </div>
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                {busyUpload === 'resume' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                {resume ? 'Replace Resume' : 'Upload Resume'}
-                <input
-                  type="file"
-                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  className="hidden"
-                  onChange={(event) => {
-                    uploadCredentialFile({
-                      documentKey: 'resume',
-                      documentType: 'resume',
-                      file: event.target.files?.[0],
-                      label: 'Professional resume',
-                    });
-                    event.target.value = '';
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-        </FadeIn>
-
-        <FadeIn delay={100}>
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-slate-950 dark:text-white">Professional Links</h3>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">LinkedIn, portfolio, and public professional profiles.</p>
-              </div>
-              <Link2 size={20} className="text-cyan-600" />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {credentialForm.externalLinks.map((link) => (
-                <label key={link.id} className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                  {link.label}
-                  <div className="mt-2 flex rounded-xl border border-slate-200 bg-slate-50 focus-within:border-cyan-500 dark:border-slate-800 dark:bg-slate-950">
-                    <input
-                      value={link.url}
-                      onChange={(event) => updateLink(link.id, event.target.value)}
-                      placeholder={link.placeholder}
-                      className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-3 text-sm font-medium text-slate-900 outline-none dark:text-white"
-                    />
-                    {normalizeCredentialUrl(link.url) && (
-                      <a href={normalizeCredentialUrl(link.url)} target="_blank" rel="noreferrer" className="flex items-center px-3 text-slate-400 transition-colors hover:text-cyan-600" title={`Open ${link.label}`}>
-                        <ExternalLink size={15} />
-                      </a>
-                    )}
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-        </FadeIn>
+      <div className="mb-6 flex gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 px-5 py-4 text-sm font-semibold leading-relaxed text-cyan-900 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-200">
+        <ShieldCheck size={18} className="mt-0.5 shrink-0 text-cyan-600 dark:text-cyan-300" />
+        <div>
+          <div className="mb-1 font-black text-cyan-950 dark:text-cyan-100">Approval requirement</div>
+          <p>{approvalRequirementText}</p>
+        </div>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <FadeIn delay={150}>
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-slate-950 dark:text-white">Certifications</h3>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Selected credentials appear separately from rates and skills.</p>
-              </div>
-              <BadgeCheck size={21} className="text-cyan-600" />
-            </div>
-            <MultiSelectPicker
-              value={credentialForm.certifications}
-              onChange={(certifications) => updateCredentialForm('certifications', certifications)}
-              optionsList={CERTIFICATION_OPTIONS}
-              placeholder="Select certifications"
-            />
-          </div>
-        </FadeIn>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DashboardMetric
+          detail={getCredentialStatusHint(resume, isLoading ? 'Loading profile' : 'Required for approval')}
+          icon={FileText}
+          label="Resume"
+          value={resume ? getCredentialStatusLabel(resume.status) : 'Missing'}
+          variant={resume?.status === 'approved' ? 'emerald' : resume ? 'amber' : 'slate'}
+        />
+        <DashboardMetric
+          detail="Required for approval"
+          icon={BadgeCheck}
+          label="Certifications"
+          value={certificationRequirements.length ? `${uploadedCertificationCount}/${certificationRequirements.length}` : 'None'}
+          variant={certificationRequirements.length ? (uploadedCertificationCount === certificationRequirements.length ? 'emerald' : 'amber') : 'slate'}
+        />
+        <DashboardMetric
+          detail="Optional supporting proof"
+          icon={Upload}
+          label="Other Docs"
+          value={otherDocuments.length ? `${otherDocuments.length} uploaded` : 'Optional'}
+          variant={otherDocuments.length ? 'cyan' : 'slate'}
+        />
+        <DashboardMetric
+          detail={rejectedUploadCount
+            ? `${rejectedUploadCount} need replacement`
+            : missingCertificationCount
+              ? `${missingCertificationCount} required item${missingCertificationCount === 1 ? '' : 's'} missing`
+              : `${pendingUploadCount} required item${pendingUploadCount === 1 ? '' : 's'} pending review`}
+          icon={ShieldCheck}
+          label="Admin Review"
+          value={`${approvedUploadCount} approved`}
+          variant={rejectedUploadCount ? 'amber' : approvedUploadCount ? 'emerald' : 'slate'}
+        />
+      </div>
 
-        <FadeIn delay={200}>
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="text-lg font-black text-slate-950 dark:text-white">Title Documents</h3>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{profileTitles.length ? formatProfileTitles(profileTitles) : 'General profile review'}</p>
+      <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-black text-slate-950 dark:text-white">Resume</h4>
+              <p className="text-xs font-semibold text-slate-400">{getCredentialStatusHint(resume, isLoading ? 'Loading profile' : 'Required for approval')}</p>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black capitalize ${
+              resume
+                ? getCredentialStatusStyle(resume.status)
+                : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400'
+            }`}>
+              {resume?.status ? getCredentialStatusLabel(resume.status) : 'Missing'}
+            </span>
+          </div>
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+            <div className="mb-4 flex items-center gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-cyan-600 shadow-sm dark:bg-slate-900">
+                <FileText size={20} />
               </div>
-              <ShieldCheck size={21} className="text-cyan-600" />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-black text-slate-950 dark:text-white">{resume?.fileName || 'Resume not uploaded'}</div>
+                <div className="mt-1 text-xs font-bold text-slate-400">
+                  {[formatFileSize(resume?.fileSize), getUploadDate(resume?.uploadedAt)].filter(Boolean).join(' - ') || 'PDF or Word document'}
+                </div>
+              </div>
+            </div>
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+              {busyUpload === 'resume' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              {resume ? 'Replace Resume' : 'Upload Resume'}
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={(event) => {
+                  uploadCredentialFile({
+                    documentKey: 'resume',
+                    documentType: 'resume',
+                    file: event.target.files?.[0],
+                    label: 'Professional resume',
+                  });
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            {getCredentialReviewMessage(resume) && (
+              <div className="mt-3 flex gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                <MessageSquare size={14} className="mt-0.5 shrink-0" />
+                <span>{getCredentialReviewMessage(resume)}</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-black text-slate-950 dark:text-white">Professional Links</h4>
+              <p className="text-xs font-semibold text-slate-400">LinkedIn, portfolio, and public profiles.</p>
+            </div>
+            <Link2 size={18} className="text-cyan-600" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {credentialForm.externalLinks.map((link) => (
+              <label key={link.id} className="block text-xs font-black text-slate-500 dark:text-slate-400">
+                {link.label}
+                <div className="mt-2 flex rounded-xl border border-slate-200 bg-slate-50 focus-within:border-cyan-500 dark:border-slate-800 dark:bg-slate-950">
+                  <input
+                    value={link.url}
+                    onChange={(event) => updateLink(link.id, event.target.value)}
+                    placeholder={link.placeholder}
+                    className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-3 text-sm font-medium text-slate-900 outline-none dark:text-white"
+                  />
+                  {normalizeCredentialUrl(link.url) && (
+                    <a href={normalizeCredentialUrl(link.url)} target="_blank" rel="noreferrer" className="flex items-center px-3 text-slate-400 transition-colors hover:text-cyan-600" title={`Open ${link.label}`}>
+                      <ExternalLink size={15} />
+                    </a>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-7 border-t border-slate-100 pt-6 dark:border-slate-800">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-sm font-black text-slate-950 dark:text-white">Professional Documents</h4>
+            <p className="mt-1 text-xs font-semibold text-slate-400">Certifications are hard requirements. Other Documents are optional supporting proof.</p>
+          </div>
+          <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
+            {[
+              { id: 'certifications', icon: BadgeCheck, label: 'Certifications' },
+              { id: 'other', icon: Plus, label: 'Other Documents' },
+            ].map((tab) => {
+              const TabIcon = tab.icon;
+              const isActive = documentTab === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setDocumentTab(tab.id)}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition-colors ${
+                    isActive
+                      ? 'bg-white text-cyan-700 shadow-sm dark:bg-slate-900 dark:text-cyan-300'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                  }`}
+                >
+                  <TabIcon size={14} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {documentTab === 'certifications' ? (
+          <section>
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h4 className="text-sm font-black text-slate-950 dark:text-white">Certifications</h4>
+                <p className="text-xs font-semibold text-slate-400">{certificationHelperText}</p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                <ShieldCheck size={13} />
+                Required
+              </span>
+            </div>
+            <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+              Upload every item listed here. These are the hard credential requirements admin must approve before your profile can be visible to clients.
             </div>
             <div className="grid gap-3">
-              {requirements.map((requirement) => {
-                const upload = requirement.upload;
+              {certificationRequirements.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                  Choose a mapped professional title to see the required certification documents.
+                </div>
+              )}
+              {certificationRequirements.map((requirement) => (
+                <CredentialUploadRow
+                  key={requirement.key}
+                  busyUpload={busyUpload}
+                  detail={requirement.title}
+                  documentKey={`certification:${requirement.label}`}
+                  documentLabel={requirement.label}
+                  documentType="certification"
+                  isRequired
+                  onUpload={uploadCredentialFile}
+                  upload={requirement.upload}
+                />
+              ))}
+            </div>
+          </section>
+        ) : (
+          <section>
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h4 className="text-sm font-black text-slate-950 dark:text-white">Other Documents</h4>
+                <p className="text-xs font-semibold text-slate-400">{otherDocumentHelperText}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOtherDocumentRows((current) => [...current, createOtherDocumentRow()])}
+                disabled={!canAddOtherDocumentRow}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-700 transition-colors hover:border-cyan-200 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300"
+              >
+                <Plus size={14} />
+                Add Document
+              </button>
+            </div>
+            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold leading-relaxed text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+              Optional uploads can strengthen the profile and give admin more proof, but they are not required for approval and do not duplicate certification requirements.
+            </div>
+
+            <div className="grid gap-3">
+              {otherDocuments.map((document) => (
+                <CredentialUploadRow
+                  key={document.id || document.key || document.label}
+                  busyUpload={busyUpload}
+                  detail="Uploaded optional supporting document"
+                  documentKey={document.key || `other:${document.label}`}
+                  documentLabel={document.label || 'Other supporting document'}
+                  documentType="other_document"
+                  onUpload={uploadCredentialFile}
+                  upload={document}
+                />
+              ))}
+
+              {otherDocumentOptions.length === 0 && otherDocuments.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                  Choose a mapped professional title to see optional supporting document choices.
+                </div>
+              )}
+
+              {otherDocumentOptions.length > 0 && otherDocumentRows.map((row) => {
+                const rowOptions = getOtherDocumentOptionsForRow(row);
+                const selectedOption = otherDocumentOptions.find((option) => option.label === row.label);
 
                 return (
-                  <div key={requirement.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-sm font-black text-slate-950 dark:text-white">{requirement.label}</div>
-                        <div className="mt-1 text-xs font-bold text-slate-400">{upload ? `${upload.fileName} ${formatFileSize(upload.fileSize) ? `· ${formatFileSize(upload.fileSize)}` : ''}` : requirement.title}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {upload && (
-                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black capitalize text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-                            {String(upload.status || 'pending_review').replace(/_/g, ' ')}
-                          </span>
-                        )}
-                        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                          {busyUpload === requirement.key ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                          {upload ? 'Replace' : 'Upload'}
-                          <input
-                            type="file"
-                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
-                            className="hidden"
-                            onChange={(event) => {
-                              uploadCredentialFile({
-                                documentKey: requirement.key,
-                                documentType: 'supporting_document',
-                                file: event.target.files?.[0],
-                                label: requirement.label,
-                              });
-                              event.target.value = '';
-                            }}
-                          />
-                        </label>
-                      </div>
+                  <div key={row.id} className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
+                      <label className="block text-xs font-black text-slate-500 dark:text-slate-400">
+                        Document type
+                        <select
+                          value={row.label}
+                          onChange={(event) => updateOtherDocumentRow(row.id, event.target.value)}
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                        >
+                          <option value="">Select supporting document</option>
+                          {selectedOption && !rowOptions.some((option) => option.label === selectedOption.label) && (
+                            <option value={selectedOption.label}>{selectedOption.label}</option>
+                          )}
+                          {rowOptions.map((option) => (
+                            <option key={option.label} value={option.label}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-black transition-colors ${
+                        row.label
+                          ? 'cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
+                          : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-600'
+                      }`}>
+                        {busyUpload === `other:${row.label}` ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                        Upload
+                        <input
+                          type="file"
+                          disabled={!row.label}
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+                          className="hidden"
+                          onChange={async (event) => {
+                            await uploadOtherDocumentRow(row, event.target.files?.[0]);
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeOtherDocumentRow(row.id)}
+                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-3 text-slate-400 transition-colors hover:text-red-600 dark:border-slate-800 dark:bg-slate-900"
+                        title="Remove row"
+                      >
+                        <X size={16} />
+                      </button>
                     </div>
+                    {selectedOption && (
+                      <div className="mt-3 text-xs font-semibold text-slate-400">
+                        Supports: {selectedOption.titles.join(' / ')}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-          </div>
-        </FadeIn>
+          </section>
+        )}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import {
   supabaseRestRequest,
   supabaseStorageRequest,
 } from '../server/supabase.js';
+import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS } from '../src/data/constants.js';
 
 const hasServiceRoleKey = () => Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -31,6 +32,7 @@ const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
 ]);
+const credentialReviewStatuses = new Set(['pending_review', 'approved', 'rejected']);
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
 const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
@@ -88,6 +90,11 @@ const cleanCredentialFileRecord = (file) => {
     kind: cleanString(record.kind, 80),
     label: cleanString(record.label, 180),
     path: cleanString(record.path, 700),
+    rejectedAt: cleanString(record.rejectedAt, 80),
+    rejectionReason: cleanString(record.rejectionReason, 1000),
+    reviewMessage: cleanString(record.reviewMessage, 1000),
+    reviewedAt: cleanString(record.reviewedAt, 80),
+    reviewedBy: cleanString(record.reviewedBy, 80),
     status: cleanString(record.status, 60) || 'pending_review',
     storageKey: cleanString(record.storageKey, 120),
     uploadedAt,
@@ -109,6 +116,11 @@ const cleanWorkPreferences = (value, fallback = {}) => {
     resume,
     supportingDocuments: cleanSupportingDocuments(preferences.supportingDocuments ?? fallbackPreferences.supportingDocuments),
   };
+};
+const normalizeCredentialReviewStatus = (status) => {
+  const value = cleanString(status, 40);
+
+  return credentialReviewStatuses.has(value) ? value : '';
 };
 const cleanProfessionalTitles = (value, fallback = []) => {
   const source = value === undefined ? fallback : value;
@@ -668,6 +680,163 @@ const uploadCredentialFile = async ({ body, userId }) => {
   };
 };
 
+const buildCredentialReviewRecord = (credential, { adminId, message, status }) => {
+  const reviewedAt = new Date().toISOString();
+  const reviewMessage = cleanString(message, 1000);
+
+  return {
+    ...credential,
+    rejectedAt: status === 'rejected' ? reviewedAt : '',
+    rejectionReason: status === 'rejected' ? reviewMessage : '',
+    reviewMessage,
+    reviewedAt,
+    reviewedBy: adminId,
+    status,
+  };
+};
+
+const getReviewableWorkPreferences = (profile) => {
+  const pendingProfile = cleanRecord(profile.pending_profile);
+  const usePendingProfile = Object.keys(pendingProfile).length > 0 && hasOwn(pendingProfile, 'work_preferences');
+
+  return {
+    pendingProfile,
+    usePendingProfile,
+    workPreferences: cleanWorkPreferences(
+      usePendingProfile ? pendingProfile.work_preferences : profile.work_preferences,
+      profile.work_preferences
+    ),
+  };
+};
+
+const documentMatchesCredentialLabel = (document, label) => (
+  document?.label === label
+  || document?.key === label
+  || String(document?.key || '').endsWith(`:${label}`)
+);
+
+const getReviewableProfessionalTitles = (profile) => {
+  const pendingProfile = cleanRecord(profile.pending_profile);
+  const hasPendingTitles = hasOwn(pendingProfile, 'titles') || hasOwn(pendingProfile, 'title');
+
+  return cleanProfessionalTitles(
+    hasPendingTitles ? (pendingProfile.titles ?? pendingProfile.title) : profile.titles,
+    cleanProfessionalTitles(profile.title)
+  );
+};
+
+const getRequiredCredentialLabels = (profile) => [
+  ...new Set(getReviewableProfessionalTitles(profile)
+    .flatMap((title) => asList(PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS[title]))),
+];
+
+const getCredentialApprovalBlocker = (profile) => {
+  const { workPreferences } = getReviewableWorkPreferences(profile);
+  const resume = workPreferences.resume;
+  const supportingDocuments = asList(workPreferences.supportingDocuments);
+  const requiredLabels = getRequiredCredentialLabels(profile);
+  const missingDocuments = requiredLabels.filter((label) => (
+    !supportingDocuments.some((document) => documentMatchesCredentialLabel(document, label))
+  ));
+  const requiredDocuments = [
+    ...(resume ? [resume] : []),
+    ...supportingDocuments.filter((document) => (
+      requiredLabels.some((label) => documentMatchesCredentialLabel(document, label))
+    )),
+  ];
+  const rejectedDocuments = requiredDocuments.filter((document) => document.status === 'rejected');
+  const pendingDocuments = requiredDocuments.filter((document) => (document.status || 'pending_review') === 'pending_review');
+
+  if (!resume) {
+    return 'Resume approval is required before this profile can be approved.';
+  }
+
+  if (missingDocuments.length) {
+    return `${missingDocuments.length} required certification document${missingDocuments.length === 1 ? '' : 's'} still need to be uploaded.`;
+  }
+
+  if (rejectedDocuments.length) {
+    return `${rejectedDocuments.length} required document${rejectedDocuments.length === 1 ? '' : 's'} need a replacement upload.`;
+  }
+
+  if (pendingDocuments.length) {
+    return `${pendingDocuments.length} required document${pendingDocuments.length === 1 ? '' : 's'} still need admin review.`;
+  }
+
+  return '';
+};
+
+const applyCredentialReview = (profile, review, adminId) => {
+  const targetType = cleanString(review.targetType || review.type || review.documentType || review.kind, 80);
+  const targetKey = cleanString(review.documentKey || review.key || review.id, 180);
+  const status = normalizeCredentialReviewStatus(review.status);
+  const message = cleanString(review.message || review.rejectionMessage || review.reason || review.customMessage, 1000);
+
+  if (!status) {
+    throw new Error('A valid document review status is required.');
+  }
+
+  if (status === 'rejected' && !message) {
+    throw new Error('A rejection message is required.');
+  }
+
+  const {
+    pendingProfile,
+    usePendingProfile,
+    workPreferences,
+  } = getReviewableWorkPreferences(profile);
+  let reviewedCredential = null;
+  let nextWorkPreferences = workPreferences;
+
+  if (targetType === 'resume') {
+    if (!workPreferences.resume) {
+      throw new Error('Resume upload not found.');
+    }
+
+    reviewedCredential = buildCredentialReviewRecord(workPreferences.resume, { adminId, message, status });
+    nextWorkPreferences = {
+      ...workPreferences,
+      resume: reviewedCredential,
+    };
+  } else {
+    const documents = asList(workPreferences.supportingDocuments);
+    const documentIndex = documents.findIndex((document) => (
+      document.key === targetKey
+      || document.id === targetKey
+      || document.label === targetKey
+    ));
+
+    if (documentIndex < 0) {
+      throw new Error('Supporting document not found.');
+    }
+
+    reviewedCredential = buildCredentialReviewRecord(documents[documentIndex], { adminId, message, status });
+    nextWorkPreferences = {
+      ...workPreferences,
+      supportingDocuments: documents.map((document, index) => (
+        index === documentIndex ? reviewedCredential : document
+      )),
+    };
+  }
+
+  const payload = usePendingProfile
+    ? {
+      pending_profile: {
+        ...pendingProfile,
+        work_preferences: nextWorkPreferences,
+      },
+    }
+    : {
+      work_preferences: nextWorkPreferences,
+    };
+
+  return {
+    credential: reviewedCredential,
+    payload,
+    targetType,
+  };
+};
+
 const handlers = {
   'GET /health': async (req, res) => {
     const checks = {
@@ -849,13 +1018,15 @@ const handlers = {
     const body = await readJson(req);
     const professionalId = cleanString(body.professionalId || body.professional_id || body.id, 80);
     const status = normalizeStatus(body.status, talentStatuses, '');
+    const credentialReview = cleanRecord(body.credentialReview || body.documentReview);
+    const hasCredentialReview = Object.keys(credentialReview).length > 0;
 
     if (!isUuid(professionalId)) {
       sendError(res, 400, 'A valid professionalId is required.');
       return;
     }
 
-    if (!status) {
+    if (!status && !hasCredentialReview) {
       sendError(res, 400, 'A valid talent status is required.');
       return;
     }
@@ -873,6 +1044,65 @@ const handlers = {
 
     const pendingProfile = existingProfile.pending_profile || {};
     const hasPendingChanges = hasPendingProfile(existingProfile);
+
+    if (hasCredentialReview) {
+      let reviewResult;
+
+      try {
+        reviewResult = applyCredentialReview(existingProfile, credentialReview, user.id);
+      } catch (error) {
+        sendError(res, 400, error.message || 'Unable to review this document.');
+        return;
+      }
+
+      const rows = await patchRows(
+        req,
+        `/professional_profiles?user_id=eq.${professionalId}`,
+        reviewResult.payload
+      );
+      const saved = asList(rows)[0];
+
+      if (!saved) {
+        sendError(res, 404, 'Talent profile not found.');
+        return;
+      }
+
+      const owners = await loadProfilesById(req, [professionalId]);
+      const owner = owners.get(professionalId) || {};
+      const mappedProfile = mapTalentProfile(saved, owner, { usePending: true });
+
+      if (reviewResult.credential.status === 'rejected') {
+        notifyUser({
+          actionUrl: '/?tab=profile',
+          body: `${reviewResult.credential.label || reviewResult.credential.fileName || 'A submitted document'} was rejected. ${reviewResult.credential.rejectionReason}`,
+          emailSubject: 'PB Finance document needs attention',
+          metadata: {
+            credentialId: reviewResult.credential.id,
+            documentKey: reviewResult.credential.key,
+            professionalId,
+            status: reviewResult.credential.status,
+          },
+          recipientEmail: owner.email,
+          recipientId: professionalId,
+          recipientName: owner.full_name,
+          title: `${reviewResult.targetType === 'resume' ? 'Resume' : 'Document'} rejected`,
+          type: reviewResult.targetType === 'resume' ? 'resume_status_updated' : 'document_status_updated',
+        }).catch(() => {});
+      }
+
+      sendJson(res, 200, mappedProfile);
+      return;
+    }
+
+    if (status === 'approved') {
+      const approvalBlocker = getCredentialApprovalBlocker(existingProfile);
+
+      if (approvalBlocker) {
+        sendError(res, 400, approvalBlocker);
+        return;
+      }
+    }
+
     let payload = {
       status,
       ...(status === 'approved' ? { published_at: new Date().toISOString() } : {}),
