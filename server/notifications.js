@@ -40,6 +40,11 @@ const sendEmail = async ({ actionUrl, body, subject, title, toEmail, toName }) =
     return { skipped: true };
   }
 
+  // Email notifications temporarily disabled by default (except for verification codes).
+  if (process.env.NOTIFICATION_EMAILS_DISABLED !== 'false') {
+    return { skipped: true };
+  }
+
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
