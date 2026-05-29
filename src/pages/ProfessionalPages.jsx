@@ -1079,6 +1079,7 @@ function AppTalentProfileView({ user }) {
 function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, selectedTitles, user }) {
   const [credentialForm, setCredentialForm] = useState(EMPTY_CREDENTIAL_FORM);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState('');
   const [busyUpload, setBusyUpload] = useState('');
   const [credentialError, setCredentialError] = useState('');
   const [credentialMessage, setCredentialMessage] = useState('');
@@ -1160,8 +1161,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       ? 'No optional supporting documents are mapped for the selected title yet.'
       : 'Choose a professional title to see optional supporting documents.';
   const approvalRequirementText = certificationRequirements.length
-    ? `To get approved, upload your resume, all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}, and any Required Regulatory Inputs. Admin must approve each required upload. Other Documents are optional and will not block approval.`
-    : 'To get approved, upload your resume and complete any Required Regulatory Inputs. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.';
+    ? `To get approved, upload your resume${hasRequiredRegulatedInputs ? ', complete Required Regulatory Inputs,' : ''} and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required upload. Other Documents are optional and will not block approval.`
+    : `To get approved, upload your resume${hasRequiredRegulatedInputs ? ' and complete Required Regulatory Inputs' : ''}. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.`;
   const resume = credentialForm.resume;
   const isProfileApproved = displayProfile.status === 'approved';
   const uploadedCertificationCount = certificationRequirements.filter((requirement) => requirement.upload).length;
@@ -1182,6 +1183,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     }
   });
   const requiredRegulatedInputs = activeRegulatedInputs.filter((field) => field.required);
+  const hasRequiredRegulatedInputs = requiredRegulatedInputs.length > 0;
   const validateRegulatedInput = (field, value) => {
     const text = String(value || '').trim();
     if (!field.required && !text) return true;
@@ -1258,6 +1260,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
 
   const saveCredentialForm = async (nextForm = credentialForm, { submitForReview = false } = {}) => {
     setIsSaving(true);
+    setSavingAction(submitForReview ? 'verify' : 'save');
     setCredentialError('');
     setCredentialMessage('');
 
@@ -1268,12 +1271,15 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         url: normalizeCredentialUrl(link.url),
       }))
       .filter((link) => link.url);
+    const activeRegulatedInputIds = new Set(activeRegulatedInputs.map((field) => field.id));
+    const regulatedInputs = Object.fromEntries(Object.entries(nextForm.regulatedInputs || {})
+      .filter(([key]) => activeRegulatedInputIds.has(key)));
     const workPreferences = {
       ...getWorkPreferences(displayProfile),
       externalLinks,
       resume: nextForm.resume || null,
       supportingDocuments: asList(nextForm.supportingDocuments),
-      regulatedInputs: nextForm.regulatedInputs || {},
+      regulatedInputs,
     };
 
     try {
@@ -1300,6 +1306,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       return null;
     } finally {
       setIsSaving(false);
+      setSavingAction('');
     }
   };
 
@@ -1412,6 +1419,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     if (!document) return;
 
     setCredentialError('');
+    const previewWindow = window.open('', '_blank', 'noopener,noreferrer');
 
     try {
       const result = await backendApi.documents.getUrl({
@@ -1421,9 +1429,14 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       });
 
       if (result?.url) {
-        window.open(result.url, '_blank', 'noopener,noreferrer');
+        if (previewWindow) {
+          previewWindow.location.href = result.url;
+        } else {
+          window.location.href = result.url;
+        }
       }
     } catch (openError) {
+      if (previewWindow) previewWindow.close();
       setCredentialError(openError.message || 'Unable to open this document.');
     }
   };
@@ -1491,14 +1504,14 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           <h3 className="text-xl font-bold text-slate-950 dark:text-white">Credential Review</h3>
           <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => saveCredentialForm()}
             disabled={isSaving || Boolean(busyUpload)}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
           >
-            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-            {isSaving ? 'Saving...' : 'Save Changes'}
+            {savingAction === 'save' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            {savingAction === 'save' ? 'Saving...' : 'Save Changes'}
           </button>
           <button
             onClick={() => saveCredentialForm(credentialForm, { submitForReview: true })}
@@ -1506,8 +1519,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
             title={verifyBlockers[0] || 'Submit credentials for admin verification'}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-            Verify
+            {savingAction === 'verify' ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            {savingAction === 'verify' ? 'Verifying...' : 'Verify'}
           </button>
         </div>
       </div>
@@ -1558,13 +1571,15 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           value={otherDocuments.length ? `${otherDocuments.length} uploaded` : 'Optional'}
           variant={otherDocuments.length ? 'cyan' : 'slate'}
         />
-        <DashboardMetric
-          detail={requiredRegulatedInputs.length ? 'Required for approval' : 'No required inputs'}
-          icon={ShieldCheck}
-          label="Regulatory"
-          value={requiredRegulatedInputs.length ? `${requiredRegulatedInputs.length - missingRequiredRegulatedInputs.length}/${requiredRegulatedInputs.length}` : 'None'}
-          variant={missingRequiredRegulatedInputs.length || invalidRegulatedInputs.length ? 'amber' : requiredRegulatedInputs.length ? 'emerald' : 'slate'}
-        />
+        {hasRequiredRegulatedInputs && (
+          <DashboardMetric
+            detail="Required for approval"
+            icon={ShieldCheck}
+            label="Regulatory"
+            value={`${requiredRegulatedInputs.length - missingRequiredRegulatedInputs.length}/${requiredRegulatedInputs.length}`}
+            variant={missingRequiredRegulatedInputs.length || invalidRegulatedInputs.length ? 'amber' : 'emerald'}
+          />
+        )}
         <DashboardMetric
           detail={rejectedUploadCount
             ? `${rejectedUploadCount} need replacement`
@@ -1784,17 +1799,23 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
               <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-800">
                 <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h4 className="text-sm font-black text-slate-950 dark:text-white">Required Regulatory Inputs</h4>
-                    <p className="text-xs font-semibold text-slate-400">Required license identifiers must pass format checks before verification.</p>
+                    <h4 className="text-sm font-black text-slate-950 dark:text-white">{hasRequiredRegulatedInputs ? 'Required Regulatory Inputs' : 'Regulatory Inputs'}</h4>
+                    {hasRequiredRegulatedInputs && (
+                      <p className="text-xs font-semibold text-slate-400">Required license identifiers must pass format checks before verification.</p>
+                    )}
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
-                    <ShieldCheck size={13} />
-                    Required
-                  </span>
+                  {hasRequiredRegulatedInputs && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                      <ShieldCheck size={13} />
+                      Required
+                    </span>
+                  )}
                 </div>
-                <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-                  Complete required regulatory inputs for selected titles. Optional inputs are checked only when filled.
-                </div>
+                {hasRequiredRegulatedInputs && (
+                  <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                    Complete required regulatory inputs for selected titles. Optional inputs are checked only when filled.
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   {activeRegulatedInputs.map((inputField) => {
                     const inputValue = (credentialForm.regulatedInputs || {})[inputField.id] || '';

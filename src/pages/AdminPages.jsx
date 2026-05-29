@@ -802,6 +802,7 @@ function TalentReview() {
   const openDocument = async (profile, document, { download = false } = {}) => {
     const documentKey = document.key || document.id || document.label;
     const busyKey = `${profile.id}:${document.documentType}:${documentKey}:${download ? 'download' : 'view'}`;
+    const previewWindow = !download ? window.open('', '_blank', 'noopener,noreferrer') : null;
 
     setBusyId(busyKey);
     setActionError('');
@@ -815,14 +816,24 @@ function TalentReview() {
       });
 
       if (result?.url) {
-        const link = window.document.createElement('a');
-        link.href = result.url;
-        link.target = '_blank';
-        link.rel = 'noreferrer';
-        if (download) link.download = result.fileName || document.fileName || 'document';
-        link.click();
+        if (download) {
+          const fileName = result.fileName || document.fileName || 'document';
+          const downloadUrl = `${result.url}${result.url.includes('?') ? '&' : '?'}download=${encodeURIComponent(fileName)}`;
+          const link = window.document.createElement('a');
+          link.href = downloadUrl;
+          link.download = fileName;
+          link.rel = 'noreferrer';
+          window.document.body.appendChild(link);
+          link.click();
+          link.remove();
+        } else if (previewWindow) {
+          previewWindow.location.href = result.url;
+        } else {
+          window.location.href = result.url;
+        }
       }
     } catch (openError) {
+      if (previewWindow) previewWindow.close();
       setActionError(openError.message || 'Unable to open this document.');
     } finally {
       setBusyId('');
@@ -925,16 +936,27 @@ function TalentReview() {
 
               {(() => {
                 const regulatedInputs = getProfileRegulatedInputs(profile);
-                return Object.keys(regulatedInputs).length > 0 && (
+                const titles = asList(profile.titles).length ? asList(profile.titles) : asList(profile.title || profile.role);
+                const activeFields = titles.flatMap((title) => asList(REGULATED_TITLE_REQUIREMENTS[title]?.inputFields)
+                  .map((field) => ({ ...field, title })));
+                const activeFieldIds = new Set(activeFields.map((field) => field.id));
+                const visibleRegulatedInputs = Object.entries(regulatedInputs)
+                  .filter(([key, value]) => activeFieldIds.has(key) && String(value || '').trim());
+
+                return visibleRegulatedInputs.length > 0 && (
                 <div className="mb-5 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800">
                   <div className="text-[11px] uppercase font-black tracking-wider text-slate-500 dark:text-slate-400 mb-3">Submitted Regulatory Data</div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {Object.entries(regulatedInputs).map(([key, value]) => (
+                    {visibleRegulatedInputs.map(([key, value]) => {
+                      const field = activeFields.find((item) => item.id === key);
+
+                      return (
                       <div key={key} className="flex flex-col">
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">{key}</span>
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">{field?.label || key}</span>
                         <span className="font-bold font-mono text-sm text-slate-950 dark:text-white px-3 py-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">{value}</span>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );

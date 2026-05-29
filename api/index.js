@@ -145,15 +145,18 @@ const cleanSupportingDocuments = (documents) => asList(documents)
 const cleanWorkPreferences = (value, fallback = {}) => {
   const preferences = cleanRecord(value);
   const fallbackPreferences = cleanRecord(fallback);
-  const resume = cleanCredentialFileRecord(preferences.resume) || cleanCredentialFileRecord(fallbackPreferences.resume);
+  const hasPreferenceField = (key) => Object.hasOwn(preferences, key);
+  const resume = hasPreferenceField('resume')
+    ? cleanCredentialFileRecord(preferences.resume)
+    : cleanCredentialFileRecord(fallbackPreferences.resume);
 
   return {
     ...fallbackPreferences,
     ...preferences,
-    externalLinks: cleanExternalLinks(preferences.externalLinks ?? fallbackPreferences.externalLinks),
-    regulatedInputs: cleanRecord(preferences.regulatedInputs ?? fallbackPreferences.regulatedInputs),
+    externalLinks: cleanExternalLinks(hasPreferenceField('externalLinks') ? preferences.externalLinks : fallbackPreferences.externalLinks),
+    regulatedInputs: cleanRecord(hasPreferenceField('regulatedInputs') ? preferences.regulatedInputs : fallbackPreferences.regulatedInputs),
     resume,
-    supportingDocuments: cleanSupportingDocuments(preferences.supportingDocuments ?? fallbackPreferences.supportingDocuments),
+    supportingDocuments: cleanSupportingDocuments(hasPreferenceField('supportingDocuments') ? preferences.supportingDocuments : fallbackPreferences.supportingDocuments),
   };
 };
 const normalizeCredentialReviewStatus = (status) => {
