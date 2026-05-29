@@ -39,6 +39,16 @@ const PROFESSIONAL_NOTIFICATION_TAB_FALLBACKS = {
   resume_status_updated: 'profile',
 };
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
+const DOCUMENT_ACCEPTS = {
+  certification: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png',
+  other_document: '.pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png',
+  resume: '.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+const DOCUMENT_EXTENSIONS = {
+  certification: ['.pdf', '.jpg', '.jpeg', '.png'],
+  other_document: ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'],
+  resume: ['.pdf', '.doc', '.docx'],
+};
 const EMPTY_CREDENTIAL_FORM = Object.freeze({
   certifications: EMPTY_LIST,
   externalLinks: EMPTY_LIST,
@@ -67,6 +77,7 @@ import {
   PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS,
   PROFESSIONAL_TITLE_OTHER_DOCUMENT_OPTIONS,
   PROFESSIONAL_TITLE_OPTIONS,
+  REGULATED_TITLE_REQUIREMENTS,
   SKILLS_OPTIONS,
   SOFTWARE_OPTIONS,
 } from '../data/constants';
@@ -175,6 +186,26 @@ const getContentTypeForFile = (file) => {
 
   return 'application/octet-stream';
 };
+const getFileExtension = (fileName) => {
+  const match = String(fileName || '').toLowerCase().match(/\.[a-z0-9]+$/);
+
+  return match ? match[0] : '';
+};
+const validateCredentialFile = (file, documentType) => {
+  if (!file) return 'Choose a file to upload.';
+  if (file.size > MAX_CREDENTIAL_UPLOAD_BYTES) return 'Upload must be 3 MB or smaller.';
+
+  const extension = getFileExtension(file.name);
+  const allowedExtensions = DOCUMENT_EXTENSIONS[documentType] || DOCUMENT_EXTENSIONS.other_document;
+
+  if (!allowedExtensions.includes(extension)) {
+    if (documentType === 'resume') return 'Resume uploads must be a PDF or Word document.';
+    if (documentType === 'certification') return 'Certification uploads must be a PDF, JPG, or PNG.';
+    return 'Supporting document uploads must be a PDF, Word document, JPG, or PNG.';
+  }
+
+  return '';
+};
 const documentMatchesLabel = (document, label) => (
   document?.label === label
   || document?.key === label
@@ -267,6 +298,7 @@ const buildProfileSavePayload = (profile, overrides = {}) => {
     hourlyRate: profile.rate || profile.hourlyRate || null,
     location: profile.location || '',
     skills: asList(profile.skills),
+    submitForReview: Boolean(overrides.submitForReview),
     titles,
     tools: asList(profile.tools),
     workPreferences,
@@ -295,13 +327,14 @@ function PortalModal({ children, onClose, title }) {
   );
 }
 
-function MultiSelectPicker({ disabled = false, value, onChange, optionsList, placeholder }) {
+function MultiSelectPicker({ disabled = false, getRemoveDisabledReason, value, onChange, optionsList, placeholder }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedItems = cleanProfileTitles(value);
   const selectedSet = new Set(selectedItems);
   const options = [...new Set([...selectedItems, ...asList(optionsList)])];
   const toggleItem = (item) => {
     if (disabled) return;
+    if (selectedSet.has(item) && getRemoveDisabledReason?.(item)) return;
 
     const nextItems = selectedSet.has(item)
       ? selectedItems.filter((i) => i !== item)
@@ -327,15 +360,22 @@ function MultiSelectPicker({ disabled = false, value, onChange, optionsList, pla
       {selectedItems.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {selectedItems.map((item) => (
+            (() => {
+              const disabledReason = getRemoveDisabledReason?.(item) || '';
+
+              return (
             <button
               key={item}
               type="button"
               onClick={() => toggleItem(item)}
-              disabled={disabled}
-              className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-700 transition-colors hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300"
+              disabled={disabled || Boolean(disabledReason)}
+              title={disabledReason || `Remove ${item}`}
+              className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-700 transition-colors hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300"
             >
               {item} <span className="ml-1 text-cyan-500">x</span>
             </button>
+              );
+            })()
           ))}
         </div>
       )}
@@ -371,18 +411,33 @@ function MultiSelectPicker({ disabled = false, value, onChange, optionsList, pla
 
 function CredentialUploadRow({
   busyUpload,
+  canRemoveApprovedChange = false,
   detail,
   documentKey,
   documentLabel,
   documentType,
   isRequired = false,
+  isProfileApproved = false,
+  onView,
   onUpload,
+  onRemove,
+  onRequestChange,
+  onChangeExpiry,
   upload,
 }) {
   const isBusy = busyUpload === documentKey;
+  const isApproved = upload?.status === 'approved';
+  const isRejected = upload?.status === 'rejected';
+  const isUnderRequest = upload?.changeRequestStatus === 'pending';
+  const canRemoveUpload = upload && (!isProfileApproved || isRejected || canRemoveApprovedChange);
+  const removeBusy = busyUpload === `remove:${documentKey}`;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+    <div className={`rounded-2xl border p-4 ${
+      isRejected
+        ? 'border-red-200 bg-red-50/30 dark:border-red-900/40 dark:bg-red-950/10'
+        : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950'
+    }`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -400,6 +455,20 @@ function CredentialUploadRow({
               ? `${upload.fileName} ${formatFileSize(upload.fileSize) ? `- ${formatFileSize(upload.fileSize)}` : ''}`
               : detail}
           </div>
+          
+          {upload && (
+            <div className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-500">
+              <Calendar size={14} />
+              <span>Expires:</span>
+              <input
+                type="date"
+                value={upload.expiryDate || ''}
+                disabled={isApproved}
+                onChange={(e) => onChangeExpiry && onChangeExpiry(upload.id, e.target.value)}
+                className="bg-transparent border border-slate-200 rounded px-2 py-0.5 text-xs outline-none dark:border-slate-800 disabled:opacity-50"
+              />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {upload && (
@@ -407,24 +476,61 @@ function CredentialUploadRow({
               {getCredentialStatusLabel(upload.status || 'pending_review')}
             </span>
           )}
-          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-            {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-            {upload ? 'Replace' : 'Upload'}
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
-              className="hidden"
-              onChange={(event) => {
-                onUpload({
-                  documentKey,
-                  documentType,
-                  file: event.target.files?.[0],
-                  label: documentLabel,
-                });
-                event.target.value = '';
-              }}
-            />
-          </label>
+          {isUnderRequest && (
+            <span className="rounded-full border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-xs font-black text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
+              Under request
+            </span>
+          )}
+          {upload && (
+            <button
+              type="button"
+              onClick={() => onView?.(upload)}
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            >
+              <ExternalLink size={14} />
+              View
+            </button>
+          )}
+          {isApproved && isProfileApproved && !canRemoveApprovedChange ? (
+            <button
+              onClick={() => onRequestChange && onRequestChange({ documentKey, documentLabel, documentType })}
+              disabled={isUnderRequest}
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
+            >
+              {isUnderRequest ? 'Under request' : 'Request change'}
+            </button>
+          ) : (
+            <>
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {upload ? 'Replace' : 'Upload'}
+                <input
+                  type="file"
+                  accept={DOCUMENT_ACCEPTS[documentType] || DOCUMENT_ACCEPTS.other_document}
+                  className="hidden"
+                  onChange={(event) => {
+                    onUpload({
+                      documentKey,
+                      documentType,
+                      file: event.target.files?.[0],
+                      label: documentLabel,
+                    });
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              {canRemoveUpload && onRemove && (
+                <button
+                  onClick={() => onRemove({ documentKey, documentType, label: documentLabel })}
+                  disabled={removeBusy || Boolean(busyUpload)}
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-60 dark:border-red-900/40 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/20"
+                >
+                  {removeBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  Remove
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
       {getCredentialReviewMessage(upload) && (
@@ -610,6 +716,26 @@ function AppTalentProfileView({ user }) {
   const activeCredentialTitles = isEditing && editingSection === 'profile'
     ? cleanProfileTitles(profileForm.titles, profileTitles)
     : profileTitles;
+  const getTitleRemoveDisabledReason = (title) => {
+    const requiredLabels = asList(PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS[title]);
+    const supportingDocuments = getSupportingDocuments(displayProfile);
+    const relatedUploads = supportingDocuments.filter((document) => (
+      requiredLabels.some((label) => documentMatchesLabel(document, label))
+    ));
+    const allApproved = requiredLabels.length > 0
+      && requiredLabels.every((label) => (
+        supportingDocuments.some((document) => documentMatchesLabel(document, label) && document.status === 'approved')
+      ));
+
+    if (relatedUploads.length) {
+      return `Remove uploaded ${title} documents before deselecting this title.`;
+    }
+    if (allApproved) {
+      return `${title} has approved requirements and cannot be deselected here.`;
+    }
+
+    return '';
+  };
 
   const buildProfileForm = (overrides = {}) => ({
     titles: profileTitles,
@@ -785,7 +911,7 @@ function AppTalentProfileView({ user }) {
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Professional titles
-                    <MultiSelectPicker value={profileForm.titles || []} onChange={(titles) => handleProfileChange('titles', titles)} optionsList={PROFESSIONAL_TITLE_OPTIONS} placeholder="Select professional titles" />
+                    <MultiSelectPicker getRemoveDisabledReason={getTitleRemoveDisabledReason} value={profileForm.titles || []} onChange={(titles) => handleProfileChange('titles', titles)} optionsList={PROFESSIONAL_TITLE_OPTIONS} placeholder="Select professional titles" />
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Location
@@ -953,11 +1079,17 @@ function AppTalentProfileView({ user }) {
 function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, selectedTitles, user }) {
   const [credentialForm, setCredentialForm] = useState(EMPTY_CREDENTIAL_FORM);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState('');
   const [busyUpload, setBusyUpload] = useState('');
   const [credentialError, setCredentialError] = useState('');
   const [credentialMessage, setCredentialMessage] = useState('');
   const [documentTab, setDocumentTab] = useState('certifications');
   const [otherDocumentRows, setOtherDocumentRows] = useState(() => [createOtherDocumentRow()]);
+
+  const [changeRequestDocument, setChangeRequestDocument] = useState('');
+  const [changeRequestReason, setChangeRequestReason] = useState('');
+  const [changeRequestCustomReason, setChangeRequestCustomReason] = useState('');
+  const [isSubmittingChange, setIsSubmittingChange] = useState(false);
 
   useEffect(() => {
     const nextProfile = profile || EMPTY_PROFILE;
@@ -966,6 +1098,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       externalLinks: normalizeLinkFields(getExternalLinks(nextProfile)),
       resume: getProfileResume(nextProfile),
       supportingDocuments: getSupportingDocuments(nextProfile),
+      regulatedInputs: getWorkPreferences(nextProfile).regulatedInputs || {},
     });
   }, [profile]);
 
@@ -989,6 +1122,23 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     credentialForm.supportingDocuments,
     PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS
   );
+  const allCertificationLabels = new Set(Object.values(PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS).flatMap((labels) => asList(labels)));
+  const preservedCertificationRequirements = credentialForm.supportingDocuments
+    .filter((document) => (
+      (document.kind === 'certification' || allCertificationLabels.has(document.label))
+      && !certificationRequirements.some((requirement) => documentMatchesLabel(document, requirement.label))
+    ))
+    .map((document) => ({
+      key: document.label || document.key,
+      label: document.label || 'Certification document',
+      title: 'Title not selected',
+      titles: [],
+      upload: document,
+    }));
+  const visibleCertificationRequirements = [
+    ...certificationRequirements,
+    ...preservedCertificationRequirements,
+  ];
   const requiredLabels = certificationRequirements.map((requirement) => requirement.label);
   const otherDocumentOptions = getDocumentOptionsForTitles(
     profileTitles,
@@ -996,7 +1146,9 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     requiredLabels
   );
   const otherDocuments = credentialForm.supportingDocuments.filter((document) => (
-    !documentMatchesAnyLabel(document, requiredLabels)
+    document.kind !== 'certification'
+    && !allCertificationLabels.has(document.label)
+    && !documentMatchesAnyLabel(document, requiredLabels)
   ));
   const certificationHelperText = certificationRequirements.length
     ? `Hard requirements for: ${formatProfileTitles(profileTitles)}.`
@@ -1009,9 +1161,10 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       ? 'No optional supporting documents are mapped for the selected title yet.'
       : 'Choose a professional title to see optional supporting documents.';
   const approvalRequirementText = certificationRequirements.length
-    ? `To get approved, upload your resume and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required item. Other Documents are optional and will not block approval.`
-    : 'To get approved, upload your resume. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.';
+    ? `To get approved, upload your resume${hasRequiredRegulatedInputs ? ', complete Required Regulatory Inputs,' : ''} and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required upload. Other Documents are optional and will not block approval.`
+    : `To get approved, upload your resume${hasRequiredRegulatedInputs ? ' and complete Required Regulatory Inputs' : ''}. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.`;
   const resume = credentialForm.resume;
+  const isProfileApproved = displayProfile.status === 'approved';
   const uploadedCertificationCount = certificationRequirements.filter((requirement) => requirement.upload).length;
   const missingCertificationCount = certificationRequirements.length - uploadedCertificationCount;
   const approvedUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
@@ -1020,6 +1173,43 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     .filter((upload) => upload?.status === 'rejected').length;
   const pendingUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
     .filter((upload) => (upload?.status || '') === 'pending_review').length;
+
+  const activeRegulatedInputs = [];
+  profileTitles.forEach((title) => {
+    if (REGULATED_TITLE_REQUIREMENTS[title]) {
+      REGULATED_TITLE_REQUIREMENTS[title].inputFields.forEach((field) => {
+        activeRegulatedInputs.push({ ...field, title });
+      });
+    }
+  });
+  const requiredRegulatedInputs = activeRegulatedInputs.filter((field) => field.required);
+  const hasRequiredRegulatedInputs = requiredRegulatedInputs.length > 0;
+  const validateRegulatedInput = (field, value) => {
+    const text = String(value || '').trim();
+    if (!field.required && !text) return true;
+    if (field.pattern) return new RegExp(field.pattern, 'i').test(text);
+    return Boolean(text);
+  };
+  const invalidRegulatedInputs = activeRegulatedInputs.filter((field) => (
+    !validateRegulatedInput(field, credentialForm.regulatedInputs?.[field.id])
+  ));
+  const missingRequiredRegulatedInputs = requiredRegulatedInputs.filter((field) => (
+    !String(credentialForm.regulatedInputs?.[field.id] || '').trim()
+  ));
+  const verifyBlockers = [
+    !resume ? 'Upload your resume.' : '',
+    ...certificationRequirements
+      .filter((requirement) => !requirement.upload)
+      .map((requirement) => `Upload ${requirement.label}.`),
+    ...[resume, ...certificationRequirements.map((requirement) => requirement.upload)]
+      .filter((upload) => upload?.status === 'rejected')
+      .map((upload) => `Replace rejected document: ${upload.label || upload.fileName}.`),
+    ...missingRequiredRegulatedInputs.map((field) => `Complete ${field.label}.`),
+    ...invalidRegulatedInputs
+      .filter((field) => String(credentialForm.regulatedInputs?.[field.id] || '').trim())
+      .map((field) => `Fix ${field.label}.`),
+  ].filter(Boolean);
+  const canVerify = verifyBlockers.length === 0 && !isSaving && !busyUpload;
 
   useEffect(() => {
     setOtherDocumentRows([createOtherDocumentRow()]);
@@ -1068,8 +1258,9 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     && !otherDocuments.some((document) => documentMatchesLabel(document, option.label))
   ));
 
-  const saveCredentialForm = async (nextForm = credentialForm) => {
+  const saveCredentialForm = async (nextForm = credentialForm, { submitForReview = false } = {}) => {
     setIsSaving(true);
+    setSavingAction(submitForReview ? 'verify' : 'save');
     setCredentialError('');
     setCredentialMessage('');
 
@@ -1080,16 +1271,21 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         url: normalizeCredentialUrl(link.url),
       }))
       .filter((link) => link.url);
+    const activeRegulatedInputIds = new Set(activeRegulatedInputs.map((field) => field.id));
+    const regulatedInputs = Object.fromEntries(Object.entries(nextForm.regulatedInputs || {})
+      .filter(([key]) => activeRegulatedInputIds.has(key)));
     const workPreferences = {
       ...getWorkPreferences(displayProfile),
       externalLinks,
       resume: nextForm.resume || null,
       supportingDocuments: asList(nextForm.supportingDocuments),
+      regulatedInputs,
     };
 
     try {
       const updated = await backendApi.talent.updateMyProfile(buildProfileSavePayload(displayProfile, {
         certifications: asList(nextForm.certifications),
+        submitForReview,
         titles: profileTitles,
         workPreferences,
       }));
@@ -1099,24 +1295,27 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         externalLinks: normalizeLinkFields(getExternalLinks(updated)),
         resume: getProfileResume(updated),
         supportingDocuments: getSupportingDocuments(updated),
+        regulatedInputs: getWorkPreferences(updated).regulatedInputs || {},
       });
-      setCredentialMessage(updated.status === 'approved'
-        ? 'Credentials saved.'
-        : 'Credentials saved and sent for review.');
+      setCredentialMessage(submitForReview
+        ? 'Credentials submitted for admin verification.'
+        : 'Credentials saved.');
       return updated;
     } catch (saveError) {
       setCredentialError(saveError.message || 'Unable to save credentials.');
       return null;
     } finally {
       setIsSaving(false);
+      setSavingAction('');
     }
   };
 
   const uploadCredentialFile = async ({ documentKey, documentType, file, label }) => {
     if (!file) return;
 
-    if (file.size > MAX_CREDENTIAL_UPLOAD_BYTES) {
-      setCredentialError('Upload must be 3 MB or smaller.');
+    const fileError = validateCredentialFile(file, documentType);
+    if (fileError) {
+      setCredentialError(fileError);
       return;
     }
 
@@ -1160,6 +1359,125 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     }
   };
 
+  const updateUploadExpiry = (uploadId, expiryDate) => {
+    let nextForm = { ...credentialForm };
+    let found = false;
+
+    if (nextForm.resume?.id === uploadId) {
+      nextForm.resume = { ...nextForm.resume, expiryDate };
+      found = true;
+    } else {
+      nextForm.supportingDocuments = nextForm.supportingDocuments.map((doc) => {
+        if (doc.id === uploadId) {
+          found = true;
+          return { ...doc, expiryDate };
+        }
+        return doc;
+      });
+    }
+
+    if (found) {
+      setCredentialForm(nextForm);
+    }
+  };
+
+  const removeRejectedDocument = async ({ documentKey, documentType, label }) => {
+    setBusyUpload(`remove:${documentKey}`);
+    setCredentialError('');
+    setCredentialMessage('');
+
+    try {
+      let nextForm;
+
+      if (documentType === 'resume') {
+        nextForm = { ...credentialForm, resume: null };
+      } else {
+        nextForm = {
+          ...credentialForm,
+          supportingDocuments: credentialForm.supportingDocuments.filter((document) => (
+            document.key !== documentKey
+            && document.label !== label
+            && !String(document.key || '').endsWith(`:${label}`)
+          )),
+        };
+      }
+
+      setCredentialForm(nextForm);
+      const saved = await saveCredentialForm(nextForm);
+
+      if (saved) {
+        setCredentialMessage('Rejected document removed.');
+      }
+    } catch (removeError) {
+      setCredentialError(removeError.message || 'Unable to remove this document.');
+    } finally {
+      setBusyUpload('');
+    }
+  };
+
+  const openUploadedDocument = async (document) => {
+    if (!document) return;
+
+    setCredentialError('');
+    const previewWindow = window.open('', '_blank', 'noopener,noreferrer');
+
+    try {
+      const result = await backendApi.documents.getUrl({
+        documentKey: document.key || document.id || document.label,
+        documentType: document.kind,
+        path: document.path,
+      });
+
+      if (result?.url) {
+        if (previewWindow) {
+          previewWindow.location.href = result.url;
+        } else {
+          window.location.href = result.url;
+        }
+      }
+    } catch (openError) {
+      if (previewWindow) previewWindow.close();
+      setCredentialError(openError.message || 'Unable to open this document.');
+    }
+  };
+
+  const submitChangeRequest = async (e) => {
+    e.preventDefault();
+    setIsSubmittingChange(true);
+    setCredentialError('');
+    setCredentialMessage('');
+    const reasonText = changeRequestReason === 'Other' ? changeRequestCustomReason.trim() : changeRequestReason;
+
+    if (!reasonText) {
+      setCredentialError('Please select or enter a reason for the change request.');
+      setIsSubmittingChange(false);
+      return;
+    }
+    
+    try {
+      const updated = await backendApi.talent.requestDocumentChange({
+        documentKey: changeRequestDocument.documentKey,
+        documentName: changeRequestDocument.documentLabel,
+        documentType: changeRequestDocument.documentType,
+        reason: reasonText,
+      });
+      onProfileUpdated(updated);
+      setCredentialMessage('Change request submitted to admin. You will be notified once it is reviewed.');
+      setChangeRequestDocument('');
+      setChangeRequestReason('');
+      setChangeRequestCustomReason('');
+    } catch (err) {
+      setCredentialError(err.message || 'Unable to submit change request.');
+    } finally {
+      setIsSubmittingChange(false);
+    }
+  };
+
+  const handleRegulatedInputChange = (id, value) => {
+    const nextInputs = { ...(credentialForm.regulatedInputs || {}), [id]: value };
+    updateCredentialForm('regulatedInputs', nextInputs);
+  };
+
   const uploadOtherDocumentRow = async (row, file) => {
     if (!row.label) return;
 
@@ -1186,14 +1504,25 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           <h3 className="text-xl font-bold text-slate-950 dark:text-white">Credential Review</h3>
           <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
         </div>
-        <button
-          onClick={() => saveCredentialForm()}
-          disabled={isSaving || Boolean(busyUpload)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:cursor-default disabled:opacity-70"
-        >
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => saveCredentialForm()}
+            disabled={isSaving || Boolean(busyUpload)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+          >
+            {savingAction === 'save' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            {savingAction === 'save' ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button
+            onClick={() => saveCredentialForm(credentialForm, { submitForReview: true })}
+            disabled={!canVerify}
+            title={verifyBlockers[0] || 'Submit credentials for admin verification'}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {savingAction === 'verify' ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            {savingAction === 'verify' ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
       </div>
 
       {credentialError && (
@@ -1206,6 +1535,11 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           {credentialMessage}
         </div>
       )}
+      {verifyBlockers.length > 0 && (
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+          Verify unlocks after: {verifyBlockers.slice(0, 3).join(' ')}{verifyBlockers.length > 3 ? ` +${verifyBlockers.length - 3} more.` : ''}
+        </div>
+      )}
 
       <div className="mb-6 flex gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 px-5 py-4 text-sm font-semibold leading-relaxed text-cyan-900 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-200">
         <ShieldCheck size={18} className="mt-0.5 shrink-0 text-cyan-600 dark:text-cyan-300" />
@@ -1215,7 +1549,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         </div>
       </div>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <DashboardMetric
           detail={getCredentialStatusHint(resume, isLoading ? 'Loading profile' : 'Required for approval')}
           icon={FileText}
@@ -1237,6 +1571,15 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           value={otherDocuments.length ? `${otherDocuments.length} uploaded` : 'Optional'}
           variant={otherDocuments.length ? 'cyan' : 'slate'}
         />
+        {hasRequiredRegulatedInputs && (
+          <DashboardMetric
+            detail="Required for approval"
+            icon={ShieldCheck}
+            label="Regulatory"
+            value={`${requiredRegulatedInputs.length - missingRequiredRegulatedInputs.length}/${requiredRegulatedInputs.length}`}
+            variant={missingRequiredRegulatedInputs.length || invalidRegulatedInputs.length ? 'amber' : 'emerald'}
+          />
+        )}
         <DashboardMetric
           detail={rejectedUploadCount
             ? `${rejectedUploadCount} need replacement`
@@ -1265,7 +1608,11 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
               {resume?.status ? getCredentialStatusLabel(resume.status) : 'Missing'}
             </span>
           </div>
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+          <div className={`rounded-2xl border p-4 ${
+            resume?.status === 'rejected'
+              ? 'border-red-200 bg-red-50/30 dark:border-red-900/40 dark:bg-red-950/10'
+              : 'border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-950'
+          }`}>
             <div className="mb-4 flex items-center gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-cyan-600 shadow-sm dark:bg-slate-900">
                 <FileText size={20} />
@@ -1277,24 +1624,63 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                 </div>
               </div>
             </div>
-            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-              {busyUpload === 'resume' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-              {resume ? 'Replace Resume' : 'Upload Resume'}
-              <input
-                type="file"
-                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-                onChange={(event) => {
-                  uploadCredentialFile({
-                    documentKey: 'resume',
-                    documentType: 'resume',
-                    file: event.target.files?.[0],
-                    label: 'Professional resume',
-                  });
-                  event.target.value = '';
-                }}
-              />
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+            {resume && (
+              <button
+                type="button"
+                onClick={() => openUploadedDocument(resume)}
+                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+              >
+                <ExternalLink size={16} />
+                View Resume
+              </button>
+            )}
+            {resume?.changeRequestStatus === 'pending' && (
+              <span className="inline-flex items-center justify-center rounded-xl border border-cyan-100 bg-cyan-50 px-4 py-2.5 text-sm font-bold text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
+                Under request
+              </span>
+            )}
+            {resume?.status === 'approved' && isProfileApproved && resume?.changeRequestStatus !== 'approved' ? (
+              <button
+                onClick={() => setChangeRequestDocument({ documentKey: 'resume', documentLabel: 'Professional resume', documentType: 'resume' })}
+                disabled={resume?.changeRequestStatus === 'pending'}
+                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
+              >
+                {resume?.changeRequestStatus === 'pending' ? 'Under request' : 'Request change'}
+              </button>
+            ) : (
+            <>
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                {busyUpload === 'resume' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                {resume ? 'Replace Resume' : 'Upload Resume'}
+                <input
+                  type="file"
+                  accept={DOCUMENT_ACCEPTS.resume}
+                  className="hidden"
+                  onChange={(event) => {
+                    uploadCredentialFile({
+                      documentKey: 'resume',
+                      documentType: 'resume',
+                      file: event.target.files?.[0],
+                      label: 'Professional resume',
+                    });
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              {resume && (
+                <button
+                  onClick={() => removeRejectedDocument({ documentKey: 'resume', documentType: 'resume', label: 'Professional resume' })}
+                  disabled={busyUpload === 'remove:resume' || Boolean(busyUpload)}
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-60 dark:border-red-900/40 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/20"
+                >
+                  {busyUpload === 'remove:resume' ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  Remove
+                </button>
+              )}
+            </>
+            )}
+            </div>
             {getCredentialReviewMessage(resume) && (
               <div className="mt-3 flex gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
                 <MessageSquare size={14} className="mt-0.5 shrink-0" />
@@ -1384,25 +1770,88 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
               Upload every item listed here. These are the hard credential requirements admin must approve before your profile can be visible to clients.
             </div>
             <div className="grid gap-3">
-              {certificationRequirements.length === 0 && (
+              {visibleCertificationRequirements.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                   Choose a mapped professional title to see the required certification documents.
                 </div>
               )}
-              {certificationRequirements.map((requirement) => (
+              {visibleCertificationRequirements.map((requirement) => (
                 <CredentialUploadRow
                   key={requirement.key}
                   busyUpload={busyUpload}
+                  canRemoveApprovedChange={requirement.upload?.changeRequestStatus === 'approved'}
                   detail={requirement.title}
-                  documentKey={`certification:${requirement.label}`}
+                  documentKey={requirement.upload?.key || `certification:${requirement.label}`}
                   documentLabel={requirement.label}
                   documentType="certification"
                   isRequired
+                  isProfileApproved={isProfileApproved}
                   onUpload={uploadCredentialFile}
+                  onRemove={removeRejectedDocument}
+                  onChangeExpiry={updateUploadExpiry}
+                  onView={openUploadedDocument}
+                  onRequestChange={setChangeRequestDocument}
                   upload={requirement.upload}
                 />
               ))}
             </div>
+            {activeRegulatedInputs.length > 0 && (
+              <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-800">
+                <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-950 dark:text-white">{hasRequiredRegulatedInputs ? 'Required Regulatory Inputs' : 'Regulatory Inputs'}</h4>
+                    {hasRequiredRegulatedInputs && (
+                      <p className="text-xs font-semibold text-slate-400">Required license identifiers must pass format checks before verification.</p>
+                    )}
+                  </div>
+                  {hasRequiredRegulatedInputs && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                      <ShieldCheck size={13} />
+                      Required
+                    </span>
+                  )}
+                </div>
+                {hasRequiredRegulatedInputs && (
+                  <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                    Complete required regulatory inputs for selected titles. Optional inputs are checked only when filled.
+                  </div>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {activeRegulatedInputs.map((inputField) => {
+                    const inputValue = (credentialForm.regulatedInputs || {})[inputField.id] || '';
+                    const hasValue = Boolean(String(inputValue).trim());
+                    const isValid = validateRegulatedInput(inputField, inputValue);
+
+                    return (
+                    <label key={inputField.id} className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      {inputField.label} {inputField.required ? '*' : ''}
+                      <input
+                        type={inputField.type}
+                        required={inputField.required}
+                        value={inputValue}
+                        onChange={(e) => handleRegulatedInputChange(inputField.id, e.target.value)}
+                        className={`mt-2 w-full rounded-xl border bg-slate-50 px-4 py-3 text-sm font-medium outline-none dark:bg-slate-950 ${
+                          hasValue && isValid
+                            ? 'border-emerald-300 focus:border-emerald-500 dark:border-emerald-900/60'
+                            : hasValue || inputField.required
+                              ? 'border-amber-300 focus:border-amber-500 dark:border-amber-900/60'
+                              : 'border-slate-200 focus:border-cyan-500 dark:border-slate-800'
+                        }`}
+                        placeholder={`e.g. for ${inputField.title}`}
+                      />
+                      <div className={`mt-1 text-xs font-semibold ${
+                        hasValue && isValid
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-amber-600 dark:text-amber-400'
+                      }`}>
+                        {hasValue && isValid ? 'Format looks right.' : inputField.hint || 'This field is required for verification.'}
+                      </div>
+                    </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </section>
         ) : (
           <section>
@@ -1430,11 +1879,17 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                 <CredentialUploadRow
                   key={document.id || document.key || document.label}
                   busyUpload={busyUpload}
+                  canRemoveApprovedChange={document.changeRequestStatus === 'approved'}
                   detail="Uploaded optional supporting document"
                   documentKey={document.key || `other:${document.label}`}
                   documentLabel={document.label || 'Other supporting document'}
                   documentType="other_document"
+                  isProfileApproved={isProfileApproved}
                   onUpload={uploadCredentialFile}
+                  onRemove={removeRejectedDocument}
+                  onChangeExpiry={updateUploadExpiry}
+                  onView={openUploadedDocument}
+                  onRequestChange={setChangeRequestDocument}
                   upload={document}
                 />
               ))}
@@ -1478,7 +1933,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                         <input
                           type="file"
                           disabled={!row.label}
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+                          accept={DOCUMENT_ACCEPTS.other_document}
                           className="hidden"
                           onChange={async (event) => {
                             await uploadOtherDocumentRow(row, event.target.files?.[0]);
@@ -1507,6 +1962,51 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           </section>
         )}
       </div>
+
+      {changeRequestDocument && (
+        <PortalModal title="Request Document Change" onClose={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }}>
+          <form onSubmit={submitChangeRequest} className="space-y-4">
+            <p className="text-sm font-medium text-slate-500">
+              Your document <strong className="text-slate-900 dark:text-white">{changeRequestDocument.documentLabel}</strong> is currently approved and locked. To replace or remove it, please provide a reason for the admin to review.
+            </p>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+              Reason for change
+              <select
+                value={changeRequestReason}
+                onChange={(e) => setChangeRequestReason(e.target.value)}
+                required
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
+              >
+                <option value="" disabled>Select a reason...</option>
+                <option value="Document expired / needs renewal">Document expired / needs renewal</option>
+                <option value="Incorrect document uploaded">Incorrect document uploaded</option>
+                <option value="Details are outdated">Details are outdated</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            {changeRequestReason === 'Other' && (
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                Please specify
+                <textarea
+                  value={changeRequestCustomReason}
+                  onChange={(e) => setChangeRequestCustomReason(e.target.value)}
+                  required
+                  rows={3}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
+                />
+              </label>
+            )}
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                Cancel
+              </button>
+              <button type="submit" disabled={isSubmittingChange || !changeRequestReason || (changeRequestReason === 'Other' && !changeRequestCustomReason.trim())} className="rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-700 disabled:opacity-70">
+                {isSubmittingChange ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </form>
+        </PortalModal>
+      )}
     </div>
   );
 }

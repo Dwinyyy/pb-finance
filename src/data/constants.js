@@ -33,13 +33,15 @@ export const SKILLS_OPTIONS = [
 
 export const PROFESSIONAL_TITLE_OPTIONS = [
   'Certified Public Accountant',
-  'Fractional CFO',
+  'Enrolled Agent (EA)',
+  'US Tax Specialist',
+  'UK Tax / VAT Specialist',
+  'US GAAP Accountant',
   'Financial Controller',
   'Senior Tax Manager',
   'Audit Senior',
   'Bookkeeper',
   'Accounting Specialist',
-  'FP&A Director',
   'QuickBooks ProAdvisor',
   'Xero Advisor',
   'NetSuite Consultant'
@@ -47,14 +49,17 @@ export const PROFESSIONAL_TITLE_OPTIONS = [
 
 export const PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS = {
   'Bookkeeper': [
-    'Bookkeeping certificate or training record'
+    'Bookkeeping certificate',
+    'Training record'
   ],
   'Accounting Specialist': [
-    'Accounting diploma, certification, or role verification'
+    'Accounting diploma',
+    'Role verification letter'
   ],
   'Certified Public Accountant': [
-    'CPA License / Board Certificate',
-    'PRC/BOA ID or license verification'
+    'CPA License',
+    'PRC License',
+    'BOA Accreditation'
   ],
   'Fractional CFO': [
     'Finance leadership role verification'
@@ -70,7 +75,8 @@ export const PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS = {
     'Independence or ethics training record'
   ],
   'Full-charge Bookkeeper': [
-    'Bookkeeping certificate or training record'
+    'Bookkeeping certificate',
+    'Training record'
   ],
   'FP&A Director': [
     'FP&A or financial modeling certification'
@@ -84,6 +90,49 @@ export const PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS = {
   'NetSuite Consultant': [
     'NetSuite consultant certification'
   ],
+  'Enrolled Agent (EA)': [
+    'IRS Enrolled Agent Certificate',
+    'IRS PTIN verification'
+  ],
+  'US Tax Specialist': [
+    'US Tax preparer training certificate',
+    'PTIN verification'
+  ],
+  'UK Tax / VAT Specialist': [
+    'ATT or CTA certification',
+    'HMRC Agent registration'
+  ],
+  'US GAAP Accountant': [
+    'US GAAP continuing education certificate',
+    'CPA license (US or foreign)'
+  ],
+};
+
+export const REGULATED_TITLE_REQUIREMENTS = {
+  'Certified Public Accountant': {
+    requiresAudit: true,
+    inputFields: [
+      { id: 'prcLicenseNumber', label: 'PRC License Number', type: 'text', required: true, pattern: '^[0-9]{6,8}$', hint: 'Use 6 to 8 digits.' }
+    ]
+  },
+  'Enrolled Agent (EA)': {
+    requiresAudit: true,
+    inputFields: [
+      { id: 'irsPtin', label: 'IRS PTIN', type: 'text', required: true, pattern: '^P[0-9]{8}$', hint: 'Use P followed by 8 digits.' }
+    ]
+  },
+  'US Tax Specialist': {
+    requiresAudit: false,
+    inputFields: [
+      { id: 'irsPtin', label: 'IRS PTIN (Optional)', type: 'text', required: false, pattern: '^P[0-9]{8}$', hint: 'Use P followed by 8 digits.' }
+    ]
+  },
+  'UK Tax / VAT Specialist': {
+    requiresAudit: false,
+    inputFields: [
+      { id: 'hmrcAgentCode', label: 'HMRC Agent Code (Optional)', type: 'text', required: false, pattern: '^[A-Z0-9]{4,12}$', hint: 'Use 4 to 12 letters or numbers.' }
+    ]
+  }
 };
 
 export const EXTERNAL_LINK_OPTIONS = [
@@ -154,5 +203,25 @@ export const PROFESSIONAL_TITLE_OTHER_DOCUMENT_OPTIONS = {
     'ERP implementation project summary',
     'SuiteAnalytics or reporting sample',
     'NetSuite workflow sample'
+  ],
+  'Enrolled Agent (EA)': [
+    'Tax resolution case summary',
+    'Complex US tax return sample',
+    'IRS correspondence sample'
+  ],
+  'US Tax Specialist': [
+    'US 1040/1120 tax return sample',
+    'US tax planning memo',
+    'US state tax filing sample'
+  ],
+  'UK Tax / VAT Specialist': [
+    'UK self-assessment return sample',
+    'VAT return filing sample',
+    'HMRC correspondence sample'
+  ],
+  'US GAAP Accountant': [
+    'US GAAP financial statements sample',
+    'ASC 606 or ASC 842 memo sample',
+    'US entity month-end close checklist'
   ],
 };

@@ -103,3 +103,30 @@ html {
 @utility animate-pulse-glow {
   animation: pulseGlow 3s ease-in-out infinite;
 }
+
+@keyframes rotateWatermark {
+  from {
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(-45deg) scale(1.05);
+  }
+}
+
+@utility verified-document-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  font-size: 6rem;
+  font-weight: 900;
+  color: rgba(0, 0, 0, 0.05);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+  user-select: none;
+  animation: rotateWatermark 10s infinite alternate ease-in-out;
+}
+.dark .verified-document-watermark {
+  color: rgba(255, 255, 255, 0.03);
+}

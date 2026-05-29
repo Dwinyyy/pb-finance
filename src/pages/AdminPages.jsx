@@ -4,6 +4,7 @@ import {
   Building,
   CheckCircle,
   Clock3,
+  Download,
   EyeOff,
   FileText,
   Loader2,
@@ -21,7 +22,7 @@ import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { useNotifications } from '../hooks/useNotifications';
-import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS } from '../data/constants';
+import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS, REGULATED_TITLE_REQUIREMENTS } from '../data/constants';
 import { backendApi } from '../services/api';
 import { countUnreadNotificationsByTab, getUnreadNotificationsForTab } from '../utils/notificationRouting';
 
@@ -76,17 +77,60 @@ const documentMatchesLabel = (document, label) => (
 );
 const documentMatchesAnyLabel = (document, labels) => asList(labels).some((label) => documentMatchesLabel(document, label));
 const hasUploadedDocument = (documents, label) => documents.some((document) => documentMatchesLabel(document, label));
+const getProfileWorkPreferences = (profile) => {
+  const wp = profile.workPreferences || profile.work_preferences;
+  return typeof wp === 'object' && wp !== null ? wp : {};
+};
+const getProfileResume = (profile) => profile.resume || getProfileWorkPreferences(profile).resume || null;
+const getProfileSupportingDocuments = (profile) => asList(profile.supportingDocuments || getProfileWorkPreferences(profile).supportingDocuments);
+const getProfileRegulatedInputs = (profile) => {
+  const wp = getProfileWorkPreferences(profile);
+  return (wp.regulatedInputs && typeof wp.regulatedInputs === 'object') ? wp.regulatedInputs : {};
+};
+const validateRegulatedInputValue = (field, value) => {
+  const text = String(value || '').trim();
+
+  if (!field.required && !text) return true;
+  if (field.pattern) return new RegExp(field.pattern, 'i').test(text);
+
+  return Boolean(text);
+};
+const getRegulatedInputBlocker = (profile) => {
+  const inputs = getProfileRegulatedInputs(profile);
+
+  for (const title of (asList(profile.titles).length ? asList(profile.titles) : asList(profile.title || profile.role))) {
+    const requirements = REGULATED_TITLE_REQUIREMENTS[title];
+
+    if (!requirements?.inputFields) continue;
+
+    for (const field of requirements.inputFields) {
+      const value = inputs[field.id];
+      if (field.required && !String(value || '').trim()) {
+        return `Missing required regulatory input: ${field.label} for ${title}.`;
+      }
+      if (String(value || '').trim() && !validateRegulatedInputValue(field, value)) {
+        return `Invalid regulatory input: ${field.label} for ${title}.`;
+      }
+    }
+  }
+
+  return '';
+};
+const getProfileExternalLinks = (profile) => asList(profile.externalLinks || getProfileWorkPreferences(profile).externalLinks);
+
 const getReviewDocuments = (profile) => {
   const requiredLabels = getExpectedDocumentLabels(profile);
+  const resume = getProfileResume(profile);
+  const supportingDocs = getProfileSupportingDocuments(profile);
 
   return [
-    ...(profile.resume ? [{
-      ...profile.resume,
+    ...(resume ? [{
+      ...resume,
       documentType: 'resume',
       reviewLabel: 'Resume',
       reviewScope: 'required',
     }] : []),
-    ...asList(profile.supportingDocuments).map((document) => {
+    ...supportingDocs.map((document) => {
       const isRequired = documentMatchesAnyLabel(document, requiredLabels);
 
       return {
@@ -108,8 +152,9 @@ const getReviewDocumentKindLabel = (document) => {
 const getCredentialReviewState = (profile, documents = getReviewDocuments(profile)) => {
   const resume = documents.find((document) => document.documentType === 'resume');
   const supportingDocuments = documents.filter((document) => document.documentType !== 'resume');
+  const allSupportingDocs = [...supportingDocuments, ...getProfileSupportingDocuments(profile)];
   const missingDocuments = getExpectedDocumentLabels(profile)
-    .filter((label) => !hasUploadedDocument(supportingDocuments, label));
+    .filter((label) => !hasUploadedDocument(allSupportingDocs, label));
   const requiredDocuments = documents.filter((document) => (
     document.documentType === 'resume' || document.reviewScope === 'required'
   ));
@@ -127,6 +172,8 @@ const getCredentialReviewState = (profile, documents = getReviewDocuments(profil
     approvalBlocker = `${rejectedDocuments.length} required document${rejectedDocuments.length === 1 ? '' : 's'} need a replacement upload.`;
   } else if (pendingDocuments.length) {
     approvalBlocker = `${pendingDocuments.length} required document${pendingDocuments.length === 1 ? '' : 's'} still need admin review.`;
+  } else {
+    approvalBlocker = getRegulatedInputBlocker(profile);
   }
 
   return {
@@ -221,8 +268,11 @@ function StatusActions({ busyKey, currentStatus, disabledStatusReasons = {}, onU
 function CredentialReviewPanel({
   busyKey,
   documents,
+  onDownload,
   onApprove,
+  onReviewChangeRequest,
   onReject,
+  onView,
   profile,
   rejectDraft,
   reviewState,
@@ -271,6 +321,7 @@ function CredentialReviewPanel({
           const isRejecting = rejectDraft?.key === documentKey;
           const approveBusy = busyKey === `${documentKey}:approved`;
           const rejectBusy = busyKey === `${documentKey}:rejected`;
+          const changeRequestBusy = busyKey.startsWith(`${documentKey}:change_request`);
           const selectedPreset = isRejecting ? rejectDraft.preset : DOCUMENT_REJECTION_MESSAGES[0];
           const customMessage = isRejecting ? rejectDraft.custom : '';
           const rejectMessage = selectedPreset === 'custom' ? customMessage.trim() : selectedPreset;
@@ -292,7 +343,9 @@ function CredentialReviewPanel({
                       {document.reviewScope === 'required' ? 'Required' : 'Optional'}
                     </span>
                   </div>
-                  <div className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{document.fileName || 'Uploaded file'}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{document.fileName || 'Uploaded file'}</div>
+                  </div>
                   <div className="mt-1 text-xs font-bold text-slate-400">
                     {[getReviewDocumentKindLabel(document), formatFileSize(document.fileSize)].filter(Boolean).join(' - ')}
                   </div>
@@ -305,9 +358,50 @@ function CredentialReviewPanel({
                       {document.rejectionReason || document.reviewMessage}
                     </div>
                   )}
+                  {document.changeRequestStatus === 'pending' && (
+                    <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-semibold leading-relaxed text-cyan-800 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
+                      Change request: {document.changeRequest?.reason || 'No reason provided.'}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    onClick={() => onView(profile, document)}
+                    disabled={Boolean(busyKey)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
+                  >
+                    <FileText size={14} />
+                    View
+                  </button>
+                  <button
+                    onClick={() => onDownload(profile, document)}
+                    disabled={Boolean(busyKey)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
+                  >
+                    <Download size={14} />
+                    Download
+                  </button>
+                  {document.changeRequestStatus === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => onReviewChangeRequest(profile, document, 'approved')}
+                        disabled={Boolean(busyKey)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-cyan-700 disabled:cursor-default disabled:opacity-70"
+                      >
+                        {changeRequestBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                        Approve Change
+                      </button>
+                      <button
+                        onClick={() => onReviewChangeRequest(profile, document, 'rejected')}
+                        disabled={Boolean(busyKey)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20"
+                      >
+                        {changeRequestBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                        Reject Change
+                      </button>
+                    </>
+                  )}
                   {document.status !== 'approved' && (
                     <button
                       onClick={() => onApprove(profile, document)}
@@ -655,18 +749,19 @@ function TalentReview() {
     setTalent(asList(data));
   }, [data]);
 
-  const updateTalentStatus = async (profile, status) => {
-    setBusyId(`${profile.id}:${status}`);
+  const updateTalentStatus = async (record, status, extraPayload = {}) => {
+    setBusyId(`${record.id}:${status}`);
     setActionError('');
 
     try {
       const updated = await backendApi.admin.updateTalentStatus({
-        professionalId: profile.id,
+        professionalId: record.id,
         status,
+        ...extraPayload,
       });
 
       setTalent((current) => current.map((item) => (
-        item.id === profile.id ? { ...item, ...updated } : item
+        item.id === record.id ? { ...item, ...updated } : item
       )));
     } catch (updateError) {
       setActionError(updateError.message || 'Unable to update talent status.');
@@ -699,6 +794,76 @@ function TalentReview() {
       setRejectDraft(null);
     } catch (updateError) {
       setActionError(updateError.message || 'Unable to update this document.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const openDocument = async (profile, document, { download = false } = {}) => {
+    const documentKey = document.key || document.id || document.label;
+    const busyKey = `${profile.id}:${document.documentType}:${documentKey}:${download ? 'download' : 'view'}`;
+    const previewWindow = !download ? window.open('', '_blank', 'noopener,noreferrer') : null;
+
+    setBusyId(busyKey);
+    setActionError('');
+
+    try {
+      const result = await backendApi.documents.getUrl({
+        documentKey,
+        documentType: document.documentType,
+        path: document.path,
+        professionalId: profile.id,
+      });
+
+      if (result?.url) {
+        if (download) {
+          const fileName = result.fileName || document.fileName || 'document';
+          const downloadUrl = `${result.url}${result.url.includes('?') ? '&' : '?'}download=${encodeURIComponent(fileName)}`;
+          const link = window.document.createElement('a');
+          link.href = downloadUrl;
+          link.download = fileName;
+          link.rel = 'noreferrer';
+          window.document.body.appendChild(link);
+          link.click();
+          link.remove();
+        } else if (previewWindow) {
+          previewWindow.location.href = result.url;
+        } else {
+          window.location.href = result.url;
+        }
+      }
+    } catch (openError) {
+      if (previewWindow) previewWindow.close();
+      setActionError(openError.message || 'Unable to open this document.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const reviewDocumentChangeRequest = async (profile, document, status) => {
+    const documentKey = document.key || document.id || document.label;
+    const busyKey = `${profile.id}:${document.documentType}:${documentKey}:change_request:${status}`;
+
+    setBusyId(busyKey);
+    setActionError('');
+
+    try {
+      const updated = await backendApi.admin.updateTalentStatus({
+        credentialReview: {
+          documentKey,
+          message: status === 'approved' ? 'Change request approved.' : 'Change request rejected.',
+          reviewKind: 'change_request',
+          status,
+          targetType: document.documentType,
+        },
+        professionalId: profile.id,
+      });
+
+      setTalent((current) => current.map((item) => (
+        item.id === profile.id ? { ...item, ...updated } : item
+      )));
+    } catch (updateError) {
+      setActionError(updateError.message || 'Unable to review this change request.');
     } finally {
       setBusyId('');
     }
@@ -752,8 +917,80 @@ function TalentReview() {
               </div>
 
               {profile.manualTriageRequired && (
-                <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-                  Manual triage required{profile.manualTriageDomain ? ` for ${profile.manualTriageDomain}` : ''}. {profile.manualTriageReason || 'Review this account before approval.'}
+                <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                  <div className="mb-2 font-bold text-sm">
+                    Manual triage required{profile.manualTriageDomain ? ` for ${profile.manualTriageDomain}` : ''}
+                  </div>
+                  <p className="mb-3">{profile.manualTriageReason || 'Review this account before approval.'}</p>
+                  
+                  <button 
+                    onClick={() => updateTalentStatus(profile, undefined, { clearTriage: true })}
+                    className="mt-2 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-3 py-2 text-white font-bold transition-colors hover:bg-amber-700 disabled:opacity-70"
+                    disabled={Boolean(busyId)}
+                  >
+                    {busyId === `${profile.id}:undefined` ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                    Mark as verified
+                  </button>
+                </div>
+              )}
+
+              {(() => {
+                const regulatedInputs = getProfileRegulatedInputs(profile);
+                const titles = asList(profile.titles).length ? asList(profile.titles) : asList(profile.title || profile.role);
+                const activeFields = titles.flatMap((title) => asList(REGULATED_TITLE_REQUIREMENTS[title]?.inputFields)
+                  .map((field) => ({ ...field, title })));
+                const activeFieldIds = new Set(activeFields.map((field) => field.id));
+                const visibleRegulatedInputs = Object.entries(regulatedInputs)
+                  .filter(([key, value]) => activeFieldIds.has(key) && String(value || '').trim());
+
+                return visibleRegulatedInputs.length > 0 && (
+                <div className="mb-5 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <div className="text-[11px] uppercase font-black tracking-wider text-slate-500 dark:text-slate-400 mb-3">Submitted Regulatory Data</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {visibleRegulatedInputs.map(([key, value]) => {
+                      const field = activeFields.find((item) => item.id === key);
+
+                      return (
+                      <div key={key} className="flex flex-col">
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">{field?.label || key}</span>
+                        <span className="font-bold font-mono text-sm text-slate-950 dark:text-white px-3 py-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">{value}</span>
+                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+              })()}
+
+              {profile.status === 'approved' && (
+                <div className="mb-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-xs font-semibold leading-relaxed text-cyan-900 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-200">
+                  <div className="mb-2 font-bold text-sm">Executive Title Management</div>
+                  <p className="mb-3 text-cyan-700 dark:text-cyan-300">Assign restricted executive roles manually after interviewing the professional.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {['Fractional CFO', 'FP&A Director'].map((execTitle) => {
+                      const hasTitle = (profile.titles || []).includes(execTitle);
+                      return (
+                        <button
+                          key={execTitle}
+                          onClick={() => {
+                            const newTitles = hasTitle 
+                              ? (profile.titles || []).filter(t => t !== execTitle)
+                              : [...(profile.titles || []), execTitle];
+                            updateTalentStatus(profile, undefined, { titles: newTitles });
+                          }}
+                          disabled={Boolean(busyId)}
+                          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 font-bold transition-colors disabled:opacity-70 ${
+                            hasTitle 
+                              ? 'bg-cyan-600 text-white border-cyan-600 hover:bg-cyan-700' 
+                              : 'bg-white text-cyan-700 border-cyan-200 hover:bg-cyan-100 dark:bg-slate-900 dark:border-cyan-900 dark:text-cyan-400 dark:hover:bg-cyan-950/50'
+                          }`}
+                        >
+                          {busyId === `${profile.id}:undefined` ? <Loader2 size={14} className="animate-spin" /> : (hasTitle ? <CheckCircle size={14} /> : <Plus size={14} />)}
+                          {hasTitle ? `Revoke ${execTitle}` : `Assign ${execTitle}`}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -761,7 +998,11 @@ function TalentReview() {
                 {profile.bio || 'No bio submitted yet.'}
               </p>
 
-              <div className="mb-5 grid gap-3 sm:grid-cols-2">
+              <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Location</div>
+                  <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">{profile.location || 'Not Specified'}</div>
+                </div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Experience</div>
                   <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">{profile.experience || profile.exp || 'Pending'}</div>
@@ -780,11 +1021,33 @@ function TalentReview() {
                 ))}
               </div>
 
+              {getProfileExternalLinks(profile).length > 0 && (
+                <div className="mb-6">
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Professional Links</div>
+                  <div className="flex flex-wrap gap-3">
+                    {getProfileExternalLinks(profile).map((link, idx) => (
+                      <a
+                        key={idx}
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-cyan-400 transition-colors"
+                      >
+                        {link.label || 'Link'}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <CredentialReviewPanel
                 busyKey={busyId}
                 documents={reviewDocuments}
+                onDownload={(record, document) => openDocument(record, document, { download: true })}
                 onApprove={(record, document) => updateCredentialStatus(record, document, 'approved')}
+                onReviewChangeRequest={reviewDocumentChangeRequest}
                 onReject={(record, document, message) => updateCredentialStatus(record, document, 'rejected', message)}
+                onView={(record, document) => openDocument(record, document)}
                 profile={profile}
                 rejectDraft={rejectDraft}
                 reviewState={reviewState}

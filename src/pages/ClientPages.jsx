@@ -258,6 +258,24 @@ function ClientWorkflowOnboardingModal({ user, onClose, onStart }) {
   );
 }
 
+function DocumentPreviewer({ url, type }) {
+  const isImage = type?.includes('image') || url?.match(/\.(jpeg|jpg|gif|png)$/i);
+  return (
+    <div className="relative w-full h-[600px] bg-slate-100 dark:bg-slate-800 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 flex items-center justify-center select-none">
+      <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden flex items-center justify-center">
+        <div className="verified-document-watermark">PB Finance - Verified Preview</div>
+      </div>
+      {isImage ? (
+         <img src={url} alt="Document preview" className="max-w-full max-h-full object-contain" onContextMenu={(e) => e.preventDefault()} draggable={false} />
+      ) : (
+         <iframe src={`${url}#toolbar=0`} className="w-full h-full" title="Document preview" />
+      )}
+      {/* Invisible overlay for images to prevent drag/drop right click */}
+      {isImage && <div className="absolute inset-0 z-20 bg-transparent" onContextMenu={(e) => e.preventDefault()} draggable={false}></div>}
+    </div>
+  );
+}
+
 function InterviewDateTimePicker({ value, onChange }) {
   const parsedDate = isScheduleDate(value.date) ? new Date(`${value.date}T00:00:00`) : new Date();
   const [viewDate, setViewDate] = useState(() => new Date(parsedDate.getFullYear(), parsedDate.getMonth(), 1));
@@ -662,6 +680,7 @@ function AITalentMatchmaker() {
 // Sub-views for Client Portal
 function AppDiscoverView({ user }) {
   const [activeFilter, setActiveFilter] = useState('All');
+  const [previewProfile, setPreviewProfile] = useState(null);
   const [selectedAvailabilities, setSelectedAvailabilities] = useState(new Set());
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
   const availabilityDropdownRef = useRef(null);
@@ -996,11 +1015,18 @@ function AppDiscoverView({ user }) {
                 <div className="flex items-baseline">
                   <span className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</span>
                 </div>
-                {savedIds.has(profile.id) ? (
-                  <div className="flex items-center rounded-xl bg-primary-50 px-5 py-2.5 text-sm font-black text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
-                    Saved <CheckCircle size={16} className="ml-2" />
-                  </div>
-                ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPreviewProfile(profile)}
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow flex items-center transform hover:-translate-y-0.5"
+                  >
+                    View
+                  </button>
+                  {savedIds.has(profile.id) ? (
+                    <div className="flex items-center rounded-xl bg-primary-50 px-5 py-2.5 text-sm font-black text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
+                      Saved <CheckCircle size={16} className="ml-2" />
+                    </div>
+                  ) : (
                   <button
                     onClick={() => handleSaveProfile(profile)}
                     disabled={busyProfileId === profile.id}
@@ -1016,13 +1042,71 @@ function AppDiscoverView({ user }) {
                     </>
                     )}
                   </button>
-                )}
+                  )}
+                </div>
               </div>
             </FadeIn>
           ))}
         </div>
         )}
       </div>
+
+      {previewProfile && (
+        <PortalModal title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
+          <div className="space-y-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-2xl border border-slate-200 dark:border-slate-800">
+                {(previewProfile.name || previewProfile.fullName || '?').charAt(0)}
+              </div>
+              <div>
+                <h3 className="font-bold text-xl text-slate-950 dark:text-white leading-tight mb-1">{previewProfile.name || previewProfile.fullName || 'Unnamed profile'}</h3>
+                <p className="text-sm font-semibold text-slate-500">{previewProfile.role || previewProfile.title || 'Role pending'}</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Experience</div>
+                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Briefcase size={16} className="mr-2 text-slate-400"/> {previewProfile.exp || previewProfile.experience || 'Pending'}</div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Availability</div>
+                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Calendar size={16} className="mr-2 text-slate-400"/> {previewProfile.available || previewProfile.availability || 'Pending'}</div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Skills & Tools</h4>
+              <div className="flex flex-wrap gap-2">
+                {[...new Set([...asList(previewProfile.skills), ...asList(previewProfile.tools)])].map(tool => (
+                  <span key={tool} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-sm px-3 py-1.5 rounded-lg font-bold shadow-sm">
+                    {tool}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
+              {previewProfile.resume?.url || previewProfile.resumeUrl ? (
+                <div className="space-y-4">
+                  <DocumentPreviewer url={previewProfile.resume?.url || previewProfile.resumeUrl} type={previewProfile.resume?.contentType || 'pdf'} />
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-500 font-medium">
+                  No verified resume available for this profile.
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
+              <button onClick={() => setPreviewProfile(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                Close
+              </button>
+            </div>
+          </div>
+        </PortalModal>
+      )}
     </div>
   );
 }
@@ -1135,6 +1219,7 @@ function AppShortlistView({ user }) {
   const [scheduleTarget, setScheduleTarget] = useState(null);
   const [scheduleForm, setScheduleForm] = useState(getScheduleDefault);
   const [scheduleFormError, setScheduleFormError] = useState('');
+  const [previewProfile, setPreviewProfile] = useState(null);
 
   useEffect(() => {
     setLocalShortlist(asList(shortlisted));
@@ -1289,6 +1374,12 @@ function AppShortlistView({ user }) {
                 <div className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">{formatMoney(profile.rate || profile.hourlyRate)}</div>
               </div>
               <div className="space-y-2">
+                <button
+                  onClick={() => setPreviewProfile(profile)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+                >
+                  View Profile
+                </button>
                 {hasActiveRequest ? (
                   <div className="w-full rounded-xl bg-primary-50 py-2.5 text-center text-sm font-black text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
                     Requested
@@ -1315,6 +1406,63 @@ function AppShortlistView({ user }) {
           );
         })}
       </div>
+      )}
+
+      {previewProfile && (
+        <PortalModal title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
+          <div className="space-y-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-2xl border border-slate-200 dark:border-slate-800">
+                {(previewProfile.name || previewProfile.fullName || '?').charAt(0)}
+              </div>
+              <div>
+                <h3 className="font-bold text-xl text-slate-950 dark:text-white leading-tight mb-1">{previewProfile.name || previewProfile.fullName || 'Unnamed profile'}</h3>
+                <p className="text-sm font-semibold text-slate-500">{previewProfile.role || previewProfile.title || 'Role pending'}</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Experience</div>
+                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Briefcase size={16} className="mr-2 text-slate-400"/> {previewProfile.exp || previewProfile.experience || 'Pending'}</div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Availability</div>
+                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Calendar size={16} className="mr-2 text-slate-400"/> {previewProfile.available || previewProfile.availability || 'Pending'}</div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Skills & Tools</h4>
+              <div className="flex flex-wrap gap-2">
+                {[...new Set([...asList(previewProfile.skills), ...asList(previewProfile.tools)])].map(tool => (
+                  <span key={tool} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-sm px-3 py-1.5 rounded-lg font-bold shadow-sm">
+                    {tool}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
+              {previewProfile.resume?.url || previewProfile.resumeUrl ? (
+                <div className="space-y-4">
+                  <DocumentPreviewer url={previewProfile.resume?.url || previewProfile.resumeUrl} type={previewProfile.resume?.contentType || 'pdf'} />
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-500 font-medium">
+                  No verified resume available for this profile.
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
+              <button onClick={() => setPreviewProfile(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+                Close
+              </button>
+            </div>
+          </div>
+        </PortalModal>
       )}
 
       {scheduleTarget && (

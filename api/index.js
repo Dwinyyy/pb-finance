@@ -25,7 +25,7 @@ import {
   supabaseStorageRequest,
   updateCurrentSupabaseUser,
 } from '../server/supabase.js';
-import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS } from '../src/data/constants.js';
+import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS, REGULATED_TITLE_REQUIREMENTS } from '../src/data/constants.js';
 
 const hasServiceRoleKey = () => Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -45,6 +45,27 @@ const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
 ]);
+const DOCUMENT_TYPE_FILE_RULES = {
+  certification: {
+    extensions: new Set(['.pdf', '.jpg', '.jpeg', '.png']),
+    mimeTypes: new Set(['application/pdf', 'image/jpeg', 'image/png']),
+    message: 'Certification uploads must be a PDF, JPG, or PNG.',
+  },
+  other_document: {
+    extensions: new Set(['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png']),
+    mimeTypes: ALLOWED_CREDENTIAL_MIME_TYPES,
+    message: 'Supporting document uploads must be a PDF, Word document, JPG, or PNG.',
+  },
+  resume: {
+    extensions: new Set(['.pdf', '.doc', '.docx']),
+    mimeTypes: new Set([
+      'application/msword',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]),
+    message: 'Resume uploads must be a PDF or Word document.',
+  },
+};
 const credentialReviewStatuses = new Set(['pending_review', 'approved', 'rejected']);
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
@@ -105,12 +126,16 @@ const cleanCredentialFileRecord = (file) => {
     path: cleanString(record.path, 700),
     rejectedAt: cleanString(record.rejectedAt, 80),
     rejectionReason: cleanString(record.rejectionReason, 1000),
+    changeRequest: cleanRecord(record.changeRequest),
+    changeRequestStatus: cleanString(record.changeRequestStatus, 40),
     reviewMessage: cleanString(record.reviewMessage, 1000),
     reviewedAt: cleanString(record.reviewedAt, 80),
     reviewedBy: cleanString(record.reviewedBy, 80),
     status: cleanString(record.status, 60) || 'pending_review',
     storageKey: cleanString(record.storageKey, 120),
     uploadedAt,
+    expiryDate: cleanString(record.expiryDate, 80),
+    inputValue: cleanString(record.inputValue, 200),
   };
 };
 const cleanSupportingDocuments = (documents) => asList(documents)
@@ -120,14 +145,18 @@ const cleanSupportingDocuments = (documents) => asList(documents)
 const cleanWorkPreferences = (value, fallback = {}) => {
   const preferences = cleanRecord(value);
   const fallbackPreferences = cleanRecord(fallback);
-  const resume = cleanCredentialFileRecord(preferences.resume) || cleanCredentialFileRecord(fallbackPreferences.resume);
+  const hasPreferenceField = (key) => Object.hasOwn(preferences, key);
+  const resume = hasPreferenceField('resume')
+    ? cleanCredentialFileRecord(preferences.resume)
+    : cleanCredentialFileRecord(fallbackPreferences.resume);
 
   return {
     ...fallbackPreferences,
     ...preferences,
-    externalLinks: cleanExternalLinks(preferences.externalLinks ?? fallbackPreferences.externalLinks),
+    externalLinks: cleanExternalLinks(hasPreferenceField('externalLinks') ? preferences.externalLinks : fallbackPreferences.externalLinks),
+    regulatedInputs: cleanRecord(hasPreferenceField('regulatedInputs') ? preferences.regulatedInputs : fallbackPreferences.regulatedInputs),
     resume,
-    supportingDocuments: cleanSupportingDocuments(preferences.supportingDocuments ?? fallbackPreferences.supportingDocuments),
+    supportingDocuments: cleanSupportingDocuments(hasPreferenceField('supportingDocuments') ? preferences.supportingDocuments : fallbackPreferences.supportingDocuments),
   };
 };
 const normalizeCredentialReviewStatus = (status) => {
@@ -619,6 +648,16 @@ const safeFileName = (value) => {
   return name || 'credential-upload';
 };
 
+const getFileExtension = (fileName) => {
+  const match = String(fileName || '').toLowerCase().match(/\.[a-z0-9]+$/);
+
+  return match ? match[0] : '';
+};
+
+const getCredentialFileRule = (documentType) => (
+  DOCUMENT_TYPE_FILE_RULES[documentType] || DOCUMENT_TYPE_FILE_RULES.other_document
+);
+
 const parseCredentialUpload = (body) => {
   const fileData = String(body.fileData || body.dataUrl || '');
   const dataUrlMatch = fileData.match(/^data:([^;]+);base64,(.+)$/);
@@ -627,13 +666,17 @@ const parseCredentialUpload = (body) => {
     throw new Error('A valid file upload is required.');
   }
 
+  const documentType = cleanString(body.documentType || body.kind || 'credential', 80);
+  const rule = getCredentialFileRule(documentType);
+  const fileName = safeFileName(body.fileName || body.name);
+  const extension = getFileExtension(fileName);
   const declaredContentType = cleanString(body.contentType || dataUrlMatch[1], 120);
   const contentType = ALLOWED_CREDENTIAL_MIME_TYPES.has(declaredContentType)
     ? declaredContentType
     : '';
 
-  if (!contentType) {
-    throw new Error('Upload must be a PDF, Word document, JPG, or PNG.');
+  if (!contentType || !rule.mimeTypes.has(contentType) || !rule.extensions.has(extension)) {
+    throw new Error(rule.message);
   }
 
   const bytes = Buffer.from(dataUrlMatch[2], 'base64');
@@ -645,7 +688,7 @@ const parseCredentialUpload = (body) => {
   return {
     bytes,
     contentType,
-    fileName: safeFileName(body.fileName || body.name),
+    fileName,
   };
 };
 
@@ -710,18 +753,98 @@ const uploadCredentialFile = async ({ body, userId }) => {
   };
 };
 
+const getSupabaseStorageSignedUrl = async (path) => {
+  const storagePath = cleanString(path, 700);
+
+  if (!storagePath) {
+    throw new Error('A document path is required.');
+  }
+
+  const signed = await supabaseStorageRequest(
+    `/object/sign/${CREDENTIAL_UPLOAD_BUCKET}/${encodeStoragePath(storagePath)}`,
+    {
+      body: { expiresIn: 300 },
+      method: 'POST',
+    }
+  );
+  const signedUrl = signed?.signedURL || signed?.signedUrl || signed?.url || '';
+
+  if (!signedUrl) {
+    throw new Error('Unable to create a document link.');
+  }
+
+  if (/^https?:\/\//i.test(signedUrl)) return signedUrl;
+
+  const baseUrl = cleanString(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, 500).replace(/\/+$/, '');
+  return `${baseUrl}/storage/v1${signedUrl.startsWith('/') ? signedUrl : `/${signedUrl}`}`;
+};
+
+const findCredentialRecord = (profile, { documentKey, documentType, path }) => {
+  const { workPreferences } = getReviewableWorkPreferences(profile);
+  const targetKey = cleanString(documentKey, 180);
+  const targetPath = cleanString(path, 700);
+  const targetType = cleanString(documentType, 80);
+  const documents = [
+    ...(workPreferences.resume ? [{ ...workPreferences.resume, documentType: 'resume' }] : []),
+    ...asList(workPreferences.supportingDocuments).map((document) => ({
+      ...document,
+      documentType: document.kind || 'supporting_document',
+    })),
+  ];
+
+  return documents.find((document) => (
+    (targetPath && document.path === targetPath)
+    || (targetKey && (
+      document.key === targetKey
+      || document.id === targetKey
+      || document.label === targetKey
+    ))
+    || (targetType === 'resume' && document.documentType === 'resume')
+  ));
+};
+
 const buildCredentialReviewRecord = (credential, { adminId, message, status }) => {
   const reviewedAt = new Date().toISOString();
   const reviewMessage = cleanString(message, 1000);
 
   return {
     ...credential,
+    changeRequest: {},
+    changeRequestStatus: '',
     rejectedAt: status === 'rejected' ? reviewedAt : '',
     rejectionReason: status === 'rejected' ? reviewMessage : '',
     reviewMessage,
     reviewedAt,
     reviewedBy: adminId,
     status,
+  };
+};
+
+const buildDocumentChangeRequestRecord = (credential, { reason, userId }) => ({
+  ...credential,
+  changeRequest: {
+    requestedAt: new Date().toISOString(),
+    requestedBy: userId,
+    reason: cleanString(reason, 1000),
+    status: 'pending',
+  },
+  changeRequestStatus: 'pending',
+});
+
+const buildDocumentChangeRequestReviewRecord = (credential, { adminId, message, status }) => {
+  const reviewedAt = new Date().toISOString();
+  const currentRequest = cleanRecord(credential.changeRequest);
+
+  return {
+    ...credential,
+    changeRequest: {
+      ...currentRequest,
+      reviewedAt,
+      reviewedBy: adminId,
+      reviewMessage: cleanString(message, 1000),
+      status,
+    },
+    changeRequestStatus: status,
   };
 };
 
@@ -760,6 +883,36 @@ const getRequiredCredentialLabels = (profile) => [
     .flatMap((title) => asList(PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS[title]))),
 ];
 
+const validateRegulatedInputValue = (field, value) => {
+  const text = cleanString(value, 200);
+
+  if (!field.required && !text) return true;
+  if (field.id === 'prcLicenseNumber') return /^[0-9]{6,8}$/.test(text);
+  if (field.id === 'irsPtin') return /^P[0-9]{8}$/i.test(text);
+  if (field.id === 'hmrcAgentCode') return /^[A-Z0-9]{4,12}$/i.test(text);
+
+  return Boolean(text);
+};
+
+const getRegulatedInputBlocker = (titles, regulatedInputs = {}) => {
+  for (const title of titles) {
+    const requirements = REGULATED_TITLE_REQUIREMENTS[title];
+    if (requirements?.inputFields) {
+      for (const field of requirements.inputFields) {
+        const value = regulatedInputs?.[field.id];
+        if (field.required && !cleanString(value, 200)) {
+          return `Missing required regulatory input: ${field.label} for ${title}.`;
+        }
+        if (cleanString(value, 200) && !validateRegulatedInputValue(field, value)) {
+          return `Invalid regulatory input: ${field.label} for ${title}.`;
+        }
+      }
+    }
+  }
+
+  return '';
+};
+
 const getCredentialApprovalBlocker = (profile) => {
   const { workPreferences } = getReviewableWorkPreferences(profile);
   const resume = workPreferences.resume;
@@ -793,7 +946,37 @@ const getCredentialApprovalBlocker = (profile) => {
     return `${pendingDocuments.length} required document${pendingDocuments.length === 1 ? '' : 's'} still need admin review.`;
   }
 
-  return '';
+  return getRegulatedInputBlocker(getReviewableProfessionalTitles(profile), workPreferences.regulatedInputs || {});
+};
+
+const getCredentialSubmissionBlocker = (profile) => {
+  const { workPreferences } = getReviewableWorkPreferences(profile);
+  const resume = workPreferences.resume;
+  const supportingDocuments = asList(workPreferences.supportingDocuments);
+  const requiredLabels = getRequiredCredentialLabels(profile);
+  const missingDocuments = requiredLabels.filter((label) => (
+    !supportingDocuments.some((document) => documentMatchesCredentialLabel(document, label))
+  ));
+  const rejectedDocuments = [
+    ...(resume ? [resume] : []),
+    ...supportingDocuments.filter((document) => (
+      requiredLabels.some((label) => documentMatchesCredentialLabel(document, label))
+    )),
+  ].filter((document) => document.status === 'rejected');
+
+  if (!resume) {
+    return 'Upload your resume before requesting verification.';
+  }
+
+  if (missingDocuments.length) {
+    return `${missingDocuments.length} required certification document${missingDocuments.length === 1 ? '' : 's'} still need to be uploaded.`;
+  }
+
+  if (rejectedDocuments.length) {
+    return `${rejectedDocuments.length} required document${rejectedDocuments.length === 1 ? '' : 's'} need a replacement upload.`;
+  }
+
+  return getRegulatedInputBlocker(getReviewableProfessionalTitles(profile), workPreferences.regulatedInputs || {});
 };
 
 const applyCredentialReview = (profile, review, adminId) => {
@@ -801,6 +984,7 @@ const applyCredentialReview = (profile, review, adminId) => {
   const targetKey = cleanString(review.documentKey || review.key || review.id, 180);
   const status = normalizeCredentialReviewStatus(review.status);
   const message = cleanString(review.message || review.rejectionMessage || review.reason || review.customMessage, 1000);
+  const reviewKind = cleanString(review.reviewKind || review.action || review.requestType, 80);
 
   if (!status) {
     throw new Error('A valid document review status is required.');
@@ -823,7 +1007,14 @@ const applyCredentialReview = (profile, review, adminId) => {
       throw new Error('Resume upload not found.');
     }
 
-    reviewedCredential = buildCredentialReviewRecord(workPreferences.resume, { adminId, message, status });
+    if (reviewKind === 'change_request') {
+      if (workPreferences.resume.changeRequestStatus !== 'pending') {
+        throw new Error('No pending change request was found for this document.');
+      }
+      reviewedCredential = buildDocumentChangeRequestReviewRecord(workPreferences.resume, { adminId, message, status });
+    } else {
+      reviewedCredential = buildCredentialReviewRecord(workPreferences.resume, { adminId, message, status });
+    }
     nextWorkPreferences = {
       ...workPreferences,
       resume: reviewedCredential,
@@ -840,7 +1031,14 @@ const applyCredentialReview = (profile, review, adminId) => {
       throw new Error('Supporting document not found.');
     }
 
-    reviewedCredential = buildCredentialReviewRecord(documents[documentIndex], { adminId, message, status });
+    if (reviewKind === 'change_request') {
+      if (documents[documentIndex].changeRequestStatus !== 'pending') {
+        throw new Error('No pending change request was found for this document.');
+      }
+      reviewedCredential = buildDocumentChangeRequestReviewRecord(documents[documentIndex], { adminId, message, status });
+    } else {
+      reviewedCredential = buildCredentialReviewRecord(documents[documentIndex], { adminId, message, status });
+    }
     nextWorkPreferences = {
       ...workPreferences,
       supportingDocuments: documents.map((document, index) => (
@@ -863,6 +1061,7 @@ const applyCredentialReview = (profile, review, adminId) => {
   return {
     credential: reviewedCredential,
     payload,
+    reviewKind,
     targetType,
   };
 };
@@ -1255,14 +1454,16 @@ const handlers = {
     const status = normalizeStatus(body.status, talentStatuses, '');
     const credentialReview = cleanRecord(body.credentialReview || body.documentReview);
     const hasCredentialReview = Object.keys(credentialReview).length > 0;
+    const titlesUpdate = body.titles; // Optional array of titles
+    const clearTriage = body.clearTriage; // Optional boolean to clear manual triage
 
     if (!isUuid(professionalId)) {
       sendError(res, 400, 'A valid professionalId is required.');
       return;
     }
 
-    if (!status && !hasCredentialReview) {
-      sendError(res, 400, 'A valid talent status is required.');
+    if (!status && !hasCredentialReview && !titlesUpdate && clearTriage === undefined) {
+      sendError(res, 400, 'A valid talent status, review, or profile update is required.');
       return;
     }
 
@@ -1323,6 +1524,26 @@ const handlers = {
           title: `${reviewResult.targetType === 'resume' ? 'Resume' : 'Document'} rejected`,
           type: reviewResult.targetType === 'resume' ? 'resume_status_updated' : 'document_status_updated',
         }).catch(() => {});
+      } else if (reviewResult.reviewKind === 'change_request') {
+        const approved = reviewResult.credential.changeRequestStatus === 'approved';
+        notifyUser({
+          actionUrl: '/?tab=profile',
+          body: approved
+            ? `${reviewResult.credential.label || reviewResult.credential.fileName || 'Your document'} change request was approved. You can now remove and upload a replacement.`
+            : `${reviewResult.credential.label || reviewResult.credential.fileName || 'Your document'} change request was rejected.`,
+          emailSubject: 'PB Finance document change request reviewed',
+          metadata: {
+            credentialId: reviewResult.credential.id,
+            documentKey: reviewResult.credential.key,
+            professionalId,
+            status: reviewResult.credential.changeRequestStatus,
+          },
+          recipientEmail: owner.email,
+          recipientId: professionalId,
+          recipientName: owner.full_name,
+          title: approved ? 'Document change approved' : 'Document change rejected',
+          type: 'document_status_updated',
+        }).catch(() => {});
       }
 
       sendJson(res, 200, mappedProfile);
@@ -1339,8 +1560,10 @@ const handlers = {
     }
 
     let payload = {
-      status,
+      ...(status ? { status } : {}),
       ...(status === 'approved' ? { published_at: new Date().toISOString() } : {}),
+      ...(titlesUpdate ? { titles: titlesUpdate } : {}),
+      ...(clearTriage ? { manualTriageRequired: false, manualTriageReason: null, manualTriageDomain: null } : {})
     };
 
     if (status === 'approved' && hasPendingChanges) {
@@ -1961,6 +2184,7 @@ const handlers = {
     if (!user) return;
 
     const body = await readJson(req);
+    const submitForReview = body.submitForReview === true || body.submit_for_review === true;
     const currentProfile = await getProfessionalProfile(req, user.id);
     const fullName = cleanString(body.fullName || body.name || user.name, 160);
     const existingPendingProfile = currentProfile?.pending_profile || {};
@@ -1972,7 +2196,10 @@ const handlers = {
       existingPendingProfile.titles ?? existingPendingProfile.title,
       cleanProfessionalTitles(currentProfile?.titles, cleanProfessionalTitles(user.title))
     );
-    const titles = cleanProfessionalTitles(body.titles ?? body.title ?? body.role, fallbackTitles);
+    const rawTitles = cleanProfessionalTitles(body.titles ?? body.title ?? body.role, fallbackTitles);
+    const existingApprovedTitles = currentProfile?.titles || [];
+    const EXECUTIVE_TITLES = ['Fractional CFO', 'FP&A Director'];
+    const titles = rawTitles.filter(t => !EXECUTIVE_TITLES.includes(t) || existingApprovedTitles.includes(t));
     const primaryTitle = titles[0] || '';
     const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate ?? currentProfileView.hourly_rate);
     const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience ?? currentProfileView.years_experience);
@@ -1996,6 +2223,31 @@ const handlers = {
       work_preferences: workPreferences,
       years_experience: yearsExperience,
     };
+
+    if (submitForReview) {
+      const submissionProfile = {
+        ...(currentProfile || {}),
+        pending_profile: currentProfile?.status === 'approved' ? profilePayload : {},
+        ...toProfilePatch(profilePayload, currentProfile || {}),
+        work_preferences: workPreferences,
+      };
+      const submissionBlocker = getCredentialSubmissionBlocker(submissionProfile);
+
+      if (submissionBlocker) {
+        sendError(res, 400, submissionBlocker);
+        return;
+      }
+    }
+    
+    let manualTriageRequired = currentProfile?.manualTriageRequired;
+    let manualTriageReason = currentProfile?.manualTriageReason;
+    let manualTriageDomain = currentProfile?.manualTriageDomain;
+
+    if (titles.includes('Certified Public Accountant')) {
+      manualTriageRequired = true;
+      manualTriageReason = 'PRC License Verification Required (https://online.prc.gov.ph/Verification)';
+      manualTriageDomain = 'Credentials';
+    }
     let rows;
 
     if (currentProfile?.status === 'approved') {
@@ -2004,8 +2256,10 @@ const handlers = {
         `/professional_profiles?user_id=eq.${user.id}`,
         {
           pending_profile: profilePayload,
-          review_status: 'pending_review',
-          review_submitted_at: new Date().toISOString(),
+          ...(submitForReview ? {
+            review_status: 'pending_review',
+            review_submitted_at: new Date().toISOString(),
+          } : {}),
         }
       );
     } else {
@@ -2021,17 +2275,22 @@ const handlers = {
           ...toProfilePatch(profilePayload),
           pending_profile: {},
           review_status: null,
-          review_submitted_at: null,
-          status: 'pending_review',
+          review_submitted_at: submitForReview ? new Date().toISOString() : null,
+          status: submitForReview ? 'pending_review' : (currentProfile?.status || 'draft'),
           user_id: user.id,
+          manualTriageRequired,
+          manualTriageReason,
+          manualTriageDomain,
         },
         { prefer: 'resolution=merge-duplicates,return=representation' }
       );
     }
 
     const savedProfile = asList(rows)[0];
-    const shouldNotifyAdmins = savedProfile?.status === 'pending_review'
-      || savedProfile?.review_status === 'pending_review';
+    const shouldNotifyAdmins = submitForReview && (
+      savedProfile?.status === 'pending_review'
+      || savedProfile?.review_status === 'pending_review'
+    );
 
     if (shouldNotifyAdmins) {
       notifyAdmins({
@@ -2290,6 +2549,188 @@ const handlers = {
 
     const profiles = await loadTalentProfiles(req, { onlyApproved: true });
     sendJson(res, 200, profiles);
+  },
+
+  'POST /documents/url': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const professionalId = cleanString(body.professionalId || body.professional_id || user.id, 80);
+
+      if (!isUuid(professionalId)) {
+        sendError(res, 400, 'A valid professional id is required.');
+        return;
+      }
+
+      if (user.role !== 'admin' && professionalId !== user.id) {
+        sendError(res, 403, 'You do not have access to this document.');
+        return;
+      }
+
+      if (user.role === 'admin') {
+        req.useServiceRole = true;
+      }
+
+      const profile = await getProfessionalProfile(req, professionalId);
+      const document = profile ? findCredentialRecord(profile, {
+        documentKey: body.documentKey || body.key || body.id,
+        documentType: body.documentType || body.kind,
+        path: body.path,
+      }) : null;
+
+      if (!document?.path) {
+        sendError(res, 404, 'Document not found.');
+        return;
+      }
+
+      sendJson(res, 200, {
+        contentType: document.contentType,
+        fileName: document.fileName,
+        url: await getSupabaseStorageSignedUrl(document.path),
+      });
+    } catch (error) {
+      sendError(res, 400, error.message || 'Unable to open this document.');
+    }
+  },
+
+  'POST /talent/document-request': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+    const body = await readJson(req);
+    const reason = cleanString(body.reason, 1000);
+
+    if (!reason) {
+      sendError(res, 400, 'A reason is required.');
+      return;
+    }
+
+    const currentProfile = await getProfessionalProfile(req, user.id);
+    const { pendingProfile, usePendingProfile, workPreferences } = getReviewableWorkPreferences(currentProfile || {});
+    const targetType = cleanString(body.documentType || body.targetType || body.kind, 80);
+    const targetKey = cleanString(body.documentKey || body.key || body.id || body.documentName, 180);
+    let updatedDocument = null;
+    let nextWorkPreferences = workPreferences;
+
+    if (targetType === 'resume') {
+      if (!workPreferences.resume) {
+        sendError(res, 404, 'Resume upload not found.');
+        return;
+      }
+      updatedDocument = buildDocumentChangeRequestRecord(workPreferences.resume, { reason, userId: user.id });
+      nextWorkPreferences = {
+        ...workPreferences,
+        resume: updatedDocument,
+      };
+    } else {
+      const documents = asList(workPreferences.supportingDocuments);
+      const documentIndex = documents.findIndex((document) => (
+        document.key === targetKey
+        || document.id === targetKey
+        || document.label === targetKey
+      ));
+
+      if (documentIndex < 0) {
+        sendError(res, 404, 'Supporting document not found.');
+        return;
+      }
+
+      updatedDocument = buildDocumentChangeRequestRecord(documents[documentIndex], { reason, userId: user.id });
+      nextWorkPreferences = {
+        ...workPreferences,
+        supportingDocuments: documents.map((document, index) => (
+          index === documentIndex ? updatedDocument : document
+        )),
+      };
+    }
+
+    const rows = await patchRows(
+      req,
+      `/professional_profiles?user_id=eq.${user.id}`,
+      usePendingProfile
+        ? {
+          pending_profile: {
+            ...pendingProfile,
+            work_preferences: nextWorkPreferences,
+          },
+        }
+        : { work_preferences: nextWorkPreferences }
+    );
+    const savedProfile = asList(rows)[0];
+
+    notifyAdmins({
+      actionUrl: '/?tab=talent',
+      body: `${user.name || user.full_name || user.email || 'A professional'} requested to change or remove their approved document: ${updatedDocument.label || updatedDocument.fileName}. Reason: ${reason}`,
+      emailSubject: 'Document change request',
+      metadata: {
+        documentKey: updatedDocument.key,
+        documentType: targetType || updatedDocument.kind,
+        professionalId: user.id,
+      },
+      title: 'Document change request',
+      type: 'talent_profile_submitted',
+    }).catch(() => {});
+    
+    sendJson(res, 200, mapTalentProfile(savedProfile, {
+      email: user.email,
+      full_name: user.name,
+      title: user.title,
+    }, { usePending: true }));
+  },
+
+  'POST /admin/check-expirations': async (req, res) => {
+    // Scheduled endpoint to run daily
+    const profiles = await loadTalentProfiles(req, { onlyApproved: true });
+    const now = new Date();
+    const notificationThresholds = [60, 30, 7];
+    
+    for (const profile of profiles) {
+      if (profile.status !== 'approved') continue;
+      
+      const docs = [profile.resume, ...asList(profile.supportingDocuments)].filter(Boolean);
+      let isExpired = false;
+      
+      for (const doc of docs) {
+        if (!doc.expiryDate) continue;
+        const expiry = new Date(doc.expiryDate);
+        if (isNaN(expiry.getTime())) continue;
+        
+        const daysToExpiry = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+        
+        if (daysToExpiry <= 0) {
+           isExpired = true;
+           notifyUser({
+             actionUrl: '/?tab=profile',
+             body: `Your verified document "${doc.label || doc.fileName}" has expired. Your profile verification status has been downgraded.`,
+             emailSubject: `Document Expired: ${doc.label || doc.fileName}`,
+             recipientEmail: profile.email,
+             recipientId: profile.id,
+             recipientName: profile.full_name,
+             title: 'Document Expired',
+             type: 'document_expired',
+           }).catch(() => {});
+        } else if (notificationThresholds.includes(daysToExpiry)) {
+           notifyUser({
+             actionUrl: '/?tab=profile',
+             body: `Your verified document "${doc.label || doc.fileName}" will expire in ${daysToExpiry} days. Please upload a renewal to maintain your verified status.`,
+             emailSubject: `Document Expiring Soon: ${doc.label || doc.fileName}`,
+             recipientEmail: profile.email,
+             recipientId: profile.id,
+             recipientName: profile.full_name,
+             title: 'Document Expiring Soon',
+             type: 'document_expiring',
+           }).catch(() => {});
+        }
+      }
+      
+      if (isExpired) {
+        // Downgrade status if not already pending
+        await patchRows(req, `/professional_profiles?user_id=eq.${profile.id}`, { status: 'pending_review' }, { useServiceRole: true });
+      }
+    }
+    
+    sendJson(res, 200, { ok: true, message: 'Expiration checks completed.' });
   },
 };
 
