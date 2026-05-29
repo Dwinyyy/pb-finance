@@ -1160,6 +1160,17 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     : profileTitles.length
       ? 'No optional supporting documents are mapped for the selected title yet.'
       : 'Choose a professional title to see optional supporting documents.';
+  const activeRegulatedInputs = [];
+  profileTitles.forEach((title) => {
+    if (REGULATED_TITLE_REQUIREMENTS[title]) {
+      REGULATED_TITLE_REQUIREMENTS[title].inputFields.forEach((field) => {
+        activeRegulatedInputs.push({ ...field, title });
+      });
+    }
+  });
+  const requiredRegulatedInputs = activeRegulatedInputs.filter((field) => field.required);
+  const hasRequiredRegulatedInputs = requiredRegulatedInputs.length > 0;
+
   const approvalRequirementText = certificationRequirements.length
     ? `To get approved, upload your resume${hasRequiredRegulatedInputs ? ', complete Required Regulatory Inputs,' : ''} and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required upload. Other Documents are optional and will not block approval.`
     : `To get approved, upload your resume${hasRequiredRegulatedInputs ? ' and complete Required Regulatory Inputs' : ''}. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.`;
@@ -1173,17 +1184,6 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     .filter((upload) => upload?.status === 'rejected').length;
   const pendingUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
     .filter((upload) => (upload?.status || '') === 'pending_review').length;
-
-  const activeRegulatedInputs = [];
-  profileTitles.forEach((title) => {
-    if (REGULATED_TITLE_REQUIREMENTS[title]) {
-      REGULATED_TITLE_REQUIREMENTS[title].inputFields.forEach((field) => {
-        activeRegulatedInputs.push({ ...field, title });
-      });
-    }
-  });
-  const requiredRegulatedInputs = activeRegulatedInputs.filter((field) => field.required);
-  const hasRequiredRegulatedInputs = requiredRegulatedInputs.length > 0;
   const validateRegulatedInput = (field, value) => {
     const text = String(value || '').trim();
     if (!field.required && !text) return true;
