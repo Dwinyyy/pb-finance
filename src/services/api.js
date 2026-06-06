@@ -131,10 +131,13 @@ async function request(path, { method = 'GET', body, headers = {}, retryAuth = t
   }
 
   const responseBody = await parseBody(response);
+  const receivedHtml = typeof responseBody === 'string'
+    && responseBody.trim().startsWith('<')
+    && responseBody.toLowerCase().includes('<html');
 
-  if (!response.ok) {
+  if (!response.ok || receivedHtml) {
     const error = new Error(getErrorMessage(responseBody, response.status));
-    error.status = response.status;
+    error.status = receivedHtml && response.ok ? 502 : response.status;
     error.body = responseBody;
     throw error;
   }
@@ -144,6 +147,46 @@ async function request(path, { method = 'GET', body, headers = {}, retryAuth = t
   }
 
   return responseBody;
+}
+
+async function requestBlob(path, { method = 'POST', body, headers = {}, retryAuth = true, ...options } = {}) {
+  let response = await sendRequest(path, {
+    method,
+    body,
+    headers,
+    ...options,
+  });
+
+  if (response.status === 401 && retryAuth && path !== '/auth/refresh') {
+    const refreshed = await refreshAuthSession();
+
+    if (refreshed?.token) {
+      response = await sendRequest(path, {
+        method,
+        body,
+        headers,
+        ...options,
+      });
+    }
+  }
+
+  if (!response.ok) {
+    const responseBody = await parseBody(response);
+    const error = new Error(getErrorMessage(responseBody, response.status));
+    error.status = response.status;
+    error.body = responseBody;
+    throw error;
+  }
+
+  const contentType = response.headers.get('Content-Type') || '';
+  const contentDisposition = response.headers.get('Content-Disposition') || '';
+  const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+
+  return {
+    blob: await response.blob(),
+    contentType,
+    fileName: fileNameMatch?.[1] || '',
+  };
 }
 
 export const backendApi = {
@@ -175,6 +218,7 @@ export const backendApi = {
     requestDocumentChange: (payload) => request('/talent/document-request', { method: 'POST', body: payload }),
   },
   documents: {
+    getBlob: (payload) => requestBlob('/documents/blob', { method: 'POST', body: payload }),
     getUrl: (payload) => request('/documents/url', { method: 'POST', body: payload }),
   },
   client: {

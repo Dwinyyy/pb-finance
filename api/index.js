@@ -1,4 +1,4 @@
-import { getRoutePath, handleOptions, readJson, sendError, sendJson } from '../server/http.js';
+import { getRoutePath, handleOptions, readJson, sendError, sendJson, setCorsHeaders } from '../server/http.js';
 import {
   completePasswordSetupWithGoogle,
   getPasswordSetupRequirement,
@@ -39,7 +39,6 @@ const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a
 const CREDENTIAL_UPLOAD_BUCKET = 'professional-documents';
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
 const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
-  'application/msword',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'image/jpeg',
@@ -52,18 +51,17 @@ const DOCUMENT_TYPE_FILE_RULES = {
     message: 'Certification uploads must be a PDF, JPG, or PNG.',
   },
   other_document: {
-    extensions: new Set(['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png']),
+    extensions: new Set(['.pdf', '.docx', '.jpg', '.jpeg', '.png']),
     mimeTypes: ALLOWED_CREDENTIAL_MIME_TYPES,
-    message: 'Supporting document uploads must be a PDF, Word document, JPG, or PNG.',
+    message: 'Supporting document uploads must be a PDF, DOCX, JPG, or PNG.',
   },
   resume: {
-    extensions: new Set(['.pdf', '.doc', '.docx']),
+    extensions: new Set(['.pdf', '.docx']),
     mimeTypes: new Set([
-      'application/msword',
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ]),
-    message: 'Resume uploads must be a PDF or Word document.',
+    message: 'Resume uploads must be a PDF or DOCX document.',
   },
 };
 const credentialReviewStatuses = new Set(['pending_review', 'approved', 'rejected']);
@@ -88,7 +86,8 @@ const cleanList = (value, maxItems = 20) => {
 };
 const cleanRecord = (value) => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {});
 const cleanUrl = (value) => {
-  const url = cleanString(value, 500);
+  const rawUrl = cleanString(value, 500);
+  const url = rawUrl && !/^[a-z][a-z0-9+.-]*:\/\//i.test(rawUrl) ? `https://${rawUrl}` : rawUrl;
 
   if (!url) return '';
 
@@ -126,12 +125,17 @@ const cleanCredentialFileRecord = (file) => {
     path: cleanString(record.path, 700),
     rejectedAt: cleanString(record.rejectedAt, 80),
     rejectionReason: cleanString(record.rejectionReason, 1000),
+    previousFileName: cleanString(record.previousFileName, 220),
+    previousStatus: cleanString(record.previousStatus, 60),
     changeRequest: cleanRecord(record.changeRequest),
     changeRequestStatus: cleanString(record.changeRequestStatus, 40),
+    replacedAt: cleanString(record.replacedAt, 80),
+    replacedDocumentId: cleanString(record.replacedDocumentId, 80),
+    replacedDocumentPath: cleanString(record.replacedDocumentPath, 700),
     reviewMessage: cleanString(record.reviewMessage, 1000),
     reviewedAt: cleanString(record.reviewedAt, 80),
     reviewedBy: cleanString(record.reviewedBy, 80),
-    status: cleanString(record.status, 60) || 'pending_review',
+    status: cleanString(record.status, 60) || 'draft',
     storageKey: cleanString(record.storageKey, 120),
     uploadedAt,
     expiryDate: cleanString(record.expiryDate, 80),
@@ -163,6 +167,34 @@ const normalizeCredentialReviewStatus = (status) => {
   const value = cleanString(status, 40);
 
   return credentialReviewStatuses.has(value) ? value : '';
+};
+const markCredentialFileSubmitted = (credential) => {
+  const record = cleanCredentialFileRecord(credential);
+
+  if (!record) return null;
+
+  return {
+    ...record,
+    status: ['approved', 'rejected'].includes(record.status) ? record.status : 'pending_review',
+  };
+};
+const canReviewCredentialStatus = (credential, status) => {
+  const currentStatus = credential?.status || 'pending_review';
+
+  if (status === 'pending_review') return currentStatus === 'approved';
+
+  return currentStatus === 'pending_review';
+};
+const markWorkPreferencesSubmitted = (workPreferences) => {
+  const preferences = cleanWorkPreferences(workPreferences);
+
+  return {
+    ...preferences,
+    resume: preferences.resume ? markCredentialFileSubmitted(preferences.resume) : null,
+    supportingDocuments: asList(preferences.supportingDocuments)
+      .map((document) => markCredentialFileSubmitted(document))
+      .filter(Boolean),
+  };
 };
 const cleanProfessionalTitles = (value, fallback = []) => {
   const source = value === undefined ? fallback : value;
@@ -336,6 +368,11 @@ const loadProfilesById = async (req, ids) => {
 const hasPendingProfile = (profile) => (
   profile?.pending_profile && Object.keys(profile.pending_profile).length > 0
 );
+const isDraftPendingProfile = (profile) => cleanRecord(profile?.pending_profile).__draftOnly === true;
+const asDraftPendingProfile = (profilePayload) => ({
+  ...profilePayload,
+  __draftOnly: true,
+});
 
 const hasOwn = (value, key) => Object.hasOwn(cleanRecord(value), key);
 const valueOrFallback = (value, fallback, key) => (hasOwn(value, key) ? value[key] : fallback?.[key]);
@@ -358,8 +395,16 @@ const toProfilePatch = (profile, fallback = {}) => ({
   years_experience: toNumber(valueOrFallback(profile, fallback, 'years_experience')),
 });
 
-const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
-  const pending = usePending && profile.pending_profile ? profile.pending_profile : {};
+const mapTalentProfile = (profile, owner = {}, { includeDraftPending = false, usePending = false } = {}) => {
+  const hasDraftPending = isDraftPendingProfile(profile);
+  const canShowPending = usePending && (
+    includeDraftPending
+    || (!hasDraftPending && (
+      profile.review_status === 'pending_review'
+      || profile.status === 'pending_review'
+    ))
+  );
+  const pending = canShowPending && profile.pending_profile ? profile.pending_profile : {};
   const viewProfile = { ...profile, ...pending };
   const displayName = pending.full_name || owner.full_name || owner.name || 'Unnamed profile';
   const pendingHasTitles = Object.hasOwn(pending, 'titles') || Object.hasOwn(pending, 'title');
@@ -370,7 +415,8 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
   const hourlyRate = toNumber(viewProfile.hourly_rate);
   const years = toNumber(viewProfile.years_experience);
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
-  const workPreferences = cleanWorkPreferences(viewProfile.work_preferences);
+  const canShowWorkPreferences = includeDraftPending || canShowPending || profile.status !== 'draft';
+  const workPreferences = cleanWorkPreferences(canShowWorkPreferences ? viewProfile.work_preferences : {});
 
   return {
     available: viewProfile.availability || 'Immediate Start',
@@ -390,6 +436,7 @@ const mapTalentProfile = (profile, owner = {}, { usePending = false } = {}) => {
     manualTriageRequired: Boolean(owner.manual_triage_required),
     manualTriageStatus: owner.manual_triage_status || 'clear',
     name: displayName,
+    pendingDraftOnly: hasDraftPending,
     rate: hourlyRate,
     rating: toNumber(viewProfile.rating),
     reviewCount: profile.review_count || 0,
@@ -747,7 +794,7 @@ const uploadCredentialFile = async ({ body, userId }) => {
     kind: documentType,
     label,
     path,
-    status: 'pending_review',
+    status: 'draft',
     storageKey: documentKey,
     uploadedAt,
   };
@@ -779,6 +826,20 @@ const getSupabaseStorageSignedUrl = async (path) => {
   return `${baseUrl}/storage/v1${signedUrl.startsWith('/') ? signedUrl : `/${signedUrl}`}`;
 };
 
+const getSupabaseStorageObject = async (path) => {
+  const signedUrl = await getSupabaseStorageSignedUrl(path);
+  const response = await fetch(signedUrl);
+
+  if (!response.ok) {
+    throw new Error('Unable to load this document.');
+  }
+
+  return {
+    bytes: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get('content-type') || 'application/octet-stream',
+  };
+};
+
 const findCredentialRecord = (profile, { documentKey, documentType, path }) => {
   const { workPreferences } = getReviewableWorkPreferences(profile);
   const targetKey = cleanString(documentKey, 180);
@@ -801,6 +862,44 @@ const findCredentialRecord = (profile, { documentKey, documentType, path }) => {
     ))
     || (targetType === 'resume' && document.documentType === 'resume')
   ));
+};
+
+const getAccessibleCredentialDocument = async (req, user, body) => {
+  const professionalId = cleanString(body.professionalId || body.professional_id || user.id, 80);
+
+  if (!isUuid(professionalId)) {
+    const error = new Error('A valid professional id is required.');
+    error.status = 400;
+    throw error;
+  }
+
+  if (user.role !== 'admin' && professionalId !== user.id) {
+    const error = new Error('You do not have access to this document.');
+    error.status = 403;
+    throw error;
+  }
+
+  if (user.role === 'admin') {
+    req.useServiceRole = true;
+  }
+
+  const profile = await getProfessionalProfile(req, professionalId);
+  if (profile && user.role !== 'admin') {
+    profile.__includePendingProfile = true;
+  }
+  const document = profile ? findCredentialRecord(profile, {
+    documentKey: body.documentKey || body.key || body.id,
+    documentType: body.documentType || body.kind,
+    path: body.path,
+  }) : null;
+
+  if (!document?.path) {
+    const error = new Error('Document not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  return { document, professionalId };
 };
 
 const buildCredentialReviewRecord = (credential, { adminId, message, status }) => {
@@ -834,6 +933,15 @@ const buildDocumentChangeRequestRecord = (credential, { reason, userId }) => ({
 const buildDocumentChangeRequestReviewRecord = (credential, { adminId, message, status }) => {
   const reviewedAt = new Date().toISOString();
   const currentRequest = cleanRecord(credential.changeRequest);
+  const reviewMessage = cleanString(message, 1000);
+
+  if (status === 'approved') {
+    return buildCredentialReviewRecord(credential, {
+      adminId,
+      message: reviewMessage || 'Change request approved. Document reopened for review.',
+      status: 'pending_review',
+    });
+  }
 
   return {
     ...credential,
@@ -841,16 +949,116 @@ const buildDocumentChangeRequestReviewRecord = (credential, { adminId, message, 
       ...currentRequest,
       reviewedAt,
       reviewedBy: adminId,
-      reviewMessage: cleanString(message, 1000),
+      reviewMessage,
       status,
     },
-    changeRequestStatus: status,
+    changeRequestStatus: '',
+    reviewMessage,
+    reviewedAt,
+    reviewedBy: adminId,
   };
+};
+
+const reopenApprovedCredential = (credential, { adminId, message }) => {
+  const record = cleanCredentialFileRecord(credential);
+
+  if (!record || record.status !== 'approved') return record;
+
+  return buildCredentialReviewRecord(record, {
+    adminId,
+    message: message || 'Professional verification was reopened by admin.',
+    status: 'pending_review',
+  });
+};
+
+const reopenApprovedWorkPreferences = (workPreferences, options) => {
+  const preferences = cleanWorkPreferences(workPreferences);
+
+  return {
+    ...preferences,
+    resume: preferences.resume ? reopenApprovedCredential(preferences.resume, options) : null,
+    supportingDocuments: asList(preferences.supportingDocuments)
+      .map((document) => reopenApprovedCredential(document, options))
+      .filter(Boolean),
+  };
+};
+
+const credentialNotificationKey = (document, fallbackKey) => (
+  document?.documentType === 'resume' || document?.kind === 'resume' || fallbackKey === 'resume'
+    ? 'resume'
+    : document?.key || document?.label || document?.id || fallbackKey
+);
+
+const listCredentialDocuments = (workPreferences) => {
+  const preferences = cleanWorkPreferences(workPreferences);
+
+  return [
+    ...(preferences.resume ? [{ ...preferences.resume, documentType: 'resume' }] : []),
+    ...asList(preferences.supportingDocuments).map((document, index) => ({
+      ...document,
+      documentType: document.kind || 'supporting_document',
+      fallbackKey: `supporting:${index}`,
+    })),
+  ];
+};
+
+const getCredentialDocumentChanges = (beforeWorkPreferences, afterWorkPreferences) => {
+  const beforeDocuments = listCredentialDocuments(beforeWorkPreferences);
+  const afterDocuments = listCredentialDocuments(afterWorkPreferences);
+  const beforeByKey = new Map(beforeDocuments.map((document) => [
+    credentialNotificationKey(document, document.fallbackKey),
+    document,
+  ]));
+  const afterKeys = new Set();
+  const changes = [];
+
+  afterDocuments.forEach((document) => {
+    const key = credentialNotificationKey(document, document.fallbackKey);
+    const previous = beforeByKey.get(key);
+    afterKeys.add(key);
+
+    if (document.path && previous?.path && document.path !== previous.path) {
+      changes.push({
+        action: 'replaced',
+        document,
+        previous,
+      });
+    } else if (document.path && document.replacedDocumentPath && document.replacedDocumentPath !== document.path) {
+      changes.push({
+        action: 'replaced',
+        document,
+        previous,
+      });
+    }
+  });
+
+  beforeDocuments.forEach((document) => {
+    const key = credentialNotificationKey(document, document.fallbackKey);
+    if (document.path && !afterKeys.has(key)) {
+      changes.push({
+        action: 'removed',
+        document,
+        previous: document,
+      });
+    }
+  });
+
+  return changes;
 };
 
 const getReviewableWorkPreferences = (profile) => {
   const pendingProfile = cleanRecord(profile.pending_profile);
-  const usePendingProfile = Object.keys(pendingProfile).length > 0 && hasOwn(pendingProfile, 'work_preferences');
+  const hasDraftPending = isDraftPendingProfile(profile);
+  const pendingSubmitted = Boolean(
+    profile.__includePendingProfile
+    || (!hasDraftPending && (
+      profile.status === 'pending_review'
+      || profile.review_status === 'pending_review'
+    ))
+  );
+  const usePendingProfile = pendingSubmitted
+    && Object.keys(pendingProfile).length > 0
+    && hasOwn(pendingProfile, 'work_preferences');
 
   return {
     pendingProfile,
@@ -870,7 +1078,15 @@ const documentMatchesCredentialLabel = (document, label) => (
 
 const getReviewableProfessionalTitles = (profile) => {
   const pendingProfile = cleanRecord(profile.pending_profile);
-  const hasPendingTitles = hasOwn(pendingProfile, 'titles') || hasOwn(pendingProfile, 'title');
+  const hasDraftPending = isDraftPendingProfile(profile);
+  const pendingSubmitted = Boolean(
+    profile.__includePendingProfile
+    || (!hasDraftPending && (
+      profile.status === 'pending_review'
+      || profile.review_status === 'pending_review'
+    ))
+  );
+  const hasPendingTitles = pendingSubmitted && (hasOwn(pendingProfile, 'titles') || hasOwn(pendingProfile, 'title'));
 
   return cleanProfessionalTitles(
     hasPendingTitles ? (pendingProfile.titles ?? pendingProfile.title) : profile.titles,
@@ -1013,6 +1229,11 @@ const applyCredentialReview = (profile, review, adminId) => {
       }
       reviewedCredential = buildDocumentChangeRequestReviewRecord(workPreferences.resume, { adminId, message, status });
     } else {
+      if (!canReviewCredentialStatus(workPreferences.resume, status)) {
+        throw new Error(status === 'pending_review'
+          ? 'Only approved documents can be reopened.'
+          : 'Only pending documents can be reviewed.');
+      }
       reviewedCredential = buildCredentialReviewRecord(workPreferences.resume, { adminId, message, status });
     }
     nextWorkPreferences = {
@@ -1037,6 +1258,11 @@ const applyCredentialReview = (profile, review, adminId) => {
       }
       reviewedCredential = buildDocumentChangeRequestReviewRecord(documents[documentIndex], { adminId, message, status });
     } else {
+      if (!canReviewCredentialStatus(documents[documentIndex], status)) {
+        throw new Error(status === 'pending_review'
+          ? 'Only approved documents can be reopened.'
+          : 'Only pending documents can be reviewed.');
+      }
       reviewedCredential = buildCredentialReviewRecord(documents[documentIndex], { adminId, message, status });
     }
     nextWorkPreferences = {
@@ -1053,9 +1279,21 @@ const applyCredentialReview = (profile, review, adminId) => {
         ...pendingProfile,
         work_preferences: nextWorkPreferences,
       },
+      ...(reviewedCredential?.status === 'pending_review' && profile.status === 'approved'
+        ? {
+          review_status: 'pending_review',
+          review_submitted_at: profile.review_submitted_at || new Date().toISOString(),
+        }
+        : {}),
     }
     : {
       work_preferences: nextWorkPreferences,
+      ...(reviewedCredential?.status === 'pending_review' && profile.status === 'approved'
+        ? {
+          review_status: 'pending_review',
+          review_submitted_at: profile.review_submitted_at || new Date().toISOString(),
+        }
+        : {}),
     };
 
   return {
@@ -1507,10 +1745,12 @@ const handlers = {
       const owner = owners.get(professionalId) || {};
       const mappedProfile = mapTalentProfile(saved, owner, { usePending: true });
 
+      const reviewedDocumentLabel = reviewResult.credential.label || reviewResult.credential.fileName || 'Your document';
+
       if (reviewResult.credential.status === 'rejected') {
         notifyUser({
           actionUrl: '/?tab=profile',
-          body: `${reviewResult.credential.label || reviewResult.credential.fileName || 'A submitted document'} was rejected. ${reviewResult.credential.rejectionReason}`,
+          body: `${reviewedDocumentLabel} was rejected. ${reviewResult.credential.rejectionReason}`,
           emailSubject: 'PB Finance document needs attention',
           metadata: {
             credentialId: reviewResult.credential.id,
@@ -1524,24 +1764,58 @@ const handlers = {
           title: `${reviewResult.targetType === 'resume' ? 'Resume' : 'Document'} rejected`,
           type: reviewResult.targetType === 'resume' ? 'resume_status_updated' : 'document_status_updated',
         }).catch(() => {});
-      } else if (reviewResult.reviewKind === 'change_request') {
-        const approved = reviewResult.credential.changeRequestStatus === 'approved';
+      } else if (reviewResult.reviewKind !== 'change_request' && reviewResult.credential.status === 'approved') {
         notifyUser({
           actionUrl: '/?tab=profile',
-          body: approved
-            ? `${reviewResult.credential.label || reviewResult.credential.fileName || 'Your document'} change request was approved. You can now remove and upload a replacement.`
-            : `${reviewResult.credential.label || reviewResult.credential.fileName || 'Your document'} change request was rejected.`,
+          body: `${reviewedDocumentLabel} was approved.`,
+          emailSubject: 'PB Finance document approved',
+          metadata: {
+            credentialId: reviewResult.credential.id,
+            documentKey: reviewResult.credential.key,
+            professionalId,
+            status: reviewResult.credential.status,
+          },
+          recipientEmail: owner.email,
+          recipientId: professionalId,
+          recipientName: owner.full_name,
+          title: `${reviewResult.targetType === 'resume' ? 'Resume' : 'Document'} approved`,
+          type: reviewResult.targetType === 'resume' ? 'resume_status_updated' : 'document_status_updated',
+        }).catch(() => {});
+      } else if (reviewResult.reviewKind === 'change_request') {
+        const changeAllowed = reviewResult.credential.status === 'pending_review';
+        notifyUser({
+          actionUrl: '/?tab=profile',
+          body: changeAllowed
+            ? `${reviewedDocumentLabel} change request was approved. You can now remove or upload a replacement.`
+            : `${reviewedDocumentLabel} change request was rejected.`,
           emailSubject: 'PB Finance document change request reviewed',
           metadata: {
             credentialId: reviewResult.credential.id,
             documentKey: reviewResult.credential.key,
             professionalId,
-            status: reviewResult.credential.changeRequestStatus,
+            status: changeAllowed ? reviewResult.credential.status : 'change_rejected',
           },
           recipientEmail: owner.email,
           recipientId: professionalId,
           recipientName: owner.full_name,
-          title: approved ? 'Document change approved' : 'Document change rejected',
+          title: changeAllowed ? 'Document change approved' : 'Document change rejected',
+          type: 'document_status_updated',
+        }).catch(() => {});
+      } else if (reviewResult.credential.status === 'pending_review') {
+        notifyUser({
+          actionUrl: '/?tab=profile',
+          body: `${reviewedDocumentLabel} approval was undone. You can remove or upload a replacement.`,
+          emailSubject: 'PB Finance document reopened for review',
+          metadata: {
+            credentialId: reviewResult.credential.id,
+            documentKey: reviewResult.credential.key,
+            professionalId,
+            status: reviewResult.credential.status,
+          },
+          recipientEmail: owner.email,
+          recipientId: professionalId,
+          recipientName: owner.full_name,
+          title: 'Document reopened',
           type: 'document_status_updated',
         }).catch(() => {});
       }
@@ -1551,12 +1825,25 @@ const handlers = {
     }
 
     if (status === 'approved') {
+      const submittedForReview = !isDraftPendingProfile(existingProfile)
+        && (existingProfile.status === 'pending_review' || existingProfile.review_status === 'pending_review');
+
+      if (!submittedForReview) {
+        sendError(res, 400, 'The professional must click Verify before admin approval.');
+        return;
+      }
+
       const approvalBlocker = getCredentialApprovalBlocker(existingProfile);
 
       if (approvalBlocker) {
         sendError(res, 400, approvalBlocker);
         return;
       }
+    }
+
+    if (status === 'pending_review' && isDraftPendingProfile(existingProfile)) {
+      sendError(res, 400, 'The professional must click Verify before admin review.');
+      return;
     }
 
     let payload = {
@@ -1584,9 +1871,26 @@ const handlers = {
         review_submitted_at: null,
         status: 'approved',
       };
-    } else if (status === 'rejected' && existingProfile.status === 'approved' && hasPendingChanges) {
+    } else if (status === 'approved' && existingProfile.review_status === 'pending_review') {
       payload = {
-        review_status: 'rejected',
+        pending_profile: {},
+        published_at: new Date().toISOString(),
+        review_status: null,
+        review_submitted_at: null,
+        status: 'approved',
+      };
+    } else if (status === 'rejected' && existingProfile.status === 'approved') {
+      const { workPreferences } = getReviewableWorkPreferences(existingProfile);
+
+      payload = {
+        pending_profile: {},
+        review_status: null,
+        review_submitted_at: new Date().toISOString(),
+        status: 'pending_review',
+        work_preferences: reopenApprovedWorkPreferences(workPreferences, {
+          adminId: user.id,
+          message: 'Professional verification was rejected. Approved documents were reopened for review.',
+        }),
       };
     } else if (status === 'pending_review' && existingProfile.status === 'approved' && hasPendingChanges) {
       payload = {
@@ -1618,20 +1922,25 @@ const handlers = {
     const mappedProfile = mapTalentProfile(saved, owner, { usePending: true });
 
     if (['approved', 'rejected'].includes(status)) {
+      const verificationReopened = status === 'rejected' && existingProfile.status === 'approved';
       notifyUser({
         actionUrl: '/?tab=profile',
         body: status === 'approved'
-          ? 'Your professional profile has been approved and is now visible in the client talent directory.'
-          : 'Your professional profile was not approved yet. Update your profile and submit it again when ready.',
-        emailSubject: `PB Finance profile ${formatStatusLabel(status)}`,
+          ? 'Your professional profile has been verified.'
+          : verificationReopened
+            ? 'Your professional verification was reopened. Previously approved documents were moved back under review.'
+            : 'Your professional profile was not approved yet. Update your profile and submit it again when ready.',
+        emailSubject: verificationReopened
+          ? 'PB Finance professional verification reopened'
+          : `PB Finance profile ${formatStatusLabel(status)}`,
         metadata: {
           professionalId,
-          status,
+          status: verificationReopened ? 'pending_review' : status,
         },
         recipientEmail: owner.email,
         recipientId: professionalId,
         recipientName: owner.full_name,
-        title: `Profile ${formatStatusLabel(status)}`,
+        title: verificationReopened ? 'Verification reopened' : `Profile ${formatStatusLabel(status)}`,
         type: 'profile_status_updated',
       }).catch(() => {});
     }
@@ -2175,7 +2484,7 @@ const handlers = {
         email: user.email,
         full_name: user.name,
         title: user.title,
-      }, { usePending: true })
+      }, { includeDraftPending: true, usePending: true })
       : user);
   },
 
@@ -2203,10 +2512,25 @@ const handlers = {
     const primaryTitle = titles[0] || '';
     const hourlyRate = toNumber(body.hourlyRate ?? body.rate ?? body.hourly_rate ?? currentProfileView.hourly_rate);
     const yearsExperience = toNumber(body.yearsExperience ?? body.years_experience ?? body.experience ?? currentProfileView.years_experience);
-    const workPreferences = cleanWorkPreferences(
+    const draftWorkPreferences = cleanWorkPreferences(
       body.workPreferences ?? body.work_preferences ?? currentProfileView.work_preferences,
       currentProfile?.work_preferences
     );
+    const previousReviewableWorkPreferences = getReviewableWorkPreferences({
+      ...(currentProfile || {}),
+      __includePendingProfile: true,
+    }).workPreferences;
+    const shouldReflectCredentialDraft = !submitForReview && Boolean(currentProfile) && (
+      currentProfile.status === 'pending_review'
+      || currentProfile.status === 'rejected'
+      || currentProfile.review_status === 'pending_review'
+    );
+    const workPreferences = submitForReview || shouldReflectCredentialDraft
+      ? markWorkPreferencesSubmitted(draftWorkPreferences)
+      : draftWorkPreferences;
+    const reflectedCredentialChanges = shouldReflectCredentialDraft
+      ? getCredentialDocumentChanges(previousReviewableWorkPreferences, workPreferences)
+      : [];
 
     const profilePayload = {
       availability: normalizeAvailability(body.availability || body.available || currentProfileView.availability),
@@ -2227,6 +2551,7 @@ const handlers = {
     if (submitForReview) {
       const submissionProfile = {
         ...(currentProfile || {}),
+        __includePendingProfile: true,
         pending_profile: currentProfile?.status === 'approved' ? profilePayload : {},
         ...toProfilePatch(profilePayload, currentProfile || {}),
         work_preferences: workPreferences,
@@ -2254,34 +2579,67 @@ const handlers = {
       rows = await patchRows(
         req,
         `/professional_profiles?user_id=eq.${user.id}`,
-        {
-          pending_profile: profilePayload,
-          ...(submitForReview ? {
+        submitForReview
+          ? {
+            pending_profile: profilePayload,
             review_status: 'pending_review',
             review_submitted_at: new Date().toISOString(),
-          } : {}),
-        }
+          }
+          : shouldReflectCredentialDraft
+            ? {
+              ...toProfilePatch(profilePayload, currentProfile),
+              pending_profile: {},
+              review_status: 'pending_review',
+              review_submitted_at: currentProfile.review_submitted_at || new Date().toISOString(),
+            }
+            : {
+              pending_profile: asDraftPendingProfile(profilePayload),
+              review_status: currentProfile.review_status || null,
+              review_submitted_at: currentProfile.review_submitted_at || null,
+            }
       );
     } else {
-      await patchRows(req, `/profiles?id=eq.${user.id}`, {
-        full_name: fullName,
-        title: primaryTitle || null,
-      }, { prefer: 'return=minimal' });
+      if (submitForReview) {
+        await patchRows(req, `/profiles?id=eq.${user.id}`, {
+          full_name: fullName,
+          title: primaryTitle || null,
+        }, { prefer: 'return=minimal' });
+      }
 
       rows = await writeRows(
         req,
         '/professional_profiles?on_conflict=user_id',
-        {
-          ...toProfilePatch(profilePayload),
-          pending_profile: {},
-          review_status: null,
-          review_submitted_at: submitForReview ? new Date().toISOString() : null,
-          status: submitForReview ? 'pending_review' : (currentProfile?.status || 'draft'),
-          user_id: user.id,
-          manualTriageRequired,
-          manualTriageReason,
-          manualTriageDomain,
-        },
+        submitForReview
+          ? {
+            ...toProfilePatch(profilePayload),
+            pending_profile: {},
+            review_status: null,
+            review_submitted_at: new Date().toISOString(),
+            status: 'pending_review',
+            user_id: user.id,
+            manualTriageRequired,
+            manualTriageReason,
+            manualTriageDomain,
+          }
+          : shouldReflectCredentialDraft
+            ? {
+              ...toProfilePatch(profilePayload, currentProfile || {}),
+              pending_profile: {},
+              review_status: currentProfile?.review_status || null,
+              review_submitted_at: currentProfile?.review_submitted_at || new Date().toISOString(),
+              status: currentProfile?.status || 'pending_review',
+              user_id: user.id,
+              manualTriageRequired,
+              manualTriageReason,
+              manualTriageDomain,
+            }
+          : {
+            pending_profile: asDraftPendingProfile(profilePayload),
+            review_status: null,
+            review_submitted_at: null,
+            status: currentProfile?.status || 'draft',
+            user_id: user.id,
+          },
         { prefer: 'resolution=merge-duplicates,return=representation' }
       );
     }
@@ -2304,13 +2662,31 @@ const handlers = {
         title: 'Talent profile pending review',
         type: 'talent_profile_submitted',
       }).catch(() => {});
+    } else if (reflectedCredentialChanges.length) {
+      const changedLabels = reflectedCredentialChanges
+        .map((change) => change.document.label || change.previous?.label || change.document.fileName || 'Document')
+        .slice(0, 4)
+        .join(', ');
+
+      notifyAdmins({
+        actionUrl: '/?tab=talent',
+        body: `${fullName} ${reflectedCredentialChanges.length === 1 ? reflectedCredentialChanges[0].action : 'updated'} ${changedLabels} for credential review.`,
+        emailSubject: 'PB Finance document updated for review',
+        metadata: {
+          changeCount: reflectedCredentialChanges.length,
+          professionalId: user.id,
+          status: savedProfile.status,
+        },
+        title: 'Talent document updated',
+        type: 'talent_profile_submitted',
+      }).catch(() => {});
     }
 
     sendJson(res, 200, mapTalentProfile(savedProfile, {
       email: user.email,
       full_name: fullName,
       title: primaryTitle,
-    }, { usePending: true }));
+    }, { includeDraftPending: true, usePending: true }));
   },
 
   'GET /talent/opportunities': async (req, res) => {
@@ -2557,33 +2933,7 @@ const handlers = {
 
     try {
       const body = await readJson(req);
-      const professionalId = cleanString(body.professionalId || body.professional_id || user.id, 80);
-
-      if (!isUuid(professionalId)) {
-        sendError(res, 400, 'A valid professional id is required.');
-        return;
-      }
-
-      if (user.role !== 'admin' && professionalId !== user.id) {
-        sendError(res, 403, 'You do not have access to this document.');
-        return;
-      }
-
-      if (user.role === 'admin') {
-        req.useServiceRole = true;
-      }
-
-      const profile = await getProfessionalProfile(req, professionalId);
-      const document = profile ? findCredentialRecord(profile, {
-        documentKey: body.documentKey || body.key || body.id,
-        documentType: body.documentType || body.kind,
-        path: body.path,
-      }) : null;
-
-      if (!document?.path) {
-        sendError(res, 404, 'Document not found.');
-        return;
-      }
+      const { document } = await getAccessibleCredentialDocument(req, user, body);
 
       sendJson(res, 200, {
         contentType: document.contentType,
@@ -2591,7 +2941,29 @@ const handlers = {
         url: await getSupabaseStorageSignedUrl(document.path),
       });
     } catch (error) {
-      sendError(res, 400, error.message || 'Unable to open this document.');
+      sendError(res, error.status || 400, error.message || 'Unable to open this document.');
+    }
+  },
+
+  'POST /documents/blob': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const { document } = await getAccessibleCredentialDocument(req, user, body);
+      const object = await getSupabaseStorageObject(document.path);
+      const contentType = document.contentType || object.contentType || 'application/octet-stream';
+      const fileName = (document.fileName || 'document').replace(/["\r\n]/g, '');
+
+      setCorsHeaders(res);
+      res.statusCode = 200;
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(object.bytes);
+    } catch (error) {
+      sendError(res, error.status || 400, error.message || 'Unable to open this document.');
     }
   },
 
@@ -2676,7 +3048,7 @@ const handlers = {
       email: user.email,
       full_name: user.name,
       title: user.title,
-    }, { usePending: true }));
+    }, { includeDraftPending: true, usePending: true }));
   },
 
   'POST /admin/check-expirations': async (req, res) => {

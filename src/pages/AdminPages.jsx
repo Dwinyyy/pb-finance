@@ -19,12 +19,14 @@ import {
 } from 'lucide-react';
 
 import FadeIn from '../components/FadeIn';
+import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { useNotifications } from '../hooks/useNotifications';
+import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS, REGULATED_TITLE_REQUIREMENTS } from '../data/constants';
 import { backendApi } from '../services/api';
-import { countUnreadNotificationsByTab, getUnreadNotificationsForTab } from '../utils/notificationRouting';
+import { downloadDocumentUrl } from '../utils/documentPreview';
 
 const EMPTY_LIST = Object.freeze([]);
 const STATUS_OPTIONS = ['pending_review', 'approved', 'hidden', 'rejected'];
@@ -203,6 +205,10 @@ const STATUS_ACTIONS = [
   { icon: EyeOff, label: 'Hide', status: 'hidden', variant: 'neutral' },
   { icon: XCircle, label: 'Reject', status: 'rejected', variant: 'danger' },
 ];
+const TALENT_STATUS_ACTIONS = [
+  { icon: ShieldCheck, label: 'Verify professional', status: 'approved', variant: 'primary' },
+  { icon: XCircle, label: 'Reject verification', status: 'rejected', variant: 'danger' },
+];
 
 function StatusBadge({ status }) {
   return (
@@ -230,8 +236,8 @@ function StatusSummary({ records }) {
   );
 }
 
-function StatusActions({ busyKey, currentStatus, disabledStatusReasons = {}, onUpdate, record, rejected = true }) {
-  const availableActions = STATUS_ACTIONS.filter((action) => (
+function StatusActions({ actions = STATUS_ACTIONS, busyKey, currentStatus, disabledStatusReasons = {}, onUpdate, record, rejected = true }) {
+  const availableActions = actions.filter((action) => (
     action.status !== currentStatus && (rejected || action.status !== 'rejected')
   ));
   const recordBusy = Boolean(busyKey) && availableActions.some((action) => busyKey === `${record.id}:${action.status}`);
@@ -272,6 +278,7 @@ function CredentialReviewPanel({
   onApprove,
   onReviewChangeRequest,
   onReject,
+  onUndoApproval,
   onView,
   profile,
   rejectDraft,
@@ -321,14 +328,17 @@ function CredentialReviewPanel({
           const isRejecting = rejectDraft?.key === documentKey;
           const approveBusy = busyKey === `${documentKey}:approved`;
           const rejectBusy = busyKey === `${documentKey}:rejected`;
+          const undoBusy = busyKey === `${documentKey}:pending_review`;
           const changeRequestBusy = busyKey.startsWith(`${documentKey}:change_request`);
+          const canReviewDocument = (document.status || 'pending_review') === 'pending_review';
+          const canUndoApproval = document.status === 'approved' && document.changeRequestStatus !== 'pending';
           const selectedPreset = isRejecting ? rejectDraft.preset : DOCUMENT_REJECTION_MESSAGES[0];
           const customMessage = isRejecting ? rejectDraft.custom : '';
           const rejectMessage = selectedPreset === 'custom' ? customMessage.trim() : selectedPreset;
 
           return (
             <div key={documentKey} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="min-w-0">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="text-sm font-black text-slate-950 dark:text-white">{document.reviewLabel}</span>
@@ -363,13 +373,18 @@ function CredentialReviewPanel({
                       Change request: {document.changeRequest?.reason || 'No reason provided.'}
                     </div>
                   )}
+                  {document.previousStatus === 'rejected' && (
+                    <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-relaxed text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+                      Changed after rejection{document.previousFileName ? ` from ${document.previousFileName}` : ''}.
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex shrink-0 flex-wrap gap-2">
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-start xl:w-auto xl:max-w-[22rem] xl:justify-end">
                   <button
                     onClick={() => onView(profile, document)}
                     disabled={Boolean(busyKey)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
+                    className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
                   >
                     <FileText size={14} />
                     View
@@ -377,7 +392,7 @@ function CredentialReviewPanel({
                   <button
                     onClick={() => onDownload(profile, document)}
                     disabled={Boolean(busyKey)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
+                    className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
                   >
                     <Download size={14} />
                     Download
@@ -387,36 +402,46 @@ function CredentialReviewPanel({
                       <button
                         onClick={() => onReviewChangeRequest(profile, document, 'approved')}
                         disabled={Boolean(busyKey)}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-cyan-700 disabled:cursor-default disabled:opacity-70"
+                        className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-cyan-700 disabled:cursor-default disabled:opacity-70"
                       >
                         {changeRequestBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                        Approve Change
+                        Allow change
                       </button>
                       <button
                         onClick={() => onReviewChangeRequest(profile, document, 'rejected')}
                         disabled={Boolean(busyKey)}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20"
+                        className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20"
                       >
                         {changeRequestBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
                         Reject Change
                       </button>
                     </>
                   )}
-                  {document.status !== 'approved' && (
+                  {canUndoApproval && (
+                    <button
+                      onClick={() => onUndoApproval(profile, document)}
+                      disabled={Boolean(busyKey)}
+                      className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-amber-200 px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-default disabled:opacity-70 dark:border-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-950/20"
+                    >
+                      {undoBusy ? <Loader2 size={14} className="animate-spin" /> : <Clock3 size={14} />}
+                      Undo approval
+                    </button>
+                  )}
+                  {canReviewDocument && (
                     <button
                       onClick={() => onApprove(profile, document)}
                       disabled={Boolean(busyKey)}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-emerald-700 disabled:cursor-default disabled:opacity-70"
+                      className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-emerald-700 disabled:cursor-default disabled:opacity-70"
                     >
                       {approveBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
                       Approve
                     </button>
                   )}
-                  {document.status !== 'rejected' && (
+                  {canReviewDocument && (
                     <button
                       onClick={() => setRejectDraft({ custom: '', key: documentKey, preset: DOCUMENT_REJECTION_MESSAGES[0] })}
                       disabled={Boolean(busyKey)}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20"
+                      className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-70 dark:border-red-900/40 dark:hover:bg-red-950/20"
                     >
                       {rejectBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
                       Reject
@@ -425,7 +450,7 @@ function CredentialReviewPanel({
                 </div>
               </div>
 
-              {isRejecting && (
+              {isRejecting && canReviewDocument && (
                 <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
                   <div className="mb-3 flex items-center gap-2 text-sm font-black text-red-700 dark:text-red-300">
                     <MessageSquare size={15} />
@@ -478,25 +503,14 @@ function CredentialReviewPanel({
 
 function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, toggleDarkMode }) {
   const notificationState = useNotifications(user?.id);
-  const { markRead, notifications } = notificationState;
-  const tabUnreadCounts = countUnreadNotificationsByTab(
+  const { notifications } = notificationState;
+  const tabUnreadCounts = useTabNotificationIndicators({
+    activeTab,
+    fallbackByType: ADMIN_NOTIFICATION_TAB_FALLBACKS,
     notifications,
-    ADMIN_TABS,
-    ADMIN_NOTIFICATION_TAB_FALLBACKS
-  );
-
-  useEffect(() => {
-    const activeTabNotifications = getUnreadNotificationsForTab(
-      notifications,
-      activeTab,
-      ADMIN_TABS,
-      ADMIN_NOTIFICATION_TAB_FALLBACKS
-    );
-
-    activeTabNotifications.forEach((notification) => {
-      markRead(notification);
-    });
-  }, [activeTab, markRead, notifications]);
+    storageKey: `pb_admin_page_notification_indicators:${user?.id || user?.email || 'unknown'}`,
+    tabIds: ADMIN_TABS,
+  });
 
   return (
     <header className="sticky top-0 z-50 bg-slate-950 text-white shadow-md">
@@ -665,7 +679,7 @@ function AdminOverview({ setActiveTab }) {
                   <span className="text-2xl font-black text-slate-950 dark:text-white">{pendingTalent}</span>
                 </div>
                 <div className="font-black text-slate-950 dark:text-white">Talent Review</div>
-                <div className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Approve professional profiles before they appear in search.</div>
+                <div className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Verify professional profiles before they appear in search.</div>
               </button>
               <button onClick={() => setActiveTab('agencies')} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition-colors hover:border-cyan-200 hover:bg-cyan-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-900/50 dark:hover:bg-cyan-950/20">
                 <div className="mb-3 flex items-center justify-between">
@@ -743,6 +757,7 @@ function TalentReview() {
   const [talent, setTalent] = useState(EMPTY_LIST);
   const [busyId, setBusyId] = useState('');
   const [actionError, setActionError] = useState('');
+  const [previewDocument, setPreviewDocument] = useState(null);
   const [rejectDraft, setRejectDraft] = useState(null);
 
   useEffect(() => {
@@ -802,38 +817,42 @@ function TalentReview() {
   const openDocument = async (profile, document, { download = false } = {}) => {
     const documentKey = document.key || document.id || document.label;
     const busyKey = `${profile.id}:${document.documentType}:${documentKey}:${download ? 'download' : 'view'}`;
-    const previewWindow = !download ? window.open('', '_blank', 'noopener,noreferrer') : null;
 
     setBusyId(busyKey);
     setActionError('');
 
     try {
-      const result = await backendApi.documents.getUrl({
-        documentKey,
-        documentType: document.documentType,
-        path: document.path,
-        professionalId: profile.id,
-      });
+      if (download) {
+        const result = await backendApi.documents.getUrl({
+          documentKey,
+          documentType: document.documentType,
+          path: document.path,
+          professionalId: profile.id,
+        });
 
-      if (result?.url) {
-        if (download) {
+        if (result?.url) {
           const fileName = result.fileName || document.fileName || 'document';
-          const downloadUrl = `${result.url}${result.url.includes('?') ? '&' : '?'}download=${encodeURIComponent(fileName)}`;
-          const link = window.document.createElement('a');
-          link.href = downloadUrl;
-          link.download = fileName;
-          link.rel = 'noreferrer';
-          window.document.body.appendChild(link);
-          link.click();
-          link.remove();
-        } else if (previewWindow) {
-          previewWindow.location.href = result.url;
-        } else {
-          window.location.href = result.url;
+          await downloadDocumentUrl({
+            contentType: result.contentType || document.contentType,
+            fileName,
+            url: result.url,
+          });
         }
+      } else {
+        const result = await backendApi.documents.getBlob({
+          documentKey,
+          documentType: document.documentType,
+          path: document.path,
+          professionalId: profile.id,
+        });
+
+        setPreviewDocument({
+          blob: result.blob,
+          contentType: result.contentType || document.contentType,
+          fileName: result.fileName || document.fileName || 'Document preview',
+        });
       }
     } catch (openError) {
-      if (previewWindow) previewWindow.close();
       setActionError(openError.message || 'Unable to open this document.');
     } finally {
       setBusyId('');
@@ -873,10 +892,17 @@ function TalentReview() {
 
   return (
     <div>
+      {previewDocument && (
+        <DocumentPreviewModal
+          key={previewDocument.url}
+          previewDocument={previewDocument}
+          onClose={() => setPreviewDocument(null)}
+        />
+      )}
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Talent Review</h1>
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Approve, hide, or reject professional profiles before they appear in the client directory.</p>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Verify professional profiles after every required document is approved.</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           {isLoading ? 'Loading profiles' : `${pendingCount} pending review`}
@@ -1024,16 +1050,17 @@ function TalentReview() {
               {getProfileExternalLinks(profile).length > 0 && (
                 <div className="mb-6">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Professional Links</div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {getProfileExternalLinks(profile).map((link, idx) => (
                       <a
                         key={idx}
                         href={link.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-cyan-400 transition-colors"
+                        className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-cyan-400"
                       >
-                        {link.label || 'Link'}
+                        <span className="block truncate text-slate-950 dark:text-white">{link.label || 'Link'}</span>
+                        <span className="mt-0.5 block truncate font-semibold text-slate-400">{link.url}</span>
                       </a>
                     ))}
                   </div>
@@ -1047,6 +1074,7 @@ function TalentReview() {
                 onApprove={(record, document) => updateCredentialStatus(record, document, 'approved')}
                 onReviewChangeRequest={reviewDocumentChangeRequest}
                 onReject={(record, document, message) => updateCredentialStatus(record, document, 'rejected', message)}
+                onUndoApproval={(record, document) => updateCredentialStatus(record, document, 'pending_review', 'Approval reopened by admin.')}
                 onView={(record, document) => openDocument(record, document)}
                 profile={profile}
                 rejectDraft={rejectDraft}
@@ -1061,9 +1089,20 @@ function TalentReview() {
               )}
 
               <StatusActions
+                actions={TALENT_STATUS_ACTIONS}
                 busyKey={busyId}
                 currentStatus={profile.status}
-                disabledStatusReasons={{ approved: reviewState.approvalBlocker }}
+                disabledStatusReasons={{
+                  approved: profile.status !== 'pending_review' && profile.reviewStatus !== 'pending_review'
+                    ? 'Professional must click Verify before admin approval.'
+                    : reviewState.approvalBlocker,
+                  rejected: profile.status !== 'approved'
+                    ? 'Reject verification is available after the professional is verified.'
+                    : '',
+                  pending_review: profile.pendingDraftOnly
+                    ? 'Professional must click Verify before admin review.'
+                    : '',
+                }}
                 onUpdate={updateTalentStatus}
                 record={profile}
               />

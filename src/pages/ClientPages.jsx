@@ -16,11 +16,11 @@ import FadeIn from '../components/FadeIn';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
 import { useNotifications } from '../hooks/useNotifications';
+import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi, isBackendConfigured } from '../services/api';
 import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS, SKILLS_OPTIONS } from '../data/constants';
-import { countUnreadNotificationsByTab, getUnreadNotificationsForTab } from '../utils/notificationRouting';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_BILLING = Object.freeze({
@@ -384,25 +384,14 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const onboardingStorageKey = getClientOnboardingStorageKey(user);
   const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
   const notificationState = useNotifications(user?.id);
-  const { markRead, notifications } = notificationState;
-  const tabUnreadCounts = countUnreadNotificationsByTab(
+  const { notifications } = notificationState;
+  const tabUnreadCounts = useTabNotificationIndicators({
+    activeTab: appView,
+    fallbackByType: CLIENT_NOTIFICATION_TAB_FALLBACKS,
     notifications,
-    CLIENT_TABS,
-    CLIENT_NOTIFICATION_TAB_FALLBACKS
-  );
-
-  useEffect(() => {
-    const activeTabNotifications = getUnreadNotificationsForTab(
-      notifications,
-      appView,
-      CLIENT_TABS,
-      CLIENT_NOTIFICATION_TAB_FALLBACKS
-    );
-
-    activeTabNotifications.forEach((notification) => {
-      markRead(notification);
-    });
-  }, [appView, markRead, notifications]);
+    storageKey: `pb_client_page_notification_indicators:${user?.id || user?.email || 'unknown'}`,
+    tabIds: CLIENT_TABS,
+  });
 
   const dismissWorkflowOnboarding = () => {
     try {

@@ -1110,12 +1110,17 @@ export default function App() {
         return;
       }
 
+      let oauthCallbackHandled = false;
       let popupClosedInterval = null;
+      let popupCloseTimeout = null;
       const cleanup = () => {
         window.removeEventListener('message', handleOAuthMessage);
 
         if (popupClosedInterval) {
           window.clearInterval(popupClosedInterval);
+        }
+        if (popupCloseTimeout) {
+          window.clearTimeout(popupCloseTimeout);
         }
 
         oauthCleanupRef.current = null;
@@ -1160,6 +1165,8 @@ export default function App() {
           return;
         }
 
+        oauthCallbackHandled = true;
+
         if (event.data.errorDescription) {
           finishWithError(event.data.errorDescription);
           return;
@@ -1179,12 +1186,17 @@ export default function App() {
       window.addEventListener('message', handleOAuthMessage);
       oauthCleanupRef.current = cleanup;
       popupClosedInterval = window.setInterval(() => {
-        if (!popup.closed) return;
+        if (!popup.closed || oauthCallbackHandled || popupCloseTimeout) return;
 
-        cleanup();
-        oauthPopupRef.current = null;
-        setAuthNotice('Google Sign-In was cancelled.');
-        setIsAuthLoading(false);
+        popupCloseTimeout = window.setTimeout(() => {
+          popupCloseTimeout = null;
+          if (!popup.closed || oauthCallbackHandled) return;
+
+          cleanup();
+          oauthPopupRef.current = null;
+          setAuthNotice('Google Sign-In was cancelled.');
+          setIsAuthLoading(false);
+        }, 750);
       }, 500);
 
       popup.location.assign(result.url);
@@ -1309,12 +1321,17 @@ export default function App() {
         return;
       }
 
+      let oauthCallbackHandled = false;
       let popupClosedInterval = null;
+      let popupCloseTimeout = null;
       const cleanup = () => {
         window.removeEventListener('message', handleOAuthMessage);
 
         if (popupClosedInterval) {
           window.clearInterval(popupClosedInterval);
+        }
+        if (popupCloseTimeout) {
+          window.clearTimeout(popupCloseTimeout);
         }
 
         oauthCleanupRef.current = null;
@@ -1384,6 +1401,8 @@ export default function App() {
           return;
         }
 
+        oauthCallbackHandled = true;
+
         if (event.data.errorDescription) {
           finishWithError(event.data.errorDescription);
           return;
@@ -1403,15 +1422,20 @@ export default function App() {
       window.addEventListener('message', handleOAuthMessage);
       oauthCleanupRef.current = cleanup;
       popupClosedInterval = window.setInterval(() => {
-        if (!popup.closed) return;
+        if (!popup.closed || oauthCallbackHandled || popupCloseTimeout) return;
 
-        cleanup();
-        oauthPopupRef.current = null;
-        setAuthNotice('Google Sign-In was cancelled.');
-        setIsAuthLoading(false);
-        localStorage.removeItem('pb_oauth_pending');
-        localStorage.removeItem('pb_oauth_role');
-        localStorage.removeItem('pb_oauth_company');
+        popupCloseTimeout = window.setTimeout(() => {
+          popupCloseTimeout = null;
+          if (!popup.closed || oauthCallbackHandled) return;
+
+          cleanup();
+          oauthPopupRef.current = null;
+          setAuthNotice('Google Sign-In was cancelled.');
+          setIsAuthLoading(false);
+          localStorage.removeItem('pb_oauth_pending');
+          localStorage.removeItem('pb_oauth_role');
+          localStorage.removeItem('pb_oauth_company');
+        }, 750);
       }, 500);
 
       popup.location.assign(result.url);
