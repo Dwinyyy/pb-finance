@@ -4,7 +4,6 @@ export const getDocumentKind = (contentType, fileName) => {
 
   if (type.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
   if (type.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(name)) return 'image';
-  if (type.includes('wordprocessingml.document') || name.endsWith('.docx')) return 'docx';
 
   return 'download';
 };

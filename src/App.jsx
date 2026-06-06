@@ -1104,7 +1104,7 @@ export default function App() {
       }
 
       if (popup.closed) {
-        setAuthNotice('Google Sign-In was cancelled.');
+        setAuthNotice('');
         setIsAuthLoading(false);
         oauthPopupRef.current = null;
         return;
@@ -1194,7 +1194,7 @@ export default function App() {
 
           cleanup();
           oauthPopupRef.current = null;
-          setAuthNotice('Google Sign-In was cancelled.');
+          setAuthNotice('');
           setIsAuthLoading(false);
         }, 750);
       }, 500);
@@ -1312,7 +1312,7 @@ export default function App() {
       localStorage.setItem('pb_oauth_company', company);
 
       if (popup.closed) {
-        setAuthNotice('Google Sign-In was cancelled.');
+        setAuthNotice('');
         setIsAuthLoading(false);
         oauthPopupRef.current = null;
         localStorage.removeItem('pb_oauth_pending');
@@ -1430,7 +1430,7 @@ export default function App() {
 
           cleanup();
           oauthPopupRef.current = null;
-          setAuthNotice('Google Sign-In was cancelled.');
+          setAuthNotice('');
           setIsAuthLoading(false);
           localStorage.removeItem('pb_oauth_pending');
           localStorage.removeItem('pb_oauth_role');

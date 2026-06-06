@@ -61,11 +61,36 @@ const formatFileSize = (value) => {
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
+const formatDocumentDate = (value) => {
+  const date = new Date(value);
+
+  if (!value || Number.isNaN(date.getTime())) return '';
+
+  return date.toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 const getCredentialStatusStyle = (status) => ({
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   pending_review: 'border-amber-200 bg-amber-50 text-amber-700',
   rejected: 'border-red-200 bg-red-50 text-red-700',
 }[status] || 'border-slate-200 bg-slate-50 text-slate-600');
+const requiredDocumentMissingExpiry = (document) => (
+  document?.reviewScope === 'required'
+  && !document.noExpiryRequired
+  && !String(document.expiryDate || '').trim()
+);
+const getDocumentExpiryLabel = (document) => {
+  if (document.noExpiryRequired) return 'No expiration date';
+
+  const expiryDate = formatDocumentDate(document.expiryDate);
+  if (expiryDate) return `Expires ${expiryDate}`;
+  if (document.reviewScope === 'required') return 'Expiration date missing';
+
+  return '';
+};
 const getDocumentIdentity = (document) => document.key || document.id || document.label || document.fileName;
 const getExpectedDocumentLabels = (profile) => {
   const titles = asList(profile.titles).length ? asList(profile.titles) : asList(profile.title || profile.role);
@@ -163,6 +188,7 @@ const getCredentialReviewState = (profile, documents = getReviewDocuments(profil
   const pendingDocuments = requiredDocuments.filter((document) => (document.status || 'pending_review') === 'pending_review');
   const rejectedDocuments = requiredDocuments.filter((document) => document.status === 'rejected');
   const approvedDocuments = requiredDocuments.filter((document) => document.status === 'approved');
+  const missingExpiryDocuments = requiredDocuments.filter(requiredDocumentMissingExpiry);
   const optionalCount = documents.filter((document) => document.reviewScope === 'optional').length;
   let approvalBlocker = '';
 
@@ -174,6 +200,10 @@ const getCredentialReviewState = (profile, documents = getReviewDocuments(profil
     approvalBlocker = `${rejectedDocuments.length} required document${rejectedDocuments.length === 1 ? '' : 's'} need a replacement upload.`;
   } else if (pendingDocuments.length) {
     approvalBlocker = `${pendingDocuments.length} required document${pendingDocuments.length === 1 ? '' : 's'} still need admin review.`;
+  } else if (missingExpiryDocuments.length) {
+    approvalBlocker = missingExpiryDocuments.length === 1
+      ? `Add an expiry date for ${missingExpiryDocuments[0].reviewLabel || missingExpiryDocuments[0].label || missingExpiryDocuments[0].fileName} or mark it no expiration date.`
+      : `${missingExpiryDocuments.length} required documents need an expiry date or no-expiration confirmation.`;
   } else {
     approvalBlocker = getRegulatedInputBlocker(profile);
   }
@@ -357,8 +387,13 @@ function CredentialReviewPanel({
                     <div className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{document.fileName || 'Uploaded file'}</div>
                   </div>
                   <div className="mt-1 text-xs font-bold text-slate-400">
-                    {[getReviewDocumentKindLabel(document), formatFileSize(document.fileSize)].filter(Boolean).join(' - ')}
+                    {[getReviewDocumentKindLabel(document), formatFileSize(document.fileSize), getDocumentExpiryLabel(document)].filter(Boolean).join(' - ')}
                   </div>
+                  {requiredDocumentMissingExpiry(document) && (
+                    <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                      Expiry date is required unless this document has no expiration date.
+                    </div>
+                  )}
                   {(document.rejectionReason || document.reviewMessage) && (
                     <div className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold leading-relaxed ${
                       document.status === 'rejected'

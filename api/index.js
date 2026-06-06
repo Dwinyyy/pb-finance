@@ -40,7 +40,6 @@ const CREDENTIAL_UPLOAD_BUCKET = 'professional-documents';
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
 const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'image/jpeg',
   'image/png',
 ]);
@@ -51,22 +50,20 @@ const DOCUMENT_TYPE_FILE_RULES = {
     message: 'Certification uploads must be a PDF, JPG, or PNG.',
   },
   other_document: {
-    extensions: new Set(['.pdf', '.docx', '.jpg', '.jpeg', '.png']),
+    extensions: new Set(['.pdf', '.jpg', '.jpeg', '.png']),
     mimeTypes: ALLOWED_CREDENTIAL_MIME_TYPES,
-    message: 'Supporting document uploads must be a PDF, DOCX, JPG, or PNG.',
+    message: 'Supporting document uploads must be a PDF, JPG, or PNG.',
   },
   resume: {
-    extensions: new Set(['.pdf', '.docx']),
-    mimeTypes: new Set([
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ]),
-    message: 'Resume uploads must be a PDF or DOCX document.',
+    extensions: new Set(['.pdf', '.jpg', '.jpeg', '.png']),
+    mimeTypes: ALLOWED_CREDENTIAL_MIME_TYPES,
+    message: 'Resume uploads must be a PDF, JPG, or PNG.',
   },
 };
 const credentialReviewStatuses = new Set(['pending_review', 'approved', 'rejected']);
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
+const cleanBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
 const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
 const cleanProfileTitle = (value) => {
   const title = cleanString(value, 160);
@@ -139,6 +136,7 @@ const cleanCredentialFileRecord = (file) => {
     storageKey: cleanString(record.storageKey, 120),
     uploadedAt,
     expiryDate: cleanString(record.expiryDate, 80),
+    noExpiryRequired: cleanBoolean(record.noExpiryRequired ?? record.no_expiry_required),
     inputValue: cleanString(record.inputValue, 200),
   };
 };
@@ -1129,6 +1127,28 @@ const getRegulatedInputBlocker = (titles, regulatedInputs = {}) => {
   return '';
 };
 
+const requiredCredentialMissingExpiry = (document) => (
+  Boolean(document)
+  && !document.noExpiryRequired
+  && !cleanString(document.expiryDate, 80)
+);
+
+const getCredentialDisplayLabel = (document, fallback = 'document') => (
+  cleanString(document?.reviewLabel || document?.label || document?.fileName, 180) || fallback
+);
+
+const getRequiredExpiryBlocker = (documents) => {
+  const missingExpiryDocuments = asList(documents).filter(requiredCredentialMissingExpiry);
+
+  if (!missingExpiryDocuments.length) return '';
+
+  if (missingExpiryDocuments.length === 1) {
+    return `Add an expiry date for ${getCredentialDisplayLabel(missingExpiryDocuments[0])} or mark it no expiration date.`;
+  }
+
+  return `${missingExpiryDocuments.length} required documents need an expiry date or no-expiration confirmation.`;
+};
+
 const getCredentialApprovalBlocker = (profile) => {
   const { workPreferences } = getReviewableWorkPreferences(profile);
   const resume = workPreferences.resume;
@@ -1145,6 +1165,7 @@ const getCredentialApprovalBlocker = (profile) => {
   ];
   const rejectedDocuments = requiredDocuments.filter((document) => document.status === 'rejected');
   const pendingDocuments = requiredDocuments.filter((document) => (document.status || 'pending_review') === 'pending_review');
+  const expiryBlocker = getRequiredExpiryBlocker(requiredDocuments);
 
   if (!resume) {
     return 'Resume approval is required before this profile can be approved.';
@@ -1160,6 +1181,10 @@ const getCredentialApprovalBlocker = (profile) => {
 
   if (pendingDocuments.length) {
     return `${pendingDocuments.length} required document${pendingDocuments.length === 1 ? '' : 's'} still need admin review.`;
+  }
+
+  if (expiryBlocker) {
+    return expiryBlocker;
   }
 
   return getRegulatedInputBlocker(getReviewableProfessionalTitles(profile), workPreferences.regulatedInputs || {});
@@ -1179,6 +1204,13 @@ const getCredentialSubmissionBlocker = (profile) => {
       requiredLabels.some((label) => documentMatchesCredentialLabel(document, label))
     )),
   ].filter((document) => document.status === 'rejected');
+  const requiredDocuments = [
+    ...(resume ? [resume] : []),
+    ...supportingDocuments.filter((document) => (
+      requiredLabels.some((label) => documentMatchesCredentialLabel(document, label))
+    )),
+  ];
+  const expiryBlocker = getRequiredExpiryBlocker(requiredDocuments);
 
   if (!resume) {
     return 'Upload your resume before requesting verification.';
@@ -1190,6 +1222,10 @@ const getCredentialSubmissionBlocker = (profile) => {
 
   if (rejectedDocuments.length) {
     return `${rejectedDocuments.length} required document${rejectedDocuments.length === 1 ? '' : 's'} need a replacement upload.`;
+  }
+
+  if (expiryBlocker) {
+    return expiryBlocker;
   }
 
   return getRegulatedInputBlocker(getReviewableProfessionalTitles(profile), workPreferences.regulatedInputs || {});
@@ -1271,6 +1307,19 @@ const applyCredentialReview = (profile, review, adminId) => {
         index === documentIndex ? reviewedCredential : document
       )),
     };
+  }
+
+  const requiredLabels = getRequiredCredentialLabels(profile);
+  const isRequiredCredential = targetType === 'resume'
+    || requiredLabels.some((label) => documentMatchesCredentialLabel(reviewedCredential, label));
+
+  if (
+    status === 'approved'
+    && reviewKind !== 'change_request'
+    && isRequiredCredential
+    && requiredCredentialMissingExpiry(reviewedCredential)
+  ) {
+    throw new Error(`Add an expiry date for ${getCredentialDisplayLabel(reviewedCredential)} or mark it no expiration date before approval.`);
   }
 
   const payload = usePendingProfile

@@ -42,13 +42,13 @@ const PROFESSIONAL_NOTIFICATION_TAB_FALLBACKS = {
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
 const DOCUMENT_ACCEPTS = {
   certification: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png',
-  other_document: '.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png',
-  resume: '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  other_document: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png',
+  resume: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png',
 };
 const DOCUMENT_EXTENSIONS = {
   certification: ['.pdf', '.jpg', '.jpeg', '.png'],
-  other_document: ['.pdf', '.docx', '.jpg', '.jpeg', '.png'],
-  resume: ['.pdf', '.docx'],
+  other_document: ['.pdf', '.jpg', '.jpeg', '.png'],
+  resume: ['.pdf', '.jpg', '.jpeg', '.png'],
 };
 const EMPTY_CREDENTIAL_FORM = Object.freeze({
   certifications: EMPTY_LIST,
@@ -150,6 +150,14 @@ const getCredentialStatusHint = (credential, missingText) => {
 const getCredentialReviewMessage = (credential) => (
   credential?.rejectionReason || (credential?.status === 'rejected' ? credential?.reviewMessage : '')
 );
+const requiredCredentialMissingExpiry = (credential) => (
+  Boolean(credential)
+  && !credential.noExpiryRequired
+  && !String(credential.expiryDate || '').trim()
+);
+const getCredentialDisplayLabel = (credential, fallback = 'document') => (
+  credential?.reviewLabel || credential?.label || credential?.fileName || fallback
+);
 const normalizeLinkFields = (links = []) => {
   const linkMap = new Map(asList(links).map((link) => [link.id, link]));
 
@@ -177,7 +185,6 @@ const getContentTypeForFile = (file) => {
 
   const name = String(file?.name || '').toLowerCase();
   if (name.endsWith('.pdf')) return 'application/pdf';
-  if (name.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
   if (name.endsWith('.png')) return 'image/png';
 
@@ -196,9 +203,9 @@ const validateCredentialFile = (file, documentType) => {
   const allowedExtensions = DOCUMENT_EXTENSIONS[documentType] || DOCUMENT_EXTENSIONS.other_document;
 
   if (!allowedExtensions.includes(extension)) {
-    if (documentType === 'resume') return 'Resume uploads must be a PDF or DOCX document.';
+    if (documentType === 'resume') return 'Resume uploads must be a PDF, JPG, or PNG.';
     if (documentType === 'certification') return 'Certification uploads must be a PDF, JPG, or PNG.';
-    return 'Supporting document uploads must be a PDF, DOCX, JPG, or PNG.';
+    return 'Supporting document uploads must be a PDF, JPG, or PNG.';
   }
 
   return '';
@@ -443,6 +450,7 @@ function CredentialUploadRow({
   onRemove,
   onRequestChange,
   onChangeExpiry,
+  onChangeNoExpiryRequired,
   upload,
 }) {
   const isBusy = busyUpload === documentKey;
@@ -456,6 +464,8 @@ function CredentialUploadRow({
   const statusStyle = isUnderRequest
     ? 'border-cyan-100 bg-cyan-50 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300'
     : getCredentialStatusStyle(upload?.status);
+  const noExpiryRequired = Boolean(upload?.noExpiryRequired);
+  const isExpiryMissing = isRequired && requiredCredentialMissingExpiry(upload);
 
   return (
     <div className={`rounded-2xl border p-4 ${
@@ -482,20 +492,41 @@ function CredentialUploadRow({
           </div>
           
           {upload && (
-            <div className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-500">
-              <Calendar size={14} />
-              <span>Expires:</span>
-              <input
-                type="date"
-                value={upload.expiryDate || ''}
-                disabled={isApproved}
-                onChange={(e) => onChangeExpiry && onChangeExpiry(upload.id, e.target.value)}
-                className="bg-transparent border border-slate-200 rounded px-2 py-0.5 text-xs outline-none dark:border-slate-800 disabled:opacity-50"
-              />
+            <div className="mt-3 flex flex-col gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-2">
+                <Calendar size={14} />
+                <span>Expires:</span>
+                <input
+                  type="date"
+                  value={upload.expiryDate || ''}
+                  disabled={noExpiryRequired}
+                  required={isRequired && !noExpiryRequired}
+                  onChange={(e) => onChangeExpiry && onChangeExpiry(upload.id, e.target.value)}
+                  className={`rounded border bg-transparent px-2 py-0.5 text-xs outline-none disabled:opacity-50 dark:border-slate-800 ${
+                    isExpiryMissing
+                      ? 'border-amber-300 focus:border-amber-500 dark:border-amber-900/60'
+                      : 'border-slate-200 focus:border-cyan-500'
+                  }`}
+                />
+              </div>
+              <label className="inline-flex w-fit items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={noExpiryRequired}
+                  onChange={(event) => onChangeNoExpiryRequired?.(upload.id, event.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                />
+                No expiration date
+              </label>
+              {isExpiryMissing && (
+                <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  Required for verification unless this document does not expire.
+                </div>
+              )}
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           {upload && (
             <span className={`rounded-full border px-2.5 py-1 text-xs font-black capitalize ${statusStyle}`}>
               {statusText}
@@ -1197,6 +1228,11 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     .filter((upload) => (upload?.status || '') === 'pending_review').length;
   const savedUploadCount = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
     .filter((upload) => upload && !['approved', 'pending_review', 'rejected'].includes(upload.status || 'draft')).length;
+  const requiredCredentialUploads = [resume, ...certificationRequirements.map((requirement) => requirement.upload)]
+    .filter(Boolean);
+  const missingExpiryUploads = requiredCredentialUploads
+    .filter((upload) => upload.status !== 'rejected')
+    .filter(requiredCredentialMissingExpiry);
   const validateRegulatedInput = (field, value) => {
     const text = String(value || '').trim();
     if (!field.required && !text) return true;
@@ -1217,6 +1253,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     ...[resume, ...certificationRequirements.map((requirement) => requirement.upload)]
       .filter((upload) => upload?.status === 'rejected')
       .map((upload) => `Replace rejected document: ${upload.label || upload.fileName}.`),
+    ...missingExpiryUploads
+      .map((upload) => `Add an expiry date for ${getCredentialDisplayLabel(upload)} or mark it no expiration date.`),
     ...missingRequiredRegulatedInputs.map((field) => `Complete ${field.label}.`),
     ...invalidRegulatedInputs
       .filter((field) => String(credentialForm.regulatedInputs?.[field.id] || '').trim())
@@ -1392,23 +1430,65 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
   };
 
   const updateUploadExpiry = (uploadId, expiryDate) => {
+    const nextExpiryDate = String(expiryDate || '').trim();
     let nextForm = { ...credentialForm };
     let found = false;
 
     if (nextForm.resume?.id === uploadId) {
-      nextForm.resume = { ...nextForm.resume, expiryDate };
+      nextForm.resume = {
+        ...nextForm.resume,
+        expiryDate: nextExpiryDate,
+        noExpiryRequired: nextExpiryDate ? false : nextForm.resume.noExpiryRequired,
+      };
       found = true;
     } else {
       nextForm.supportingDocuments = nextForm.supportingDocuments.map((doc) => {
         if (doc.id === uploadId) {
           found = true;
-          return { ...doc, expiryDate };
+          return {
+            ...doc,
+            expiryDate: nextExpiryDate,
+            noExpiryRequired: nextExpiryDate ? false : doc.noExpiryRequired,
+          };
         }
         return doc;
       });
     }
 
     if (found) {
+      setCredentialDirty(true);
+      setCredentialForm(nextForm);
+    }
+  };
+
+  const updateUploadNoExpiryRequired = (uploadId, noExpiryRequired) => {
+    let nextForm = { ...credentialForm };
+    let found = false;
+    const nextNoExpiryRequired = Boolean(noExpiryRequired);
+
+    if (nextForm.resume?.id === uploadId) {
+      nextForm.resume = {
+        ...nextForm.resume,
+        expiryDate: nextNoExpiryRequired ? '' : nextForm.resume.expiryDate,
+        noExpiryRequired: nextNoExpiryRequired,
+      };
+      found = true;
+    } else {
+      nextForm.supportingDocuments = nextForm.supportingDocuments.map((doc) => {
+        if (doc.id === uploadId) {
+          found = true;
+          return {
+            ...doc,
+            expiryDate: nextNoExpiryRequired ? '' : doc.expiryDate,
+            noExpiryRequired: nextNoExpiryRequired,
+          };
+        }
+        return doc;
+      });
+    }
+
+    if (found) {
+      setCredentialDirty(true);
       setCredentialForm(nextForm);
     }
   };
@@ -1648,7 +1728,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           <CredentialUploadRow
             busyUpload={busyUpload}
             canRemoveApprovedChange={resume?.changeRequestStatus === 'approved'}
-            detail={getCredentialStatusHint(resume, isLoading ? 'Loading profile' : 'PDF or DOCX document')}
+            detail={getCredentialStatusHint(resume, isLoading ? 'Loading profile' : 'PDF, JPG, or PNG')}
             documentKey="resume"
             documentLabel="Resume"
             documentType="resume"
@@ -1656,6 +1736,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
             onUpload={uploadCredentialFile}
             onRemove={removeRejectedDocument}
             onChangeExpiry={updateUploadExpiry}
+            onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
             onView={openUploadedDocument}
             onRequestChange={setChangeRequestDocument}
             upload={resume}
@@ -1760,6 +1841,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   onUpload={uploadCredentialFile}
                   onRemove={removeRejectedDocument}
                   onChangeExpiry={updateUploadExpiry}
+                  onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
                   onView={openUploadedDocument}
                   onRequestChange={setChangeRequestDocument}
                   upload={requirement.upload}
@@ -1858,6 +1940,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   onUpload={uploadCredentialFile}
                   onRemove={removeRejectedDocument}
                   onChangeExpiry={updateUploadExpiry}
+                  onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
                   onView={openUploadedDocument}
                   onRequestChange={setChangeRequestDocument}
                   upload={document}
