@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isBackendConfigured } from '../services/api';
 import { isRealtimeConfigured, subscribeToDatabaseChanges } from '../services/realtime';
 
-const REALTIME_REFETCH_DELAY_MS = 1000;
+const REALTIME_REFETCH_DELAY_MS = 120;
+const FOCUS_REFETCH_MIN_INTERVAL_MS = 3000;
 const hashRealtimeKey = (value) => {
   let hash = 0;
 
@@ -17,7 +18,13 @@ const hashRealtimeKey = (value) => {
 export function useBackendResource(loadResource, initialData, options = {}) {
   const backendConfigured = isBackendConfigured();
   const refreshInterval = options.refreshInterval || 0;
+  const realtimeDelay = Number.isFinite(options.realtimeDelay)
+    ? Math.max(0, options.realtimeDelay)
+    : REALTIME_REFETCH_DELAY_MS;
   const realtimeKey = JSON.stringify(options.realtime || []);
+  const onRealtimeChangeRef = useRef(options.onRealtimeChange);
+  const latestRefreshAtRef = useRef(0);
+  const latestRequestRef = useRef(0);
   const [state, setState] = useState({
     data: initialData,
     error: null,
@@ -37,10 +44,13 @@ export function useBackendResource(loadResource, initialData, options = {}) {
       }));
     }
 
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
+
     try {
       const data = await loadResource();
 
-      if (!isMounted()) return data;
+      if (!isMounted() || requestId !== latestRequestRef.current) return data;
 
       setState({
         data: data ?? initialData,
@@ -48,10 +58,11 @@ export function useBackendResource(loadResource, initialData, options = {}) {
         isConfigured: true,
         isLoading: false,
       });
+      latestRefreshAtRef.current = Date.now();
 
       return data;
     } catch (error) {
-      if (!isMounted()) return initialData;
+      if (!isMounted() || requestId !== latestRequestRef.current) return initialData;
 
       setState((current) => ({
         data: silent ? current.data : initialData,
@@ -63,6 +74,20 @@ export function useBackendResource(loadResource, initialData, options = {}) {
       return initialData;
     }
   }, [backendConfigured, initialData, loadResource]);
+
+  const mutate = useCallback((updater) => {
+    setState((current) => ({
+      ...current,
+      data: typeof updater === 'function' ? updater(current.data) : updater,
+      error: null,
+      isConfigured: backendConfigured,
+      isLoading: false,
+    }));
+  }, [backendConfigured]);
+
+  useEffect(() => {
+    onRealtimeChangeRef.current = options.onRealtimeChange;
+  }, [options.onRealtimeChange]);
 
   useEffect(() => {
     if (!backendConfigured) {
@@ -77,7 +102,10 @@ export function useBackendResource(loadResource, initialData, options = {}) {
     const interval = refreshInterval
       ? window.setInterval(() => load({ isMounted: isStillMounted, silent: true }), refreshInterval)
       : null;
-    const handleFocus = () => load({ isMounted: isStillMounted, silent: true });
+    const handleFocus = () => {
+      if (Date.now() - latestRefreshAtRef.current < FOCUS_REFETCH_MIN_INTERVAL_MS) return;
+      load({ isMounted: isStillMounted, silent: true });
+    };
 
     window.addEventListener('focus', handleFocus);
 
@@ -99,6 +127,25 @@ export function useBackendResource(loadResource, initialData, options = {}) {
     let timeoutId = null;
     const realtimeChanges = JSON.parse(realtimeKey);
     const isStillMounted = () => isMounted;
+    const applyRealtimeChange = (payload) => {
+      const handler = onRealtimeChangeRef.current;
+
+      if (typeof handler !== 'function') return;
+
+      setState((current) => {
+        const nextData = handler(current.data, payload);
+
+        if (nextData === undefined) return current;
+
+        return {
+          ...current,
+          data: nextData,
+          error: null,
+          isConfigured: true,
+          isLoading: false,
+        };
+      });
+    };
     const scheduleRefresh = () => {
       if (timeoutId) {
         window.clearTimeout(timeoutId);
@@ -106,12 +153,15 @@ export function useBackendResource(loadResource, initialData, options = {}) {
 
       timeoutId = window.setTimeout(() => {
         load({ isMounted: isStillMounted, silent: true });
-      }, REALTIME_REFETCH_DELAY_MS);
+      }, realtimeDelay);
     };
     const unsubscribe = subscribeToDatabaseChanges({
       channelName: `resource:${hashRealtimeKey(realtimeKey)}`,
       changes: realtimeChanges,
-      onChange: scheduleRefresh,
+      onChange: (payload) => {
+        applyRealtimeChange(payload);
+        scheduleRefresh();
+      },
     });
 
     return () => {
@@ -121,7 +171,7 @@ export function useBackendResource(loadResource, initialData, options = {}) {
       }
       unsubscribe();
     };
-  }, [backendConfigured, load, realtimeKey]);
+  }, [backendConfigured, load, realtimeDelay, realtimeKey]);
 
   if (!backendConfigured) {
     return {
@@ -129,12 +179,14 @@ export function useBackendResource(loadResource, initialData, options = {}) {
       error: null,
       isConfigured: false,
       isLoading: false,
+      mutate: () => {},
       refetch: () => Promise.resolve(initialData),
     };
   }
 
   return {
     ...state,
+    mutate,
     refetch: (refetchOptions = {}) => load({ silent: true, ...refetchOptions }),
   };
 }

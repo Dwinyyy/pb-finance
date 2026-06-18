@@ -694,9 +694,6 @@ function AppDiscoverView({ user }) {
     backendApi.talent.listProfiles,
     EMPTY_LIST,
     {
-      realtime: [
-        { table: 'professional_profiles' },
-      ],
       refreshInterval: 30000,
     }
   );
@@ -756,11 +753,16 @@ function AppDiscoverView({ user }) {
 
     setActionError('');
     setBusyProfileId(profile.id);
+    setSavedIds((current) => new Set([...current, profile.id]));
 
     try {
       await backendApi.client.saveShortlist({ professionalId: profile.id });
-      setSavedIds((current) => new Set([...current, profile.id]));
     } catch (saveError) {
+      setSavedIds((current) => {
+        const next = new Set(current);
+        next.delete(profile.id);
+        return next;
+      });
       setActionError(saveError.message || 'Unable to save this profile.');
     } finally {
       setBusyProfileId('');
@@ -1190,13 +1192,13 @@ function AppShortlistView({ user }) {
     error,
     isConfigured,
     isLoading,
+    mutate,
     refetch,
   } = useBackendResource(backendApi.client.listShortlist, EMPTY_LIST, {
     realtime: [
       user?.id ? { filter: `client_id=eq.${user.id}`, table: 'shortlists' } : null,
       user?.id ? { filter: `client_id=eq.${user.id}`, table: 'opportunities' } : null,
       user?.id ? { filter: `client_id=eq.${user.id}`, table: 'interviews' } : null,
-      { table: 'professional_profiles' },
     ],
     refreshInterval: 10000,
   });
@@ -1276,7 +1278,25 @@ function AppShortlistView({ user }) {
         scheduledFor,
         title: scheduleTarget.role || scheduleTarget.title || 'Finance interview',
       });
-      await refetch();
+      setLocalShortlist((current) => current.map((item) => (
+        item.id === scheduleTarget.id
+          ? {
+            ...item,
+            interviewStatus: 'requesting',
+            scheduledFor,
+          }
+          : item
+      )));
+      mutate((current) => asList(current).map((item) => (
+        item.id === scheduleTarget.id
+          ? {
+            ...item,
+            interviewStatus: 'requesting',
+            scheduledFor,
+          }
+          : item
+      )));
+      refetch().catch(() => {});
       setScheduleTarget(null);
       setActionMessage(`Interview request sent to ${scheduleTarget.name || scheduleTarget.fullName || 'the candidate'}.`);
     } catch (scheduleError) {
@@ -1486,7 +1506,7 @@ function AppShortlistView({ user }) {
 }
 
 function AppInterviewsView({ user }) {
-  const { data: interviews, error, isConfigured, isLoading, refetch } = useBackendResource(
+  const { data: interviews, error, isConfigured, isLoading, mutate, refetch } = useBackendResource(
     backendApi.client.listInterviews,
     EMPTY_LIST,
     {
@@ -1542,7 +1562,12 @@ function AppInterviewsView({ user }) {
 
     try {
       await backendApi.client.cancelInterview({ id: cancelTarget.id, reason });
-      await refetch();
+      mutate((current) => asList(current).map((interview) => (
+        interview.id === cancelTarget.id
+          ? { ...interview, cancellationReason: reason, status: 'cancelled' }
+          : interview
+      )));
+      refetch().catch(() => {});
       setCancelTarget(null);
       setActionMessage('Interview cancelled and the professional was notified.');
     } catch (cancelError) {
@@ -1560,7 +1585,8 @@ function AppInterviewsView({ user }) {
 
     try {
       await backendApi.client.removeInterview({ id: interview.id });
-      await refetch();
+      mutate((current) => asList(current).filter((item) => item.id !== interview.id));
+      refetch().catch(() => {});
       setActionMessage('Cancelled interview removed.');
     } catch (removeError) {
       setActionError(removeError.message || 'Unable to remove this interview.');

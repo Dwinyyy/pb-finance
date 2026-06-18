@@ -21,6 +21,14 @@ import { useBackendResource } from '../hooks/useBackendResource';
 import { useNotifications } from '../hooks/useNotifications';
 import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { backendApi } from '../services/api';
+import {
+  getDocumentPreviewCacheKey,
+  loadCachedDocumentPreview,
+  loadCachedDocumentPreviewUrl,
+  preloadCachedDocumentPreviewUrl,
+} from '../utils/documentPreview';
+import { warmDocumentPreviewRenderer } from '../utils/pdfPreview';
+import { mergeRealtimeTalentProfile } from '../utils/profileRealtime';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_PROFILE = Object.freeze({});
@@ -446,6 +454,7 @@ function CredentialUploadRow({
   documentType,
   isRequired = false,
   onView,
+  onPreviewWarmup,
   onUpload,
   onRemove,
   onRequestChange,
@@ -466,6 +475,7 @@ function CredentialUploadRow({
     : getCredentialStatusStyle(upload?.status);
   const noExpiryRequired = Boolean(upload?.noExpiryRequired);
   const isExpiryMissing = isRequired && requiredCredentialMissingExpiry(upload);
+  const isExpiryLocked = isLockedApproved;
 
   return (
     <div className={`rounded-2xl border p-4 ${
@@ -499,7 +509,7 @@ function CredentialUploadRow({
                 <input
                   type="date"
                   value={upload.expiryDate || ''}
-                  disabled={noExpiryRequired}
+                  disabled={isExpiryLocked || noExpiryRequired}
                   required={isRequired && !noExpiryRequired}
                   onChange={(e) => onChangeExpiry && onChangeExpiry(upload.id, e.target.value)}
                   className={`rounded border bg-transparent px-2 py-0.5 text-xs outline-none disabled:opacity-50 dark:border-slate-800 ${
@@ -513,11 +523,17 @@ function CredentialUploadRow({
                 <input
                   type="checkbox"
                   checked={noExpiryRequired}
+                  disabled={isExpiryLocked}
                   onChange={(event) => onChangeNoExpiryRequired?.(upload.id, event.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 disabled:opacity-50"
                 />
                 No expiration date
               </label>
+              {isLockedApproved && (
+                <div className="text-xs font-semibold text-slate-400">
+                  Request change to update expiration details.
+                </div>
+              )}
               {isExpiryMissing && (
                 <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
                   Required for verification unless this document does not expire.
@@ -536,6 +552,8 @@ function CredentialUploadRow({
             <button
               type="button"
               onClick={() => onView?.(upload)}
+              onFocus={() => onPreviewWarmup?.(upload)}
+              onMouseEnter={() => onPreviewWarmup?.(upload)}
               className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
             >
               <ExternalLink size={14} />
@@ -720,6 +738,11 @@ function AppTalentProfileView({ user }) {
       realtime: [
         user?.id ? { filter: `user_id=eq.${user.id}`, table: 'professional_profiles' } : null,
       ],
+      onRealtimeChange: (currentProfile, payload) => (
+        payload?.new?.user_id === user?.id
+          ? mergeRealtimeTalentProfile(currentProfile, payload.new, { includeDraftPending: true, usePending: true })
+          : undefined
+      ),
       refreshInterval: 15000,
     }
   );
@@ -1260,24 +1283,38 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       .filter((field) => String(credentialForm.regulatedInputs?.[field.id] || '').trim())
       .map((field) => `Fix ${field.label}.`),
   ].filter(Boolean);
+  const isFullyApproved = String(displayProfile.status || '').toLowerCase() === 'approved'
+    && !displayProfile.reviewStatus;
+  const shouldShowVerify = !isFullyApproved
+    || verifyBlockers.length > 0
+    || savedUploadCount > 0
+    || pendingUploadCount > 0
+    || rejectedUploadCount > 0
+    || missingCertificationCount > 0;
   const canVerify = verifyBlockers.length === 0 && !isSaving && !busyUpload;
 
   useEffect(() => {
     setOtherDocumentRows([createOtherDocumentRow()]);
   }, [profileTitleKey]);
 
-  const updateCredentialForm = (field, value, { markDirty = true } = {}) => {
-    if (markDirty) setCredentialDirty(true);
-    setCredentialForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  };
-
-  const updateLink = (linkId, url) => {
-    updateCredentialForm('externalLinks', credentialForm.externalLinks.map((link) => (
+  const updateLink = (linkId, url, { save = false } = {}) => {
+    const hasChanged = credentialForm.externalLinks.some((link) => link.id === linkId && link.url !== url);
+    const externalLinks = credentialForm.externalLinks.map((link) => (
       link.id === linkId ? { ...link, url } : link
-    )));
+    ));
+    const nextForm = {
+      ...credentialForm,
+      externalLinks,
+    };
+
+    if (hasChanged) {
+      setCredentialDirty(true);
+      setCredentialForm(nextForm);
+    }
+
+    if (save && (credentialDirty || hasChanged)) {
+      saveCredentialForm(nextForm);
+    }
   };
 
   const updateOtherDocumentRow = (rowId, label) => {
@@ -1429,7 +1466,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     }
   };
 
-  const updateUploadExpiry = (uploadId, expiryDate) => {
+  const updateUploadExpiry = async (uploadId, expiryDate) => {
     const nextExpiryDate = String(expiryDate || '').trim();
     let nextForm = { ...credentialForm };
     let found = false;
@@ -1458,10 +1495,11 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     if (found) {
       setCredentialDirty(true);
       setCredentialForm(nextForm);
+      await saveCredentialForm(nextForm);
     }
   };
 
-  const updateUploadNoExpiryRequired = (uploadId, noExpiryRequired) => {
+  const updateUploadNoExpiryRequired = async (uploadId, noExpiryRequired) => {
     let nextForm = { ...credentialForm };
     let found = false;
     const nextNoExpiryRequired = Boolean(noExpiryRequired);
@@ -1490,6 +1528,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     if (found) {
       setCredentialDirty(true);
       setCredentialForm(nextForm);
+      await saveCredentialForm(nextForm);
     }
   };
 
@@ -1536,28 +1575,61 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     }
   };
 
-  const openUploadedDocument = async (document) => {
+  const getUploadedDocumentPreview = (document) => {
     if (!document) return;
+
+    const payload = {
+      documentKey: document.key || document.id || document.label,
+      documentType: document.kind,
+      path: document.path,
+    };
+    const cacheKey = getDocumentPreviewCacheKey(
+      'professional',
+      'blob',
+      user?.id,
+      document.path,
+      document.id,
+      document.key || document.label,
+      document.fileName,
+      document.fileSize
+    );
+    const urlCacheKey = getDocumentPreviewCacheKey(
+      'professional',
+      'url',
+      user?.id,
+      document.path,
+      document.id,
+      document.key || document.label,
+      document.fileName,
+      document.fileSize
+    );
+    const load = () => backendApi.documents.getBlob(payload);
+    const loadUrl = () => backendApi.documents.getUrl(payload);
+
+    return { cacheKey, load, loadUrl, urlCacheKey };
+  };
+
+  const preloadUploadedDocument = (document) => {
+    const preview = getUploadedDocumentPreview(document);
+    if (!preview) return;
+
+    warmDocumentPreviewRenderer(document.contentType, document.fileName);
+    preloadCachedDocumentPreviewUrl(preview.urlCacheKey, preview.loadUrl);
+  };
+
+  const openUploadedDocument = (document) => {
+    const preview = getUploadedDocumentPreview(document);
+    if (!preview) return;
 
     setCredentialError('');
 
-    try {
-      const result = await backendApi.documents.getBlob({
-        documentKey: document.key || document.id || document.label,
-        documentType: document.kind,
-        path: document.path,
-      });
-
-      if (result?.blob) {
-        setPreviewDocument({
-          blob: result.blob,
-          contentType: result.contentType || document.contentType,
-          fileName: result.fileName || document.fileName || 'Document preview',
-        });
-      }
-    } catch (openError) {
-      setCredentialError(openError.message || 'Unable to open this document.');
-    }
+    setPreviewDocument({
+      blobLoader: () => loadCachedDocumentPreview(preview.cacheKey, preview.load),
+      cacheKey: preview.cacheKey,
+      contentType: document.contentType,
+      fileName: document.fileName || 'Document preview',
+      urlPromise: loadCachedDocumentPreviewUrl(preview.urlCacheKey, preview.loadUrl),
+    });
   };
 
   const submitChangeRequest = async (e) => {
@@ -1592,9 +1664,22 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     }
   };
 
-  const handleRegulatedInputChange = (id, value) => {
+  const handleRegulatedInputChange = (id, value, { save = false } = {}) => {
+    const hasChanged = (credentialForm.regulatedInputs || {})[id] !== value;
     const nextInputs = { ...(credentialForm.regulatedInputs || {}), [id]: value };
-    updateCredentialForm('regulatedInputs', nextInputs);
+    const nextForm = {
+      ...credentialForm,
+      regulatedInputs: nextInputs,
+    };
+
+    if (hasChanged) {
+      setCredentialDirty(true);
+      setCredentialForm(nextForm);
+    }
+
+    if (save && (credentialDirty || hasChanged)) {
+      saveCredentialForm(nextForm);
+    }
   };
 
   const uploadOtherDocumentRow = async (row, file) => {
@@ -1616,7 +1701,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
       {previewDocument && (
         <DocumentPreviewModal
-          key={previewDocument.url}
+          key={previewDocument.cacheKey || previewDocument.fileName || 'document-preview'}
           previewDocument={previewDocument}
           onClose={() => setPreviewDocument(null)}
         />
@@ -1630,16 +1715,10 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           <h3 className="text-xl font-bold text-slate-950 dark:text-white">Credential Review</h3>
           <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        {shouldShowVerify && (
           <button
-            onClick={() => saveCredentialForm()}
-            disabled={isSaving || Boolean(busyUpload)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-          >
-            {savingAction === 'save' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-            {savingAction === 'save' ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
+            type="button"
+            data-credential-action="verify"
             onClick={() => saveCredentialForm(credentialForm, { submitForReview: true })}
             disabled={!canVerify}
             title={verifyBlockers[0] || 'Submit credentials for admin verification'}
@@ -1648,7 +1727,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
             {savingAction === 'verify' ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
             {savingAction === 'verify' ? 'Verifying...' : 'Verify'}
           </button>
-        </div>
+        )}
       </div>
 
       {credentialError && (
@@ -1661,7 +1740,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           {credentialMessage}
         </div>
       )}
-      {verifyBlockers.length > 0 && (
+      {shouldShowVerify && verifyBlockers.length > 0 && (
         <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
           Verify unlocks after: {verifyBlockers.slice(0, 3).join(' ')}{verifyBlockers.length > 3 ? ` +${verifyBlockers.length - 3} more.` : ''}
         </div>
@@ -1715,7 +1794,9 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                 ? `${pendingUploadCount} required item${pendingUploadCount === 1 ? '' : 's'} pending review`
                 : savedUploadCount
                   ? 'Saved. Click Verify to submit for review'
-                  : 'Ready to verify'}
+                  : isFullyApproved
+                    ? 'Verified. Request change for document updates'
+                    : 'Ready to verify'}
           icon={ShieldCheck}
           label="Admin Review"
           value={`${approvedUploadCount} approved`}
@@ -1738,6 +1819,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
             onChangeExpiry={updateUploadExpiry}
             onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
             onView={openUploadedDocument}
+            onPreviewWarmup={preloadUploadedDocument}
             onRequestChange={setChangeRequestDocument}
             upload={resume}
           />
@@ -1759,6 +1841,9 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   <input
                     value={link.url}
                     onChange={(event) => updateLink(link.id, event.target.value)}
+                    onBlur={(event) => updateLink(link.id, event.target.value, {
+                      save: event.relatedTarget?.dataset?.credentialAction !== 'verify',
+                    })}
                     placeholder={link.placeholder}
                     className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-3 text-sm font-medium text-slate-900 outline-none dark:text-white"
                   />
@@ -1843,6 +1928,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   onChangeExpiry={updateUploadExpiry}
                   onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
                   onView={openUploadedDocument}
+                  onPreviewWarmup={preloadUploadedDocument}
                   onRequestChange={setChangeRequestDocument}
                   upload={requirement.upload}
                 />
@@ -1883,6 +1969,9 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                         required={inputField.required}
                         value={inputValue}
                         onChange={(e) => handleRegulatedInputChange(inputField.id, e.target.value)}
+                        onBlur={(e) => handleRegulatedInputChange(inputField.id, e.target.value, {
+                          save: e.relatedTarget?.dataset?.credentialAction !== 'verify',
+                        })}
                         className={`mt-2 w-full rounded-xl border bg-slate-50 px-4 py-3 text-sm font-medium outline-none dark:bg-slate-950 ${
                           hasValue && isValid
                             ? 'border-emerald-300 focus:border-emerald-500 dark:border-emerald-900/60'
@@ -1942,6 +2031,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   onChangeExpiry={updateUploadExpiry}
                   onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
                   onView={openUploadedDocument}
+                  onPreviewWarmup={preloadUploadedDocument}
                   onRequestChange={setChangeRequestDocument}
                   upload={document}
                 />
@@ -2064,15 +2154,11 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
   );
 }
 
-function AppTalentOpportunitiesView({ user }) {
+function AppTalentOpportunitiesView() {
   const { data: invites, error, isLoading } = useBackendResource(
     backendApi.talent.listOpportunities,
     EMPTY_LIST,
     {
-      realtime: [
-        user?.id ? { filter: `professional_id=eq.${user.id}`, table: 'opportunities' } : null,
-        user?.id ? { filter: `professional_id=eq.${user.id}`, table: 'interviews' } : null,
-      ],
       refreshInterval: 10000,
     }
   );

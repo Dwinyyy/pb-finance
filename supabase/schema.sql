@@ -368,44 +368,7 @@ create policy "Profiles are visible to their owners"
   using (auth.uid() = id);
 
 drop policy if exists "Approved professional profile owners are visible" on public.profiles;
-create policy "Approved professional profile owners are visible"
-  on public.profiles
-  for select
-  to authenticated
-  using (
-    exists (
-      select 1
-      from public.professional_profiles
-      where professional_profiles.user_id = profiles.id
-        and professional_profiles.status = 'approved'
-    )
-  );
-
 drop policy if exists "Related client profiles are visible to talent" on public.profiles;
-create policy "Related client profiles are visible to talent"
-  on public.profiles
-  for select
-  to authenticated
-  using (
-    exists (
-      select 1
-      from public.opportunities
-      where opportunities.client_id = profiles.id
-        and opportunities.professional_id = auth.uid()
-    )
-    or exists (
-      select 1
-      from public.interviews
-      where interviews.client_id = profiles.id
-        and interviews.professional_id = auth.uid()
-    )
-    or exists (
-      select 1
-      from public.contracts
-      where contracts.client_id = profiles.id
-        and contracts.professional_id = auth.uid()
-    )
-  );
 
 drop policy if exists "Profiles are editable by their owners" on public.profiles;
 create policy "Profiles are editable by their owners"
@@ -415,11 +378,12 @@ create policy "Profiles are editable by their owners"
   with check (auth.uid() = id);
 
 drop policy if exists "Professional profiles are visible to owners and approved clients" on public.professional_profiles;
-create policy "Professional profiles are visible to owners and approved clients"
+drop policy if exists "Professional profiles are visible to owners" on public.professional_profiles;
+create policy "Professional profiles are visible to owners"
   on public.professional_profiles
   for select
   to authenticated
-  using (auth.uid() = user_id or status = 'approved');
+  using (auth.uid() = user_id);
 
 drop policy if exists "Professional profiles are inserted by owners" on public.professional_profiles;
 create policy "Professional profiles are inserted by owners"
@@ -462,10 +426,11 @@ create policy "Agencies are editable by owners"
   with check (auth.uid() = owner_id);
 
 drop policy if exists "Shortlists are visible to related users" on public.shortlists;
-create policy "Shortlists are visible to related users"
+drop policy if exists "Shortlists are visible to clients" on public.shortlists;
+create policy "Shortlists are visible to clients"
   on public.shortlists
   for select
-  using (auth.uid() = client_id or auth.uid() = professional_id);
+  using (auth.uid() = client_id);
 
 drop policy if exists "Shortlists are managed by clients" on public.shortlists;
 create policy "Shortlists are managed by clients"
@@ -475,10 +440,11 @@ create policy "Shortlists are managed by clients"
   with check (auth.uid() = client_id);
 
 drop policy if exists "Opportunities are visible to related users" on public.opportunities;
-create policy "Opportunities are visible to related users"
+drop policy if exists "Opportunities are visible to clients" on public.opportunities;
+create policy "Opportunities are visible to clients"
   on public.opportunities
   for select
-  using (auth.uid() = client_id or auth.uid() = professional_id);
+  using (auth.uid() = client_id);
 
 drop policy if exists "Opportunities are managed by clients" on public.opportunities;
 create policy "Opportunities are managed by clients"
@@ -488,17 +454,13 @@ create policy "Opportunities are managed by clients"
   with check (auth.uid() = client_id);
 
 drop policy if exists "Opportunities are answerable by professionals" on public.opportunities;
-create policy "Opportunities are answerable by professionals"
-  on public.opportunities
-  for update
-  using (auth.uid() = professional_id)
-  with check (auth.uid() = professional_id);
 
 drop policy if exists "Interviews are visible to related users" on public.interviews;
-create policy "Interviews are visible to related users"
+drop policy if exists "Interviews are visible to clients" on public.interviews;
+create policy "Interviews are visible to clients"
   on public.interviews
   for select
-  using (auth.uid() = client_id or auth.uid() = professional_id);
+  using (auth.uid() = client_id);
 
 drop policy if exists "Interviews are managed by clients" on public.interviews;
 create policy "Interviews are managed by clients"
@@ -508,11 +470,6 @@ create policy "Interviews are managed by clients"
   with check (auth.uid() = client_id);
 
 drop policy if exists "Interviews can be updated by professionals" on public.interviews;
-create policy "Interviews can be updated by professionals"
-  on public.interviews
-  for update
-  using (auth.uid() = professional_id)
-  with check (auth.uid() = professional_id);
 
 drop policy if exists "Contracts are visible to related users" on public.contracts;
 create policy "Contracts are visible to related users"

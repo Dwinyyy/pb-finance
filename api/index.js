@@ -29,9 +29,9 @@ import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS, REGULATED_TITLE_REQUIREMENTS 
 
 const hasServiceRoleKey = () => Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-const getDataOptions = (req) => ({
+const getDataOptions = (req, { useServiceRole = false } = {}) => ({
   token: getBearerToken(req),
-  useServiceRole: Boolean(req.useServiceRole),
+  useServiceRole: Boolean(req.useServiceRole || useServiceRole),
 });
 
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -61,6 +61,36 @@ const DOCUMENT_TYPE_FILE_RULES = {
   },
 };
 const credentialReviewStatuses = new Set(['pending_review', 'approved', 'rejected']);
+const PROFESSIONAL_PROFILE_PRIVATE_SELECT = '*';
+const PROFESSIONAL_PROFILE_DIRECTORY_SELECT = [
+  'user_id',
+  'bio',
+  'location',
+  'country',
+  'years_experience',
+  'hourly_rate',
+  'availability',
+  'status',
+  'rating',
+  'review_count',
+  'titles',
+  'tools',
+  'skills',
+  'certifications',
+  'industries',
+  'published_at',
+  'updated_at',
+].join(',');
+const PROFILE_OWNER_BASE_SELECT = ['id', 'full_name', 'role', 'title'];
+const PROFILE_OWNER_CONTACT_SELECT = ['id', 'email', 'full_name', 'company', 'role', 'title'];
+const PROFILE_OWNER_MANUAL_TRIAGE_SELECT = [
+  ...PROFILE_OWNER_CONTACT_SELECT,
+  'manual_triage_required',
+  'manual_triage_status',
+  'manual_triage_reason',
+  'manual_triage_domain',
+];
+const talentPrivateVisibilities = new Set(['admin', 'internal', 'owner']);
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
 const cleanBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
@@ -318,24 +348,42 @@ const requireAdmin = async (req, res) => {
   return user;
 };
 
-const readRows = (req, path) => supabaseRestRequest(path, getDataOptions(req));
+const requireAdminOrCronSecret = async (req, res) => {
+  const expectedSecret = cleanString(process.env.PB_CRON_SECRET || process.env.CRON_SECRET, 500);
+  const authHeader = cleanString(req.headers.authorization || req.headers.Authorization, 700);
+  const bearerSecret = authHeader.replace(/^Bearer\s+/i, '');
+  const headerSecret = cleanString(req.headers['x-cron-secret'] || req.headers['x-pb-cron-secret'], 500);
 
-const writeRows = (req, path, body, { method = 'POST', prefer = 'return=representation' } = {}) => (
+  if (expectedSecret && (headerSecret === expectedSecret || bearerSecret === expectedSecret)) {
+    req.useServiceRole = true;
+    return { id: 'cron', role: 'admin' };
+  }
+
+  return requireAdmin(req, res);
+};
+
+const readRows = (req, path, options = {}) => supabaseRestRequest(path, getDataOptions(req, options));
+
+const writeRows = (req, path, body, { method = 'POST', prefer = 'return=representation', useServiceRole = false } = {}) => (
   supabaseRestRequest(path, {
-    ...getDataOptions(req),
+    ...getDataOptions(req, { useServiceRole }),
     body,
     method,
     prefer,
   })
 );
 
-const patchRows = (req, path, body, { prefer = 'return=representation' } = {}) => (
-  writeRows(req, path, body, { method: 'PATCH', prefer })
+const patchRows = (req, path, body, { prefer = 'return=representation', useServiceRole = false } = {}) => (
+  writeRows(req, path, body, { method: 'PATCH', prefer, useServiceRole })
 );
 
 const byIdFilter = (ids) => `in.(${ids.map((id) => encodeURIComponent(id)).join(',')})`;
 
-const loadProfilesById = async (req, ids) => {
+const loadProfilesById = async (req, ids, {
+  includeContact = false,
+  includeManualTriage = false,
+  useServiceRole = false,
+} = {}) => {
   const uniqueIds = [...new Set(ids.filter(Boolean))];
 
   if (!uniqueIds.length) {
@@ -343,11 +391,17 @@ const loadProfilesById = async (req, ids) => {
   }
 
   let rows;
+  const selectFields = includeManualTriage
+    ? PROFILE_OWNER_MANUAL_TRIAGE_SELECT
+    : includeContact
+      ? PROFILE_OWNER_CONTACT_SELECT
+      : PROFILE_OWNER_BASE_SELECT;
 
   try {
     rows = await readRows(
       req,
-      `/profiles?id=${byIdFilter(uniqueIds)}&select=id,email,full_name,company,role,title,manual_triage_required,manual_triage_status,manual_triage_reason,manual_triage_domain`
+      `/profiles?id=${byIdFilter(uniqueIds)}&select=${selectFields.join(',')}`,
+      { useServiceRole }
     );
   } catch (error) {
     if (!String(error.message || '').includes('manual_triage')) {
@@ -356,7 +410,8 @@ const loadProfilesById = async (req, ids) => {
 
     rows = await readRows(
       req,
-      `/profiles?id=${byIdFilter(uniqueIds)}&select=id,email,full_name,company,role,title`
+      `/profiles?id=${byIdFilter(uniqueIds)}&select=${(includeContact ? PROFILE_OWNER_CONTACT_SELECT : PROFILE_OWNER_BASE_SELECT).join(',')}`,
+      { useServiceRole }
     );
   }
 
@@ -393,7 +448,15 @@ const toProfilePatch = (profile, fallback = {}) => ({
   years_experience: toNumber(valueOrFallback(profile, fallback, 'years_experience')),
 });
 
-const mapTalentProfile = (profile, owner = {}, { includeDraftPending = false, usePending = false } = {}) => {
+const mapTalentProfile = (profile, owner = {}, {
+  includeDraftPending = false,
+  usePending = false,
+  visibility = 'directory',
+} = {}) => {
+  const includePrivateProfileData = talentPrivateVisibilities.has(visibility);
+  const includeCredentialData = includePrivateProfileData;
+  const includeOwnerContact = includePrivateProfileData;
+  const includeManualTriage = visibility === 'admin';
   const hasDraftPending = isDraftPendingProfile(profile);
   const canShowPending = usePending && (
     includeDraftPending
@@ -413,47 +476,66 @@ const mapTalentProfile = (profile, owner = {}, { includeDraftPending = false, us
   const hourlyRate = toNumber(viewProfile.hourly_rate);
   const years = toNumber(viewProfile.years_experience);
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
-  const canShowWorkPreferences = includeDraftPending || canShowPending || profile.status !== 'draft';
+  const canShowWorkPreferences = includeCredentialData && (includeDraftPending || canShowPending || profile.status !== 'draft');
   const workPreferences = cleanWorkPreferences(canShowWorkPreferences ? viewProfile.work_preferences : {});
 
-  return {
+  const mapped = {
     available: viewProfile.availability || 'Immediate Start',
     availability: viewProfile.availability || 'Immediate Start',
     bio: viewProfile.bio || '',
     certifications: asList(viewProfile.certifications),
-    email: owner.email || '',
     exp: years ? `${years}+ yrs` : '',
     experience: years ? `${years}+ years` : '',
     fullName: displayName,
     id: profile.user_id,
-    hasPendingChanges: hasPendingProfile(profile),
     industries: asList(viewProfile.industries),
     location: viewProfile.location || viewProfile.country || '',
-    manualTriageDomain: owner.manual_triage_domain || '',
-    manualTriageReason: owner.manual_triage_reason || '',
-    manualTriageRequired: Boolean(owner.manual_triage_required),
-    manualTriageStatus: owner.manual_triage_status || 'clear',
     name: displayName,
-    pendingDraftOnly: hasDraftPending,
     rate: hourlyRate,
     rating: toNumber(viewProfile.rating),
     reviewCount: profile.review_count || 0,
-    reviewStatus,
     role: title,
     skills: asList(viewProfile.skills),
-    status: usePending ? (reviewStatus || profile.status) : profile.status,
+    status: usePending && includePrivateProfileData ? (reviewStatus || profile.status) : profile.status,
     title,
     titles,
     tools: asList(viewProfile.tools),
-    externalLinks: asList(workPreferences.externalLinks),
-    resume: workPreferences.resume || null,
-    supportingDocuments: asList(workPreferences.supportingDocuments),
-    workPreferences,
     yearsExperience: years,
   };
+
+  if (includeOwnerContact) {
+    mapped.email = owner.email || '';
+  }
+
+  if (includeManualTriage) {
+    mapped.manualTriageDomain = owner.manual_triage_domain || '';
+    mapped.manualTriageReason = owner.manual_triage_reason || '';
+    mapped.manualTriageRequired = Boolean(owner.manual_triage_required);
+    mapped.manualTriageStatus = owner.manual_triage_status || 'clear';
+  }
+
+  if (includePrivateProfileData) {
+    mapped.hasPendingChanges = hasPendingProfile(profile);
+    mapped.pendingDraftOnly = hasDraftPending;
+    mapped.reviewStatus = reviewStatus;
+  }
+
+  if (includeCredentialData) {
+    mapped.externalLinks = asList(workPreferences.externalLinks);
+    mapped.resume = workPreferences.resume || null;
+    mapped.supportingDocuments = asList(workPreferences.supportingDocuments);
+    mapped.workPreferences = workPreferences;
+  }
+
+  return mapped;
 };
 
-const loadTalentProfiles = async (req, { ids, onlyApproved = false, usePending = false } = {}) => {
+const loadTalentProfiles = async (req, {
+  ids,
+  onlyApproved = false,
+  usePending = false,
+  visibility = 'directory',
+} = {}) => {
   if (ids && ids.length === 0) {
     return [];
   }
@@ -469,14 +551,22 @@ const loadTalentProfiles = async (req, { ids, onlyApproved = false, usePending =
   }
 
   const query = filters.length ? `?${filters.join('&')}&` : '?';
+  const includePrivateProfileData = talentPrivateVisibilities.has(visibility);
+  const useServiceRole = visibility !== 'owner';
+  const select = includePrivateProfileData ? PROFESSIONAL_PROFILE_PRIVATE_SELECT : PROFESSIONAL_PROFILE_DIRECTORY_SELECT;
   const rows = await readRows(
     req,
-    `/professional_profiles${query}select=*&order=updated_at.desc&limit=100`
+    `/professional_profiles${query}select=${select}&order=updated_at.desc&limit=100`,
+    { useServiceRole }
   );
   const profileRows = asList(rows);
-  const owners = await loadProfilesById(req, profileRows.map((row) => row.user_id));
+  const owners = await loadProfilesById(req, profileRows.map((row) => row.user_id), {
+    includeContact: includePrivateProfileData,
+    includeManualTriage: visibility === 'admin',
+    useServiceRole,
+  });
 
-  return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id), { usePending }));
+  return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id), { usePending, visibility }));
 };
 
 const mapAgency = (agency) => ({
@@ -511,7 +601,11 @@ const scoreMatch = (messageTokens, record, fields) => {
   return messageTokens.reduce((score, token) => score + (haystackSet.has(token) ? 1 : 0), 0);
 };
 
-const getProfessionalProfile = async (req, professionalId, { requireApproved = false } = {}) => {
+const getProfessionalProfile = async (req, professionalId, {
+  includeSensitive = true,
+  requireApproved = false,
+  useServiceRole = false,
+} = {}) => {
   if (!isUuid(professionalId)) {
     return null;
   }
@@ -524,7 +618,8 @@ const getProfessionalProfile = async (req, professionalId, { requireApproved = f
 
   const rows = await readRows(
     req,
-    `/professional_profiles?${filters.join('&')}&select=*&limit=1`
+    `/professional_profiles?${filters.join('&')}&select=${includeSensitive ? PROFESSIONAL_PROFILE_PRIVATE_SELECT : PROFESSIONAL_PROFILE_DIRECTORY_SELECT}&limit=1`,
+    { useServiceRole }
   );
 
   return asList(rows)[0] || null;
@@ -538,6 +633,12 @@ const getPrimaryClientCompanyName = async (req, clientId, fallback = '') => {
 
   return asList(rows)[0]?.name || fallback || 'Client company';
 };
+
+const anonymousClientIdentity = () => ({
+  clientIdentityVisible: false,
+  clientName: 'Client company',
+  company: 'Client company',
+});
 
 const normalizeAvailability = (value) => {
   return value || 'Immediate Start';
@@ -613,7 +714,8 @@ const cancelInterview = async (req, {
 
   const rows = await readRows(
     req,
-    `/interviews?${filters.join('&')}&status=in.(requesting,requested,scheduled)&select=*&limit=1`
+    `/interviews?${filters.join('&')}&status=in.(requesting,requested,scheduled)&select=*&limit=1`,
+    { useServiceRole: true }
   );
   const interview = asList(rows)[0];
 
@@ -631,7 +733,8 @@ const cancelInterview = async (req, {
       cancelled_at: cancelledAt,
       cancelled_by: actor.id,
       status: 'cancelled',
-    }
+    },
+    { useServiceRole: true }
   );
   const updatedInterview = asList(updatedRows)[0] || {
     ...interview,
@@ -646,7 +749,7 @@ const cancelInterview = async (req, {
       req,
       `/opportunities?id=eq.${interview.opportunity_id}`,
       { status: 'cancelled' },
-      { prefer: 'return=minimal' }
+      { prefer: 'return=minimal', useServiceRole: true }
     ).catch(() => {});
   }
 
@@ -1042,6 +1145,66 @@ const getCredentialDocumentChanges = (beforeWorkPreferences, afterWorkPreference
   });
 
   return changes;
+};
+
+const preserveLockedApprovedCredentialExpiry = (beforeWorkPreferences, afterWorkPreferences) => {
+  const preferences = cleanWorkPreferences(afterWorkPreferences);
+  const beforeByKey = new Map(listCredentialDocuments(beforeWorkPreferences).map((document) => [
+    credentialNotificationKey(document, document.fallbackKey),
+    document,
+  ]));
+  const preserveDocument = (document, fallbackKey) => {
+    const record = cleanCredentialFileRecord(document);
+    const previous = beforeByKey.get(credentialNotificationKey(record, fallbackKey));
+
+    if (!record || !previous || previous.status !== 'approved' || previous.changeRequestStatus === 'approved') {
+      return record;
+    }
+
+    if (record.path && previous.path && record.path !== previous.path) {
+      return record;
+    }
+
+    return {
+      ...record,
+      expiryDate: cleanString(previous.expiryDate, 80),
+      noExpiryRequired: cleanBoolean(previous.noExpiryRequired),
+    };
+  };
+
+  return {
+    ...preferences,
+    resume: preferences.resume ? preserveDocument(preferences.resume, 'resume') : null,
+    supportingDocuments: asList(preferences.supportingDocuments)
+      .map((document, index) => preserveDocument(document, `supporting:${index}`))
+      .filter(Boolean),
+  };
+};
+
+const getApprovedCredentialExpiryChangeBlocker = (beforeWorkPreferences, afterWorkPreferences) => {
+  const beforeDocuments = listCredentialDocuments(beforeWorkPreferences);
+  const beforeByKey = new Map(beforeDocuments.map((document) => [
+    credentialNotificationKey(document, document.fallbackKey),
+    document,
+  ]));
+
+  for (const document of listCredentialDocuments(afterWorkPreferences)) {
+    const key = credentialNotificationKey(document, document.fallbackKey);
+    const previous = beforeByKey.get(key);
+
+    if (!previous || previous.status !== 'approved' || previous.changeRequestStatus === 'approved') {
+      continue;
+    }
+
+    const expiryChanged = cleanString(document.expiryDate, 80) !== cleanString(previous.expiryDate, 80);
+    const noExpiryChanged = cleanBoolean(document.noExpiryRequired) !== cleanBoolean(previous.noExpiryRequired);
+
+    if (expiryChanged || noExpiryChanged) {
+      return `Request change before updating expiration details for ${getCredentialDisplayLabel(previous)}.`;
+    }
+  }
+
+  return '';
 };
 
 const getReviewableWorkPreferences = (profile) => {
@@ -1728,7 +1891,7 @@ const handlers = {
     const user = await requireAdmin(req, res);
     if (!user) return;
 
-    const profiles = await loadTalentProfiles(req, { usePending: true });
+    const profiles = await loadTalentProfiles(req, { usePending: true, visibility: 'admin' });
     sendJson(res, 200, profiles);
   },
 
@@ -1790,9 +1953,13 @@ const handlers = {
         return;
       }
 
-      const owners = await loadProfilesById(req, [professionalId]);
+      const owners = await loadProfilesById(req, [professionalId], {
+        includeContact: true,
+        includeManualTriage: true,
+        useServiceRole: true,
+      });
       const owner = owners.get(professionalId) || {};
-      const mappedProfile = mapTalentProfile(saved, owner, { usePending: true });
+      const mappedProfile = mapTalentProfile(saved, owner, { usePending: true, visibility: 'admin' });
 
       const reviewedDocumentLabel = reviewResult.credential.label || reviewResult.credential.fileName || 'Your document';
 
@@ -1895,11 +2062,19 @@ const handlers = {
       return;
     }
 
+    if (clearTriage) {
+      await patchRows(req, `/profiles?id=eq.${professionalId}`, {
+        manual_triage_domain: null,
+        manual_triage_reason: null,
+        manual_triage_required: false,
+        manual_triage_status: 'clear',
+      }, { prefer: 'return=minimal' });
+    }
+
     let payload = {
       ...(status ? { status } : {}),
       ...(status === 'approved' ? { published_at: new Date().toISOString() } : {}),
       ...(titlesUpdate ? { titles: titlesUpdate } : {}),
-      ...(clearTriage ? { manualTriageRequired: false, manualTriageReason: null, manualTriageDomain: null } : {})
     };
 
     if (status === 'approved' && hasPendingChanges) {
@@ -1966,9 +2141,13 @@ const handlers = {
       return;
     }
 
-    const owners = await loadProfilesById(req, [professionalId]);
+    const owners = await loadProfilesById(req, [professionalId], {
+      includeContact: true,
+      includeManualTriage: true,
+      useServiceRole: true,
+    });
     const owner = owners.get(professionalId) || {};
-    const mappedProfile = mapTalentProfile(saved, owner, { usePending: true });
+    const mappedProfile = mapTalentProfile(saved, owner, { usePending: true, visibility: 'admin' });
 
     if (['approved', 'rejected'].includes(status)) {
       const verificationReopened = status === 'rejected' && existingProfile.status === 'approved';
@@ -2116,7 +2295,9 @@ const handlers = {
       `/interviews?client_id=eq.${user.id}&client_hidden_at=is.null&status=in.(requesting,requested,scheduled,completed,cancelled)&select=*&order=updated_at.desc&limit=50`
     );
     const rows = asList(interviews);
-    const owners = await loadProfilesById(req, rows.map((interview) => interview.professional_id));
+    const owners = await loadProfilesById(req, rows.map((interview) => interview.professional_id), {
+      useServiceRole: true,
+    });
 
     sendJson(res, 200, rows.map((interview) => {
       const parts = getMonthDay(interview.scheduled_for);
@@ -2195,7 +2376,11 @@ const handlers = {
 
     const body = await readJson(req);
     const professionalId = cleanString(body.professionalId || body.professional_id, 80);
-    const professionalProfile = await getProfessionalProfile(req, professionalId, { requireApproved: true });
+    const professionalProfile = await getProfessionalProfile(req, professionalId, {
+      includeSensitive: false,
+      requireApproved: true,
+      useServiceRole: true,
+    });
 
     if (!professionalProfile) {
       sendError(res, 404, 'Approved talent profile not found.');
@@ -2247,7 +2432,11 @@ const handlers = {
 
     const body = await readJson(req);
     const professionalId = cleanString(body.professionalId || body.professional_id, 80);
-    const professionalProfile = await getProfessionalProfile(req, professionalId, { requireApproved: true });
+    const professionalProfile = await getProfessionalProfile(req, professionalId, {
+      includeSensitive: false,
+      requireApproved: true,
+      useServiceRole: true,
+    });
 
     if (!professionalProfile) {
       sendError(res, 404, 'Approved talent profile not found.');
@@ -2270,7 +2459,10 @@ const handlers = {
       return;
     }
 
-    const owners = await loadProfilesById(req, [professionalId]);
+    const owners = await loadProfilesById(req, [professionalId], {
+      includeContact: true,
+      useServiceRole: true,
+    });
     const professionalOwner = owners.get(professionalId) || {};
     const title = cleanString(body.title || body.roleTitle || professionalOwner.title || 'Finance interview', 160);
     const scheduledFor = cleanString(body.scheduledFor || body.scheduled_for, 80);
@@ -2368,7 +2560,10 @@ const handlers = {
       return;
     }
 
-    const owners = await loadProfilesById(req, [interview.professional_id]);
+    const owners = await loadProfilesById(req, [interview.professional_id], {
+      includeContact: true,
+      useServiceRole: true,
+    });
     const professional = owners.get(interview.professional_id) || {};
 
     notifyUser({
@@ -2533,7 +2728,7 @@ const handlers = {
         email: user.email,
         full_name: user.name,
         title: user.title,
-      }, { includeDraftPending: true, usePending: true })
+      }, { includeDraftPending: true, usePending: true, visibility: 'owner' })
       : user);
   },
 
@@ -2574,9 +2769,23 @@ const handlers = {
       || currentProfile.status === 'rejected'
       || currentProfile.review_status === 'pending_review'
     );
-    const workPreferences = submitForReview || shouldReflectCredentialDraft
+    let workPreferences = submitForReview || shouldReflectCredentialDraft
       ? markWorkPreferencesSubmitted(draftWorkPreferences)
       : draftWorkPreferences;
+
+    if (currentProfile) {
+      workPreferences = preserveLockedApprovedCredentialExpiry(currentProfile.work_preferences, workPreferences);
+    }
+
+    const expiryChangeBlocker = currentProfile
+      ? getApprovedCredentialExpiryChangeBlocker(currentProfile.work_preferences, workPreferences)
+      : '';
+
+    if (expiryChangeBlocker) {
+      sendError(res, 400, expiryChangeBlocker);
+      return;
+    }
+
     const reflectedCredentialChanges = shouldReflectCredentialDraft
       ? getCredentialDocumentChanges(previousReviewableWorkPreferences, workPreferences)
       : [];
@@ -2613,18 +2822,27 @@ const handlers = {
       }
     }
     
-    let manualTriageRequired = currentProfile?.manualTriageRequired;
-    let manualTriageReason = currentProfile?.manualTriageReason;
-    let manualTriageDomain = currentProfile?.manualTriageDomain;
-
-    if (titles.includes('Certified Public Accountant')) {
-      manualTriageRequired = true;
-      manualTriageReason = 'PRC License Verification Required (https://online.prc.gov.ph/Verification)';
-      manualTriageDomain = 'Credentials';
-    }
+    const ownerProfilePatch = {
+      full_name: fullName,
+      title: primaryTitle || null,
+      ...(titles.includes('Certified Public Accountant')
+        ? {
+          manual_triage_domain: 'Credentials',
+          manual_triage_reason: 'PRC License Verification Required (https://online.prc.gov.ph/Verification)',
+          manual_triage_required: true,
+          manual_triage_status: 'required',
+        }
+        : {}),
+    };
+    const currentTitles = cleanProfessionalTitles(currentProfile?.titles, cleanProfessionalTitles(user.title));
+    const titlesChanged = currentTitles.join('|') !== titles.join('|');
     let rows;
 
     if (currentProfile?.status === 'approved') {
+      if (titlesChanged || submitForReview) {
+        await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, { prefer: 'return=minimal' });
+      }
+
       rows = await patchRows(
         req,
         `/professional_profiles?user_id=eq.${user.id}`,
@@ -2642,6 +2860,7 @@ const handlers = {
               review_submitted_at: currentProfile.review_submitted_at || new Date().toISOString(),
             }
             : {
+              ...(titlesChanged ? { titles } : {}),
               pending_profile: asDraftPendingProfile(profilePayload),
               review_status: currentProfile.review_status || null,
               review_submitted_at: currentProfile.review_submitted_at || null,
@@ -2649,10 +2868,7 @@ const handlers = {
       );
     } else {
       if (submitForReview) {
-        await patchRows(req, `/profiles?id=eq.${user.id}`, {
-          full_name: fullName,
-          title: primaryTitle || null,
-        }, { prefer: 'return=minimal' });
+        await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, { prefer: 'return=minimal' });
       }
 
       rows = await writeRows(
@@ -2666,9 +2882,6 @@ const handlers = {
             review_submitted_at: new Date().toISOString(),
             status: 'pending_review',
             user_id: user.id,
-            manualTriageRequired,
-            manualTriageReason,
-            manualTriageDomain,
           }
           : shouldReflectCredentialDraft
             ? {
@@ -2678,9 +2891,6 @@ const handlers = {
               review_submitted_at: currentProfile?.review_submitted_at || new Date().toISOString(),
               status: currentProfile?.status || 'pending_review',
               user_id: user.id,
-              manualTriageRequired,
-              manualTriageReason,
-              manualTriageDomain,
             }
           : {
             pending_profile: asDraftPendingProfile(profilePayload),
@@ -2735,7 +2945,7 @@ const handlers = {
       email: user.email,
       full_name: fullName,
       title: primaryTitle,
-    }, { includeDraftPending: true, usePending: true }));
+    }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
   },
 
   'GET /talent/opportunities': async (req, res) => {
@@ -2744,26 +2954,24 @@ const handlers = {
 
     const opportunities = await readRows(
       req,
-      `/opportunities?professional_id=eq.${user.id}&status=neq.closed&select=*&order=received_at.desc&limit=50`
+      `/opportunities?professional_id=eq.${user.id}&status=neq.closed&select=*&order=received_at.desc&limit=50`,
+      { useServiceRole: true }
     );
     const opportunityRows = asList(opportunities);
-    const clientProfiles = await loadProfilesById(
-      req,
-      opportunityRows.map((opportunity) => opportunity.client_id)
-    );
     const opportunityIds = opportunityRows.map((opportunity) => opportunity.id);
     const interviewRows = opportunityIds.length
       ? await readRows(
         req,
-        `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&professional_hidden_at=is.null&select=*&limit=100`
+        `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&professional_hidden_at=is.null&select=*&limit=100`,
+        { useServiceRole: true }
       )
       : [];
     const interviewsByOpportunity = new Map(asList(interviewRows).map((interview) => [interview.opportunity_id, interview]));
 
     sendJson(res, 200, opportunityRows.map((opportunity) => {
-      const client = clientProfiles.get(opportunity.client_id) || {};
       const interview = interviewsByOpportunity.get(opportunity.id) || {};
       const effectiveStatus = interview.status === 'cancelled' ? 'cancelled' : opportunity.status;
+      const clientIdentity = anonymousClientIdentity();
 
       const scheduledParts = getMonthDay(interview.scheduled_for);
       const interviewSchedule = interview.scheduled_for
@@ -2771,13 +2979,11 @@ const handlers = {
         : opportunity.schedule;
 
       return {
+        ...clientIdentity,
         cancellationReason: interview.cancellation_reason,
         cancelledAt: interview.cancelled_at,
-        cancelledBy: interview.cancelled_by,
-        clientName: opportunity.company_name || client.company || client.full_name,
-        company: opportunity.company_name || client.company || client.full_name,
         date: formatDate(opportunity.received_at),
-        description: opportunity.description,
+        description: 'Interview request',
         duration: interviewSchedule,
         hourlyRate: toNumber(opportunity.hourly_rate),
         id: opportunity.id,
@@ -2813,7 +3019,8 @@ const handlers = {
 
     const existing = await readRows(
       req,
-      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`,
+      { useServiceRole: true }
     );
 
     const opportunity = asList(existing)[0];
@@ -2825,7 +3032,8 @@ const handlers = {
 
     const interviewRows = await readRows(
       req,
-      `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`
+      `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}&select=*&limit=1`,
+      { useServiceRole: true }
     );
     const interview = asList(interviewRows)[0];
 
@@ -2837,7 +3045,8 @@ const handlers = {
     const rows = await patchRows(
       req,
       `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=eq.invited`,
-      { status }
+      { status },
+      { useServiceRole: true }
     );
 
     if (!asList(rows)[0]) {
@@ -2849,10 +3058,13 @@ const handlers = {
       req,
       `/interviews?id=eq.${interview.id}&professional_id=eq.${user.id}&status=in.(requesting,requested)`,
       { status: status === 'accepted' ? 'scheduled' : 'cancelled' },
-      { prefer: 'return=minimal' }
+      { prefer: 'return=minimal', useServiceRole: true }
     ).catch(() => {});
 
-    const clientProfiles = await loadProfilesById(req, [opportunity.client_id]);
+    const clientProfiles = await loadProfilesById(req, [opportunity.client_id], {
+      includeContact: true,
+      useServiceRole: true,
+    });
     const client = clientProfiles.get(opportunity.client_id) || {};
 
     notifyUser({
@@ -2872,7 +3084,7 @@ const handlers = {
       type: `interview_${status}`,
     }).catch(() => {});
 
-    sendJson(res, 200, asList(rows)[0] || { ok: true, status });
+    sendJson(res, 200, { id: opportunityId, ok: true, status });
   },
 
   'DELETE /talent/opportunities': async (req, res) => {
@@ -2889,7 +3101,8 @@ const handlers = {
 
     const existing = await readRows(
       req,
-      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=in.(declined,cancelled)&select=*&limit=1`
+      `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}&status=in.(declined,cancelled)&select=*&limit=1`,
+      { useServiceRole: true }
     );
 
     if (!asList(existing)[0]) {
@@ -2901,14 +3114,14 @@ const handlers = {
       req,
       `/opportunities?id=eq.${opportunityId}&professional_id=eq.${user.id}`,
       { status: 'closed' },
-      { prefer: 'return=minimal' }
+      { prefer: 'return=minimal', useServiceRole: true }
     );
 
     await patchRows(
       req,
       `/interviews?opportunity_id=eq.${opportunityId}&professional_id=eq.${user.id}`,
       { professional_hidden_at: new Date().toISOString() },
-      { prefer: 'return=minimal' }
+      { prefer: 'return=minimal', useServiceRole: true }
     ).catch(() => {});
 
     sendJson(res, 200, { ok: true });
@@ -2946,7 +3159,10 @@ const handlers = {
       return;
     }
 
-    const clientProfiles = await loadProfilesById(req, [interview.client_id]);
+    const clientProfiles = await loadProfilesById(req, [interview.client_id], {
+      includeContact: true,
+      useServiceRole: true,
+    });
     const client = clientProfiles.get(interview.client_id) || {};
 
     notifyUser({
@@ -2965,7 +3181,13 @@ const handlers = {
       type: 'interview_cancelled',
     }).catch(() => {});
 
-    sendJson(res, 200, interview);
+    sendJson(res, 200, {
+      cancellationReason: interview.cancellation_reason,
+      cancelledAt: interview.cancelled_at,
+      id: interview.id,
+      ok: true,
+      status: interview.status,
+    });
   },
 
   'GET /talent/profiles': async (req, res) => {
@@ -3097,12 +3319,14 @@ const handlers = {
       email: user.email,
       full_name: user.name,
       title: user.title,
-    }, { includeDraftPending: true, usePending: true }));
+    }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
   },
 
   'POST /admin/check-expirations': async (req, res) => {
-    // Scheduled endpoint to run daily
-    const profiles = await loadTalentProfiles(req, { onlyApproved: true });
+    const user = await requireAdminOrCronSecret(req, res);
+    if (!user) return;
+
+    const profiles = await loadTalentProfiles(req, { onlyApproved: true, visibility: 'internal' });
     const now = new Date();
     const notificationThresholds = [60, 30, 7];
     
@@ -3127,7 +3351,7 @@ const handlers = {
              emailSubject: `Document Expired: ${doc.label || doc.fileName}`,
              recipientEmail: profile.email,
              recipientId: profile.id,
-             recipientName: profile.full_name,
+             recipientName: profile.fullName || profile.name,
              title: 'Document Expired',
              type: 'document_expired',
            }).catch(() => {});
@@ -3138,7 +3362,7 @@ const handlers = {
              emailSubject: `Document Expiring Soon: ${doc.label || doc.fileName}`,
              recipientEmail: profile.email,
              recipientId: profile.id,
-             recipientName: profile.full_name,
+             recipientName: profile.fullName || profile.name,
              title: 'Document Expiring Soon',
              type: 'document_expiring',
            }).catch(() => {});

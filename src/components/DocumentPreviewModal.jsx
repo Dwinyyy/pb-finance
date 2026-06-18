@@ -1,46 +1,159 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Loader2, X } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 import { getDocumentBlob, getDocumentKind } from '../utils/documentPreview';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+import { loadPdfJs } from '../utils/pdfPreview';
 
 const preventPreviewInteraction = (event) => {
   event.preventDefault();
   event.stopPropagation();
 };
 
-function PdfCanvasPreview({ blob }) {
+const yieldToBrowser = () => new Promise((resolve) => {
+  window.requestAnimationFrame(() => resolve());
+});
+
+const yieldToPreviewIdle = () => new Promise((resolve) => {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(resolve, { timeout: 180 });
+    return;
+  }
+
+  window.setTimeout(resolve, 16);
+});
+
+const resolvePreviewBlob = async (previewDocument) => {
+  if (previewDocument.blob) {
+    return {
+      blob: previewDocument.blob,
+      contentType: previewDocument.contentType,
+      fileName: previewDocument.fileName,
+    };
+  }
+
+  if (previewDocument.blobPromise) {
+    const result = await previewDocument.blobPromise;
+
+    return result?.blob
+      ? result
+      : {
+        blob: result,
+        contentType: previewDocument.contentType,
+        fileName: previewDocument.fileName,
+      };
+  }
+
+  if (previewDocument.blobLoader) {
+    const result = await previewDocument.blobLoader();
+
+    return result?.blob
+      ? result
+      : {
+        blob: result,
+        contentType: previewDocument.contentType,
+        fileName: previewDocument.fileName,
+      };
+  }
+
+  const blob = await getDocumentBlob({
+    contentType: previewDocument.contentType,
+    url: previewDocument.url,
+  });
+
+  return {
+    blob,
+    contentType: previewDocument.contentType,
+    fileName: previewDocument.fileName,
+  };
+};
+
+const resolvePreviewUrl = async (previewDocument) => {
+  if (previewDocument.previewUrl) {
+    return {
+      contentType: previewDocument.contentType,
+      fileName: previewDocument.fileName,
+      url: previewDocument.previewUrl,
+    };
+  }
+
+  if (previewDocument.urlPromise) {
+    const result = await previewDocument.urlPromise;
+
+    if (typeof result === 'string') {
+      return {
+        contentType: previewDocument.contentType,
+        fileName: previewDocument.fileName,
+        url: result,
+      };
+    }
+
+    return result?.url ? result : null;
+  }
+
+  return previewDocument.url
+    ? {
+      contentType: previewDocument.contentType,
+      fileName: previewDocument.fileName,
+      url: previewDocument.url,
+    }
+    : null;
+};
+
+const canLoadBlobFallback = (previewDocument) => Boolean(
+  previewDocument.blob
+  || previewDocument.blobLoader
+  || previewDocument.blobPromise
+  || previewDocument.url
+);
+
+const getInitialPreviewState = (previewDocument) => ({
+  blob: null,
+  dataUrl: '',
+  error: '',
+  isLoading: true,
+  kind: getDocumentKind(previewDocument.contentType, previewDocument.fileName),
+  canFallback: false,
+  pdfUrl: '',
+  source: '',
+});
+
+function PdfCanvasPreview({ blob, onSourceError, sourceUrl }) {
   const containerRef = useRef(null);
   const [state, setState] = useState({ error: '', isLoading: true });
 
   useEffect(() => {
     let isMounted = true;
     let loadingTask = null;
+    let pdfObjectUrl = '';
 
     const renderPdf = async () => {
       const container = containerRef.current;
-      if (!container || !blob) return;
+      if (!container || (!blob && !sourceUrl)) return;
 
       container.innerHTML = '';
       setState({ error: '', isLoading: true });
 
-      const data = new Uint8Array(await blob.arrayBuffer());
-      loadingTask = pdfjsLib.getDocument({ data });
+      const pdfjsLib = await loadPdfJs();
+      const pdfSource = sourceUrl
+        ? { url: sourceUrl }
+        : { url: (pdfObjectUrl = URL.createObjectURL(blob)) };
+      loadingTask = pdfjsLib.getDocument(pdfSource);
       const pdf = await loadingTask.promise;
 
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         if (!isMounted) return;
+
+        if (pageNumber > 1) {
+          await yieldToPreviewIdle();
+        }
 
         const page = await pdf.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
         const availableWidth = Math.max(320, container.clientWidth - 40);
         const scale = Math.min(1.6, availableWidth / baseViewport.width);
         const viewport = page.getViewport({ scale });
-        const pixelRatio = window.devicePixelRatio || 1;
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         const pageShell = document.createElement('div');
@@ -60,6 +173,12 @@ function PdfCanvasPreview({ blob }) {
           viewport,
           transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
         }).promise;
+
+        if (pageNumber === 1 && isMounted) {
+          setState({ error: '', isLoading: false });
+        }
+
+        await yieldToBrowser();
       }
 
       if (isMounted) {
@@ -69,14 +188,19 @@ function PdfCanvasPreview({ blob }) {
 
     renderPdf().catch((error) => {
       if (!isMounted) return;
+      if (sourceUrl && onSourceError) {
+        onSourceError(error);
+        return;
+      }
       setState({ error: error.message || 'Unable to render this PDF.', isLoading: false });
     });
 
     return () => {
       isMounted = false;
       loadingTask?.destroy?.();
+      if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl);
     };
-  }, [blob]);
+  }, [blob, onSourceError, sourceUrl]);
 
   return (
     <div className="relative h-full w-full overflow-y-auto bg-slate-200 px-4 py-5 dark:bg-slate-900">
@@ -97,22 +221,21 @@ function PdfCanvasPreview({ blob }) {
 }
 
 export function DocumentPreviewModal({ previewDocument, onClose }) {
-  const [preview, setPreview] = useState({
-    blob: null,
-    dataUrl: '',
-    error: '',
-    isLoading: true,
-    kind: '',
-  });
+  const [preview, setPreview] = useState(() => getInitialPreviewState(previewDocument));
+  const [imageFallbackKey, setImageFallbackKey] = useState('');
+  const [pdfFallbackKey, setPdfFallbackKey] = useState('');
 
   useEffect(() => {
     let isMounted = true;
     let imageObjectUrl = '';
+    const kindHint = getDocumentKind(previewDocument.contentType, previewDocument.fileName);
 
-    const loadPreview = async () => {
-      const blob = previewDocument.blob
-        || await getDocumentBlob({ contentType: previewDocument.contentType, url: previewDocument.url });
-      const kind = getDocumentKind(blob.type || previewDocument.contentType, previewDocument.fileName);
+    const loadBlobPreview = async () => {
+      const result = await resolvePreviewBlob(previewDocument);
+      const blob = result.blob;
+      const contentType = result.contentType || previewDocument.contentType;
+      const fileName = result.fileName || previewDocument.fileName;
+      const kind = getDocumentKind(blob.type || contentType, fileName);
 
       if (kind === 'image') {
         imageObjectUrl = URL.createObjectURL(blob);
@@ -122,7 +245,45 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
         blob,
         dataUrl: imageObjectUrl,
         kind,
+        pdfUrl: '',
+        source: 'blob',
       };
+    };
+
+    const loadPreview = async () => {
+      if (kindHint === 'pdf') {
+        loadPdfJs().catch(() => null);
+        const fastPreview = await resolvePreviewUrl(previewDocument).catch(() => null);
+
+        if (fastPreview?.url) {
+          return {
+            blob: null,
+            canFallback: canLoadBlobFallback(previewDocument),
+            dataUrl: '',
+            kind: 'pdf',
+            pdfUrl: fastPreview.url,
+            source: 'url',
+          };
+        }
+
+        return loadBlobPreview();
+      }
+
+      if (kindHint === 'image') {
+        const fastPreview = await resolvePreviewUrl(previewDocument).catch(() => null);
+
+        if (fastPreview?.url) {
+          return {
+            blob: null,
+            canFallback: canLoadBlobFallback(previewDocument),
+            dataUrl: fastPreview.url,
+            kind: 'image',
+            source: 'url',
+          };
+        }
+      }
+
+      return loadBlobPreview();
     };
 
     loadPreview()
@@ -135,6 +296,9 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
           error: '',
           isLoading: false,
           kind: result.kind,
+          canFallback: result.canFallback,
+          pdfUrl: result.pdfUrl,
+          source: result.source,
         });
       })
       .catch((error) => {
@@ -144,7 +308,9 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
           dataUrl: '',
           error: error.message || 'Unable to load this document.',
           isLoading: false,
-          kind: '',
+          kind: kindHint,
+          pdfUrl: '',
+          source: '',
         });
       });
 
@@ -154,7 +320,144 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
     };
   }, [previewDocument]);
 
+  useEffect(() => {
+    if (!imageFallbackKey) return undefined;
+
+    let isMounted = true;
+    let imageObjectUrl = '';
+    const currentKey = previewDocument.cacheKey || previewDocument.fileName || previewDocument.url || 'document-preview';
+
+    if (imageFallbackKey !== currentKey) return undefined;
+
+    resolvePreviewBlob(previewDocument)
+      .then((result) => {
+        if (!isMounted) return;
+
+        const blob = result.blob;
+        const contentType = result.contentType || previewDocument.contentType;
+        const fileName = result.fileName || previewDocument.fileName;
+        const kind = getDocumentKind(blob.type || contentType, fileName);
+
+        if (kind !== 'image') {
+          throw new Error('Unable to render this image.');
+        }
+
+        imageObjectUrl = URL.createObjectURL(blob);
+        setPreview({
+          blob,
+          dataUrl: imageObjectUrl,
+          error: '',
+          isLoading: false,
+          kind: 'image',
+          source: 'blob',
+        });
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setPreview({
+          blob: null,
+          dataUrl: '',
+          error: error.message || 'Unable to load this image.',
+          isLoading: false,
+          kind: 'image',
+          source: '',
+        });
+      });
+
+    return () => {
+      isMounted = false;
+      if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+    };
+  }, [imageFallbackKey, previewDocument]);
+
+  useEffect(() => {
+    if (!pdfFallbackKey) return undefined;
+
+    let isMounted = true;
+    const currentKey = previewDocument.cacheKey || previewDocument.fileName || previewDocument.url || 'document-preview';
+
+    if (pdfFallbackKey !== currentKey) return undefined;
+
+    resolvePreviewBlob(previewDocument)
+      .then((result) => {
+        if (!isMounted) return;
+
+        const blob = result.blob;
+        const contentType = result.contentType || previewDocument.contentType;
+        const fileName = result.fileName || previewDocument.fileName;
+        const kind = getDocumentKind(blob.type || contentType, fileName);
+
+        if (kind !== 'pdf') {
+          throw new Error('Unable to render this PDF.');
+        }
+
+        setPreview({
+          blob,
+          dataUrl: '',
+          error: '',
+          isLoading: false,
+          kind: 'pdf',
+          pdfUrl: '',
+          source: 'blob',
+        });
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setPreview({
+          blob: null,
+          dataUrl: '',
+          error: error.message || 'Unable to load this PDF.',
+          isLoading: false,
+          kind: 'pdf',
+          pdfUrl: '',
+          source: '',
+        });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pdfFallbackKey, previewDocument]);
+
   const title = previewDocument.fileName || 'Document preview';
+  const previewKey = previewDocument.cacheKey || previewDocument.fileName || previewDocument.url || 'document-preview';
+  const retryImageWithBlob = () => {
+    if (preview.source !== 'url' || !preview.canFallback) {
+      setPreview((current) => ({
+        ...current,
+        dataUrl: '',
+        error: 'Unable to load this image.',
+        isLoading: false,
+      }));
+      return;
+    }
+
+    setImageFallbackKey(previewKey);
+    setPreview((current) => ({
+      ...current,
+      error: '',
+      isLoading: true,
+    }));
+  };
+  const retryPdfWithBlob = (error) => {
+    if (preview.source !== 'url' || !preview.canFallback) {
+      setPreview((current) => ({
+        ...current,
+        error: error?.message || 'Unable to render this PDF.',
+        isLoading: false,
+        pdfUrl: '',
+      }));
+      return;
+    }
+
+    setPdfFallbackKey(previewKey);
+    setPreview((current) => ({
+      ...current,
+      error: '',
+      isLoading: true,
+      pdfUrl: '',
+    }));
+  };
 
   return createPortal(
     <div
@@ -214,12 +517,17 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
               {preview.error}
             </div>
           ) : preview.kind === 'pdf' ? (
-            <PdfCanvasPreview blob={preview.blob} />
+            <PdfCanvasPreview
+              blob={preview.blob}
+              onSourceError={retryPdfWithBlob}
+              sourceUrl={preview.pdfUrl}
+            />
           ) : preview.kind === 'image' ? (
             <img
               src={preview.dataUrl}
               alt={title}
               draggable={false}
+              onError={retryImageWithBlob}
               className="max-h-full max-w-full select-none object-contain"
             />
           ) : (

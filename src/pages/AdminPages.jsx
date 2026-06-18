@@ -26,7 +26,15 @@ import { useNotifications } from '../hooks/useNotifications';
 import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS, REGULATED_TITLE_REQUIREMENTS } from '../data/constants';
 import { backendApi } from '../services/api';
-import { downloadDocumentUrl } from '../utils/documentPreview';
+import {
+  downloadDocumentUrl,
+  getDocumentPreviewCacheKey,
+  loadCachedDocumentPreview,
+  loadCachedDocumentPreviewUrl,
+  preloadCachedDocumentPreviewUrl,
+} from '../utils/documentPreview';
+import { warmDocumentPreviewRenderer } from '../utils/pdfPreview';
+import { mergeRealtimeTalentProfileList } from '../utils/profileRealtime';
 
 const EMPTY_LIST = Object.freeze([]);
 const STATUS_OPTIONS = ['pending_review', 'approved', 'hidden', 'rejected'];
@@ -310,6 +318,7 @@ function CredentialReviewPanel({
   onReject,
   onUndoApproval,
   onView,
+  onPreviewWarmup,
   profile,
   rejectDraft,
   reviewState,
@@ -418,6 +427,8 @@ function CredentialReviewPanel({
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-start xl:w-auto xl:max-w-[22rem] xl:justify-end">
                   <button
                     onClick={() => onView(profile, document)}
+                    onFocus={() => onPreviewWarmup?.(profile, document)}
+                    onMouseEnter={() => onPreviewWarmup?.(profile, document)}
                     disabled={Boolean(busyKey)}
                     className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:cursor-default disabled:opacity-70 dark:border-slate-800 dark:text-slate-300"
                   >
@@ -629,6 +640,11 @@ function AdminOverview({ setActiveTab }) {
       realtime: [
         { table: 'professional_profiles' },
       ],
+      onRealtimeChange: (currentTalent, payload) => (
+        payload?.new
+          ? mergeRealtimeTalentProfileList(currentTalent, payload.new, { includeDraftPending: false, usePending: true })
+          : undefined
+      ),
       refreshInterval: 10000,
     }
   );
@@ -786,6 +802,11 @@ function TalentReview() {
       realtime: [
         { table: 'professional_profiles' },
       ],
+      onRealtimeChange: (currentTalent, payload) => (
+        payload?.new
+          ? mergeRealtimeTalentProfileList(currentTalent, payload.new, { includeDraftPending: false, usePending: true })
+          : undefined
+      ),
       refreshInterval: 10000,
     }
   );
@@ -849,9 +870,63 @@ function TalentReview() {
     }
   };
 
-  const openDocument = async (profile, document, { download = false } = {}) => {
+  const getAdminDocumentPreview = (profile, document) => {
     const documentKey = document.key || document.id || document.label;
+    const payload = {
+      documentKey,
+      documentType: document.documentType,
+      path: document.path,
+      professionalId: profile.id,
+    };
+    const cacheKey = getDocumentPreviewCacheKey(
+      'admin',
+      'blob',
+      profile.id,
+      document.path,
+      document.id,
+      documentKey,
+      document.fileName,
+      document.fileSize
+    );
+    const urlCacheKey = getDocumentPreviewCacheKey(
+      'admin',
+      'url',
+      profile.id,
+      document.path,
+      document.id,
+      documentKey,
+      document.fileName,
+      document.fileSize
+    );
+    const load = () => backendApi.documents.getBlob(payload);
+    const loadUrl = () => backendApi.documents.getUrl(payload);
+
+    return { cacheKey, documentKey, load, loadUrl, urlCacheKey };
+  };
+
+  const preloadAdminDocumentPreview = (profile, document) => {
+    const preview = getAdminDocumentPreview(profile, document);
+
+    warmDocumentPreviewRenderer(document.contentType, document.fileName);
+    preloadCachedDocumentPreviewUrl(preview.urlCacheKey, preview.loadUrl);
+  };
+
+  const openDocument = async (profile, document, { download = false } = {}) => {
+    const preview = getAdminDocumentPreview(profile, document);
+    const documentKey = preview.documentKey;
     const busyKey = `${profile.id}:${document.documentType}:${documentKey}:${download ? 'download' : 'view'}`;
+
+    if (!download) {
+      setActionError('');
+      setPreviewDocument({
+        blobLoader: () => loadCachedDocumentPreview(preview.cacheKey, preview.load),
+        cacheKey: preview.cacheKey,
+        contentType: document.contentType,
+        fileName: document.fileName || 'Document preview',
+        urlPromise: loadCachedDocumentPreviewUrl(preview.urlCacheKey, preview.loadUrl),
+      });
+      return;
+    }
 
     setBusyId(busyKey);
     setActionError('');
@@ -873,19 +948,6 @@ function TalentReview() {
             url: result.url,
           });
         }
-      } else {
-        const result = await backendApi.documents.getBlob({
-          documentKey,
-          documentType: document.documentType,
-          path: document.path,
-          professionalId: profile.id,
-        });
-
-        setPreviewDocument({
-          blob: result.blob,
-          contentType: result.contentType || document.contentType,
-          fileName: result.fileName || document.fileName || 'Document preview',
-        });
       }
     } catch (openError) {
       setActionError(openError.message || 'Unable to open this document.');
@@ -929,7 +991,7 @@ function TalentReview() {
     <div>
       {previewDocument && (
         <DocumentPreviewModal
-          key={previewDocument.url}
+          key={previewDocument.cacheKey || previewDocument.fileName || 'document-preview'}
           previewDocument={previewDocument}
           onClose={() => setPreviewDocument(null)}
         />
@@ -1111,6 +1173,7 @@ function TalentReview() {
                 onReject={(record, document, message) => updateCredentialStatus(record, document, 'rejected', message)}
                 onUndoApproval={(record, document) => updateCredentialStatus(record, document, 'pending_review', 'Approval reopened by admin.')}
                 onView={(record, document) => openDocument(record, document)}
+                onPreviewWarmup={preloadAdminDocumentPreview}
                 profile={profile}
                 rejectDraft={rejectDraft}
                 reviewState={reviewState}
