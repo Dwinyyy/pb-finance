@@ -82,7 +82,7 @@ const PROFESSIONAL_PROFILE_DIRECTORY_SELECT = [
   'updated_at',
 ].join(',');
 const PROFILE_OWNER_BASE_SELECT = ['id', 'full_name', 'role', 'title'];
-const PROFILE_OWNER_CONTACT_SELECT = ['id', 'email', 'full_name', 'company', 'role', 'title'];
+const PROFILE_OWNER_CONTACT_SELECT = ['id', 'email', 'full_name', 'company', 'role', 'title', 'client_tier'];
 const PROFILE_OWNER_MANUAL_TRIAGE_SELECT = [
   ...PROFILE_OWNER_CONTACT_SELECT,
   'manual_triage_required',
@@ -91,9 +91,149 @@ const PROFILE_OWNER_MANUAL_TRIAGE_SELECT = [
   'manual_triage_domain',
 ];
 const talentPrivateVisibilities = new Set(['admin', 'internal', 'owner']);
+const talentCredentialVisibilities = new Set(['admin', 'internal', 'owner', 'client_full']);
+const talentOwnerContactVisibilities = new Set(['admin', 'internal', 'owner']);
+const CLIENT_PROFILE_SELECT = 'id,email,full_name,company,role,title,client_tier';
+const CLIENT_TIERS = new Set(['basic', 'verified', 'vip']);
+const CLIENT_TIER_PERMISSIONS = Object.freeze({
+  basic: Object.freeze({
+    canDiscoverAgencies: false,
+    canReadReviews: true,
+    canReviewProfessionals: false,
+    canScheduleInterviews: false,
+    canUseMatchmaker: false,
+    canViewBasicProfiles: true,
+    canViewFullDocuments: false,
+    label: 'Basic',
+    matchmakerLevel: 'none',
+    monthlyBackgroundCheckLimit: 0,
+    monthlyJobLimit: 0,
+    shortlistLimit: 5,
+  }),
+  verified: Object.freeze({
+    canDiscoverAgencies: true,
+    canReadReviews: true,
+    canReviewProfessionals: true,
+    canScheduleInterviews: true,
+    canUseMatchmaker: true,
+    canViewBasicProfiles: true,
+    canViewFullDocuments: true,
+    label: 'Verified',
+    matchmakerLevel: 'basic',
+    monthlyBackgroundCheckLimit: 0,
+    monthlyJobLimit: 10,
+    shortlistLimit: null,
+  }),
+  vip: Object.freeze({
+    canDiscoverAgencies: true,
+    canReadReviews: true,
+    canReviewProfessionals: true,
+    canScheduleInterviews: true,
+    canUseMatchmaker: true,
+    canViewBasicProfiles: true,
+    canViewFullDocuments: true,
+    label: 'VIP',
+    matchmakerLevel: 'pro',
+    monthlyBackgroundCheckLimit: null,
+    monthlyJobLimit: null,
+    shortlistLimit: null,
+  }),
+});
+const PROFESSIONAL_TIERS = new Set(['unverified', 'verified']);
+const PROFESSIONAL_TIER_PERMISSIONS = Object.freeze({
+  unverified: Object.freeze({
+    canAccessDashboard: false,
+    canAppearInTalentPool: false,
+    canCommentOnJobPosts: false,
+    canContactClientsFromJobs: false,
+    canToggleProfileVisibility: false,
+    canViewFullClientProfiles: false,
+    label: 'Unverified',
+  }),
+  verified: Object.freeze({
+    canAccessDashboard: true,
+    canAppearInTalentPool: true,
+    canCommentOnJobPosts: true,
+    canContactClientsFromJobs: true,
+    canToggleProfileVisibility: true,
+    canViewFullClientProfiles: true,
+    label: 'Verified',
+  }),
+});
 
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
 const cleanBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
+const normalizeClientTier = (value) => {
+  const tier = cleanString(value, 40).toLowerCase();
+
+  return CLIENT_TIERS.has(tier) ? tier : 'basic';
+};
+const normalizeProfessionalTier = (value) => {
+  const tier = cleanString(value, 40).toLowerCase();
+
+  return PROFESSIONAL_TIERS.has(tier) ? tier : 'unverified';
+};
+const getProfessionalTierFromProfile = (profile) => (
+  profile?.professional_tier === 'verified'
+    && profile?.status === 'approved'
+    && profile?.identity_verification_status === 'approved'
+    ? 'verified'
+    : 'unverified'
+);
+const getClientTier = (user) => (user?.role === 'client' ? normalizeClientTier(user.clientTier || user.client_tier) : 'basic');
+const getClientPermissions = (user) => {
+  const tier = getClientTier(user);
+  const permissions = CLIENT_TIER_PERMISSIONS[tier] || CLIENT_TIER_PERMISSIONS.basic;
+
+  return {
+    ...permissions,
+    tier,
+  };
+};
+const withClientPermissions = (user) => {
+  if (!user || user.role !== 'client') {
+    return user;
+  }
+
+  const permissions = getClientPermissions(user);
+
+  return {
+    ...user,
+    clientPermissions: permissions,
+    clientTier: permissions.tier,
+    clientTierLabel: permissions.label,
+    client_tier: permissions.tier,
+  };
+};
+const getProfessionalPermissions = (userOrProfile) => {
+  const tier = userOrProfile?.user_id
+    ? getProfessionalTierFromProfile(userOrProfile)
+    : normalizeProfessionalTier(userOrProfile?.professionalTier || userOrProfile?.professional_tier);
+  const permissions = PROFESSIONAL_TIER_PERMISSIONS[tier] || PROFESSIONAL_TIER_PERMISSIONS.unverified;
+
+  return {
+    ...permissions,
+    tier,
+  };
+};
+const withProfessionalPermissions = (user, profile) => {
+  if (!user || user.role !== 'professional') {
+    return user;
+  }
+
+  const permissions = getProfessionalPermissions(profile || user);
+
+  return {
+    ...user,
+    professionalPermissions: permissions,
+    professionalTier: permissions.tier,
+    professionalTierLabel: permissions.label,
+    professional_tier: permissions.tier,
+    profileVisibility: profile?.profile_visibility || user.profileVisibility || user.profile_visibility || 'hidden',
+    profile_visibility: profile?.profile_visibility || user.profileVisibility || user.profile_visibility || 'hidden',
+  };
+};
+const withRolePermissions = (user, professionalProfile) => withProfessionalPermissions(withClientPermissions(user), professionalProfile);
 const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
 const cleanProfileTitle = (value) => {
   const title = cleanString(value, 160);
@@ -241,12 +381,12 @@ const getProfileUserForSession = async (session) => {
   const user = publicUser(session.user);
 
   if (!user.id) {
-    return user;
+    return withRolePermissions(user);
   }
 
   try {
     const rows = await supabaseRestRequest(
-      `/profiles?id=eq.${user.id}&select=id,email,full_name,company,role,title&limit=1`,
+      `/profiles?id=eq.${user.id}&select=${CLIENT_PROFILE_SELECT}&limit=1`,
       {
         token: session.access_token,
         useServiceRole: false,
@@ -255,19 +395,34 @@ const getProfileUserForSession = async (session) => {
     const profile = asList(rows)[0];
 
     if (!profile) {
-      return user;
+      return withRolePermissions(user);
     }
 
-    return {
+    const baseUser = {
       ...user,
       company: profile.company || user.company,
       email: profile.email || user.email,
       name: profile.full_name || user.name,
       role: profile.role || user.role,
+      clientTier: normalizeClientTier(profile.client_tier),
       title: profile.title || user.title,
     };
+    let professionalProfile = null;
+
+    if (baseUser.role === 'professional') {
+      const professionalRows = await supabaseRestRequest(
+        `/professional_profiles?user_id=eq.${baseUser.id}&select=professional_tier,status,profile_visibility,identity_verification_status&limit=1`,
+        {
+          token: session.access_token,
+          useServiceRole: false,
+        }
+      );
+      professionalProfile = asList(professionalRows)[0] || null;
+    }
+
+    return withRolePermissions(baseUser, professionalProfile);
   } catch {
-    return user;
+    return withRolePermissions(user);
   }
 };
 
@@ -331,7 +486,7 @@ const requireSession = async (req, res, allowedRoles = []) => {
     return null;
   }
 
-  return user;
+  return withRolePermissions(user);
 };
 
 const requireAdmin = async (req, res) => {
@@ -345,7 +500,7 @@ const requireAdmin = async (req, res) => {
   }
 
   req.useServiceRole = true;
-  return user;
+  return withRolePermissions(user);
 };
 
 const requireAdminOrCronSecret = async (req, res) => {
@@ -376,6 +531,144 @@ const writeRows = (req, path, body, { method = 'POST', prefer = 'return=represen
 const patchRows = (req, path, body, { prefer = 'return=representation', useServiceRole = false } = {}) => (
   writeRows(req, path, body, { method: 'PATCH', prefer, useServiceRole })
 );
+
+const isMissingSchemaError = (error, names = []) => {
+  const message = String(error?.message || '').toLowerCase();
+
+  return names.some((name) => message.includes(String(name).toLowerCase()));
+};
+const readRowsIfPresent = async (req, path, missingNames, options = {}) => {
+  try {
+    return await readRows(req, path, options);
+  } catch (error) {
+    if (isMissingSchemaError(error, missingNames)) {
+      return [];
+    }
+
+    throw error;
+  }
+};
+const getMonthStartIso = () => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+};
+const getSearchParams = (req) => new URL(
+  req.url || '/api',
+  `https://${req.headers.host || 'localhost'}`
+).searchParams;
+const getClientMonthlyJobUsage = async (req, user) => {
+  const monthStart = getMonthStartIso();
+  const [jobs, opportunities] = await Promise.all([
+    readRowsIfPresent(
+      req,
+      `/client_jobs?client_id=eq.${user.id}&created_at=gte.${encodeURIComponent(monthStart)}&select=id&limit=100`,
+      ['client_jobs'],
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/opportunities?client_id=eq.${user.id}&created_at=gte.${encodeURIComponent(monthStart)}&select=id&limit=100`,
+      { useServiceRole: true }
+    ),
+  ]);
+
+  return asList(jobs).length + asList(opportunities).length;
+};
+const getClientShortlistUsage = async (req, user) => {
+  const rows = await readRows(
+    req,
+    `/shortlists?client_id=eq.${user.id}&status=neq.archived&select=professional_id&limit=100`,
+    { useServiceRole: true }
+  );
+
+  return asList(rows);
+};
+const getClientMonthlyBackgroundCheckUsage = async (req, user) => {
+  const monthStart = getMonthStartIso();
+  const rows = await readRowsIfPresent(
+    req,
+    `/client_background_checks?client_id=eq.${user.id}&created_at=gte.${encodeURIComponent(monthStart)}&select=id&limit=100`,
+    ['client_background_checks'],
+    { useServiceRole: true }
+  );
+
+  return asList(rows).length;
+};
+const requireClientCapability = (res, user, capability, message) => {
+  const permissions = getClientPermissions(user);
+
+  if (permissions[capability]) {
+    return permissions;
+  }
+
+  sendError(res, 403, message || 'Your client tier does not include this feature.');
+  return null;
+};
+const requireClientJobPostPermission = async (req, res, user) => {
+  const permissions = getClientPermissions(user);
+  const limit = permissions.monthlyJobLimit;
+
+  if (limit === null) {
+    return { permissions, usage: null };
+  }
+
+  if (limit <= 0) {
+    sendError(res, 403, 'Basic clients cannot post jobs.');
+    return null;
+  }
+
+  const usage = await getClientMonthlyJobUsage(req, user);
+
+  if (usage >= limit) {
+    sendError(res, 403, `${permissions.label} clients can post ${limit} jobs per month. This month's limit has been reached.`);
+    return null;
+  }
+
+  return { permissions, usage };
+};
+const requireClientShortlistPermission = async (req, res, user, professionalId) => {
+  const permissions = getClientPermissions(user);
+  const limit = permissions.shortlistLimit;
+
+  if (limit === null) {
+    return { permissions, usage: null };
+  }
+
+  const shortlist = await getClientShortlistUsage(req, user);
+
+  if (shortlist.some((row) => row.professional_id === professionalId)) {
+    return { permissions, usage: shortlist.length };
+  }
+
+  if (shortlist.length >= limit) {
+    sendError(res, 403, `Basic clients can save up to ${limit} professionals.`);
+    return null;
+  }
+
+  return { permissions, usage: shortlist.length };
+};
+const requireClientBackgroundCheckPermission = async (req, res, user) => {
+  const permissions = getClientPermissions(user);
+  const limit = permissions.monthlyBackgroundCheckLimit;
+
+  if (limit === null) {
+    return { permissions, usage: null };
+  }
+
+  if (limit <= 0) {
+    sendError(res, 403, 'Only VIP clients can request background checks.');
+    return null;
+  }
+
+  const usage = await getClientMonthlyBackgroundCheckUsage(req, user);
+
+  if (usage >= limit) {
+    sendError(res, 403, `${permissions.label} clients have reached their monthly background check limit.`);
+    return null;
+  }
+
+  return { permissions, usage };
+};
 
 const byIdFilter = (ids) => `in.(${ids.map((id) => encodeURIComponent(id)).join(',')})`;
 
@@ -448,15 +741,53 @@ const toProfilePatch = (profile, fallback = {}) => ({
   years_experience: toNumber(valueOrFallback(profile, fallback, 'years_experience')),
 });
 
+const isClientVisibleCredential = (credential) => {
+  const record = cleanCredentialFileRecord(credential);
+
+  return record && record.status === 'approved' ? record : null;
+};
+const toClientCredentialMetadata = (credential, documentType) => {
+  const record = isClientVisibleCredential(credential);
+
+  if (!record) return null;
+
+  return {
+    contentType: record.contentType,
+    documentType: documentType || record.kind || 'supporting_document',
+    expiryDate: record.expiryDate,
+    fileName: record.fileName,
+    fileSize: record.fileSize,
+    id: record.id,
+    key: record.key,
+    kind: record.kind,
+    label: record.label || record.fileName,
+    noExpiryRequired: record.noExpiryRequired,
+    status: record.status,
+    uploadedAt: record.uploadedAt,
+  };
+};
+const toClientVisibleWorkPreferences = (workPreferences) => {
+  const preferences = cleanWorkPreferences(workPreferences);
+
+  return {
+    externalLinks: [],
+    resume: toClientCredentialMetadata(preferences.resume, 'resume'),
+    supportingDocuments: asList(preferences.supportingDocuments)
+      .map((document) => toClientCredentialMetadata(document, document.kind || 'supporting_document'))
+      .filter(Boolean),
+  };
+};
+
 const mapTalentProfile = (profile, owner = {}, {
   includeDraftPending = false,
   usePending = false,
   visibility = 'directory',
 } = {}) => {
   const includePrivateProfileData = talentPrivateVisibilities.has(visibility);
-  const includeCredentialData = includePrivateProfileData;
-  const includeOwnerContact = includePrivateProfileData;
+  const includeCredentialData = talentCredentialVisibilities.has(visibility);
+  const includeOwnerContact = talentOwnerContactVisibilities.has(visibility);
   const includeManualTriage = visibility === 'admin';
+  const includeClientCredentialData = visibility === 'client_full';
   const hasDraftPending = isDraftPendingProfile(profile);
   const canShowPending = usePending && (
     includeDraftPending
@@ -478,6 +809,10 @@ const mapTalentProfile = (profile, owner = {}, {
   const reviewStatus = profile.review_status || (profile.status === 'pending_review' ? 'pending_review' : null);
   const canShowWorkPreferences = includeCredentialData && (includeDraftPending || canShowPending || profile.status !== 'draft');
   const workPreferences = cleanWorkPreferences(canShowWorkPreferences ? viewProfile.work_preferences : {});
+  const visibleWorkPreferences = includeClientCredentialData
+    ? toClientVisibleWorkPreferences(workPreferences)
+    : workPreferences;
+  const professionalPermissions = getProfessionalPermissions(profile);
 
   const mapped = {
     available: viewProfile.availability || 'Immediate Start',
@@ -503,6 +838,10 @@ const mapTalentProfile = (profile, owner = {}, {
     yearsExperience: years,
   };
 
+  if (visibility === 'client_full') {
+    mapped.canViewFullDocuments = true;
+  }
+
   if (includeOwnerContact) {
     mapped.email = owner.email || '';
   }
@@ -516,15 +855,22 @@ const mapTalentProfile = (profile, owner = {}, {
 
   if (includePrivateProfileData) {
     mapped.hasPendingChanges = hasPendingProfile(profile);
+    mapped.identityVerificationNotes = profile.identity_verification_notes || '';
+    mapped.identityVerificationStatus = profile.identity_verification_status || 'pending';
     mapped.pendingDraftOnly = hasDraftPending;
+    mapped.professionalPermissions = professionalPermissions;
+    mapped.professionalTier = professionalPermissions.tier;
+    mapped.professionalTierLabel = professionalPermissions.label;
+    mapped.profileVisibility = profile.profile_visibility || 'hidden';
     mapped.reviewStatus = reviewStatus;
+    mapped.verifiedAt = profile.verified_at || null;
   }
 
   if (includeCredentialData) {
-    mapped.externalLinks = asList(workPreferences.externalLinks);
-    mapped.resume = workPreferences.resume || null;
-    mapped.supportingDocuments = asList(workPreferences.supportingDocuments);
-    mapped.workPreferences = workPreferences;
+    mapped.externalLinks = asList(visibleWorkPreferences.externalLinks);
+    mapped.resume = visibleWorkPreferences.resume || null;
+    mapped.supportingDocuments = asList(visibleWorkPreferences.supportingDocuments);
+    mapped.workPreferences = visibleWorkPreferences;
   }
 
   return mapped;
@@ -548,12 +894,17 @@ const loadTalentProfiles = async (req, {
 
   if (onlyApproved) {
     filters.push('status=eq.approved');
+    filters.push('professional_tier=eq.verified');
+    filters.push('identity_verification_status=eq.approved');
+    filters.push('profile_visibility=eq.visible');
   }
 
   const query = filters.length ? `?${filters.join('&')}&` : '?';
   const includePrivateProfileData = talentPrivateVisibilities.has(visibility);
+  const includeCredentialData = talentCredentialVisibilities.has(visibility);
+  const includeOwnerContact = talentOwnerContactVisibilities.has(visibility);
   const useServiceRole = visibility !== 'owner';
-  const select = includePrivateProfileData ? PROFESSIONAL_PROFILE_PRIVATE_SELECT : PROFESSIONAL_PROFILE_DIRECTORY_SELECT;
+  const select = includePrivateProfileData || includeCredentialData ? PROFESSIONAL_PROFILE_PRIVATE_SELECT : PROFESSIONAL_PROFILE_DIRECTORY_SELECT;
   const rows = await readRows(
     req,
     `/professional_profiles${query}select=${select}&order=updated_at.desc&limit=100`,
@@ -561,7 +912,7 @@ const loadTalentProfiles = async (req, {
   );
   const profileRows = asList(rows);
   const owners = await loadProfilesById(req, profileRows.map((row) => row.user_id), {
-    includeContact: includePrivateProfileData,
+    includeContact: includeOwnerContact,
     includeManualTriage: visibility === 'admin',
     useServiceRole,
   });
@@ -614,6 +965,9 @@ const getProfessionalProfile = async (req, professionalId, {
 
   if (requireApproved) {
     filters.push('status=eq.approved');
+    filters.push('professional_tier=eq.verified');
+    filters.push('identity_verification_status=eq.approved');
+    filters.push('profile_visibility=eq.visible');
   }
 
   const rows = await readRows(
@@ -625,6 +979,29 @@ const getProfessionalProfile = async (req, professionalId, {
   return asList(rows)[0] || null;
 };
 
+const requireProfessionalCapability = async (req, res, user, capability, message) => {
+  const profile = await getProfessionalProfile(req, user?.id, {
+    includeSensitive: true,
+    useServiceRole: true,
+  });
+  const permissions = getProfessionalPermissions(profile || user);
+
+  if (!profile || !permissions[capability]) {
+    sendError(res, 403, message || 'Your professional verification status does not include this feature.');
+    return null;
+  }
+
+  return { permissions, profile };
+};
+
+const requireVerifiedProfessional = (req, res, user, message) => requireProfessionalCapability(
+  req,
+  res,
+  user,
+  'canAccessDashboard',
+  message || 'Only verified professionals can access the professional dashboard.'
+);
+
 const getPrimaryClientCompanyName = async (req, clientId, fallback = '') => {
   const rows = await readRows(
     req,
@@ -634,22 +1011,21 @@ const getPrimaryClientCompanyName = async (req, clientId, fallback = '') => {
   return asList(rows)[0]?.name || fallback || 'Client company';
 };
 
-const anonymousClientIdentity = () => ({
-  clientIdentityVisible: false,
-  clientName: 'Client company',
-  company: 'Client company',
-});
-
 const normalizeAvailability = (value) => {
   return value || 'Immediate Start';
 };
 
 const talentStatuses = new Set(['draft', 'pending_review', 'approved', 'hidden', 'rejected']);
 const agencyStatuses = new Set(['draft', 'pending_review', 'approved', 'hidden', 'rejected']);
+const identityVerificationStatuses = new Set(['pending', 'approved', 'rejected']);
 
 const normalizeStatus = (status, allowedStatuses, fallback = 'pending_review') => {
   const value = cleanString(status, 40);
   return allowedStatuses.has(value) ? value : fallback;
+};
+const normalizeIdentityVerificationStatus = (status, fallback = '') => {
+  const value = cleanString(status, 40);
+  return identityVerificationStatuses.has(value) ? value : fallback;
 };
 
 const formatStatusLabel = (value) => cleanString(value, 80).replace(/_/g, ' ');
@@ -664,6 +1040,77 @@ const mapNotification = (notification) => ({
   readAt: notification.read_at,
   title: notification.title,
   type: notification.type,
+});
+
+const mapClientJob = (job) => ({
+  clientId: job.client_id,
+  createdAt: job.created_at,
+  description: job.description || '',
+  employmentType: job.employment_type || '',
+  id: job.id,
+  location: job.location || '',
+  status: job.status,
+  title: job.title,
+  updatedAt: job.updated_at,
+});
+
+const mapJobComment = (comment) => ({
+  comment: comment.comment || '',
+  createdAt: comment.created_at,
+  id: comment.id,
+  jobId: comment.job_id,
+  professionalId: comment.professional_id,
+  status: comment.status,
+  updatedAt: comment.updated_at,
+});
+
+const mapJobContact = (contact) => ({
+  createdAt: contact.created_at,
+  id: contact.id,
+  jobId: contact.job_id,
+  message: contact.message || '',
+  professionalId: contact.professional_id,
+  status: contact.status,
+  updatedAt: contact.updated_at,
+});
+
+const mapClientJobForProfessional = (job, client = {}, { comments = [], contact = null } = {}) => ({
+  ...mapClientJob(job),
+  clientProfile: {
+    clientTier: client.client_tier || 'basic',
+    company: client.company || '',
+    email: client.email || '',
+    id: client.id || job.client_id,
+    name: client.full_name || client.name || '',
+    role: client.role || 'client',
+    title: client.title || '',
+  },
+  comments: comments.map(mapJobComment),
+  contact: contact ? mapJobContact(contact) : null,
+});
+
+const mapProfessionalReview = (review) => ({
+  clientId: review.client_id,
+  createdAt: review.created_at,
+  id: review.id,
+  professionalId: review.professional_id,
+  rating: review.rating,
+  review: review.review || '',
+  status: review.status,
+  updatedAt: review.updated_at,
+});
+
+const mapBackgroundCheck = (check) => ({
+  clientId: check.client_id,
+  completedAt: check.completed_at,
+  createdAt: check.created_at,
+  id: check.id,
+  package: check.package,
+  professionalId: check.professional_id,
+  requestedAt: check.requested_at,
+  resultSummary: check.result_summary || '',
+  status: check.status,
+  updatedAt: check.updated_at,
 });
 
 const opportunityStatusPriority = {
@@ -974,18 +1421,32 @@ const getAccessibleCredentialDocument = async (req, user, body) => {
     throw error;
   }
 
-  if (user.role !== 'admin' && professionalId !== user.id) {
+  const isAdmin = user.role === 'admin';
+  const isProfessionalOwner = user.role === 'professional' && professionalId === user.id;
+  const isClientViewer = user.role === 'client';
+  const clientPermissions = getClientPermissions(user);
+
+  if (isClientViewer && !clientPermissions.canViewFullDocuments) {
+    const error = new Error('Basic clients cannot view resumes or required documents.');
+    error.status = 403;
+    throw error;
+  }
+
+  if (!isAdmin && !isProfessionalOwner && !isClientViewer) {
     const error = new Error('You do not have access to this document.');
     error.status = 403;
     throw error;
   }
 
-  if (user.role === 'admin') {
+  if (isAdmin || isClientViewer) {
     req.useServiceRole = true;
   }
 
-  const profile = await getProfessionalProfile(req, professionalId);
-  if (profile && user.role !== 'admin') {
+  const profile = await getProfessionalProfile(req, professionalId, {
+    requireApproved: isClientViewer,
+    useServiceRole: isAdmin || isClientViewer,
+  });
+  if (profile && isProfessionalOwner) {
     profile.__includePendingProfile = true;
   }
   const document = profile ? findCredentialRecord(profile, {
@@ -995,6 +1456,12 @@ const getAccessibleCredentialDocument = async (req, user, body) => {
   }) : null;
 
   if (!document?.path) {
+    const error = new Error('Document not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  if (isClientViewer && document.status !== 'approved') {
     const error = new Error('Document not found.');
     error.status = 404;
     throw error;
@@ -1330,6 +1797,10 @@ const getCredentialApprovalBlocker = (profile) => {
   const pendingDocuments = requiredDocuments.filter((document) => (document.status || 'pending_review') === 'pending_review');
   const expiryBlocker = getRequiredExpiryBlocker(requiredDocuments);
 
+  if (profile?.identity_verification_status !== 'approved') {
+    return 'Identity verification must be approved before this professional can be verified.';
+  }
+
   if (!resume) {
     return 'Resume approval is required before this profile can be approved.';
   }
@@ -1646,7 +2117,7 @@ const handlers = {
       // Account triage should never block an otherwise valid session.
     }
 
-    sendJson(res, 200, { provider: 'supabase', user });
+    sendJson(res, 200, { provider: 'supabase', user: withClientPermissions(user) });
   },
 
   'POST /auth/google': async (req, res) => {
@@ -1904,6 +2375,8 @@ const handlers = {
     const status = normalizeStatus(body.status, talentStatuses, '');
     const credentialReview = cleanRecord(body.credentialReview || body.documentReview);
     const hasCredentialReview = Object.keys(credentialReview).length > 0;
+    const identityVerification = cleanRecord(body.identityVerification || body.identity_verification);
+    const hasIdentityVerification = Object.keys(identityVerification).length > 0;
     const titlesUpdate = body.titles; // Optional array of titles
     const clearTriage = body.clearTriage; // Optional boolean to clear manual triage
 
@@ -1912,7 +2385,7 @@ const handlers = {
       return;
     }
 
-    if (!status && !hasCredentialReview && !titlesUpdate && clearTriage === undefined) {
+    if (!status && !hasCredentialReview && !hasIdentityVerification && !titlesUpdate && clearTriage === undefined) {
       sendError(res, 400, 'A valid talent status, review, or profile update is required.');
       return;
     }
@@ -1931,6 +2404,115 @@ const handlers = {
     const pendingProfile = existingProfile.pending_profile || {};
     const hasPendingChanges = hasPendingProfile(existingProfile);
 
+    if (hasIdentityVerification && !status && !hasCredentialReview && !titlesUpdate && clearTriage === undefined) {
+      const identityStatus = normalizeIdentityVerificationStatus(identityVerification.status);
+      const now = new Date().toISOString();
+
+      if (!identityStatus) {
+        sendError(res, 400, 'Identity verification status must be pending, approved, or rejected.');
+        return;
+      }
+
+      let identityPayload = {
+        identity_verification_notes: cleanString(
+          identityVerification.notes
+            || identityVerification.note
+            || identityVerification.reason
+            || identityVerification.message,
+          1000
+        ),
+        identity_verification_status: identityStatus,
+      };
+
+      if (identityStatus === 'approved') {
+        identityPayload = {
+          ...identityPayload,
+          identity_verified_at: now,
+          identity_verified_by: user.id,
+        };
+
+        const candidateProfile = {
+          ...existingProfile,
+          ...identityPayload,
+        };
+
+        if (existingProfile.status === 'approved' && !getCredentialApprovalBlocker(candidateProfile)) {
+          identityPayload = {
+            ...identityPayload,
+            professional_tier: 'verified',
+            profile_visibility: existingProfile.professional_tier === 'verified'
+              && existingProfile.profile_visibility === 'hidden'
+              ? 'hidden'
+              : 'visible',
+            verified_at: existingProfile.verified_at || now,
+          };
+        }
+      } else {
+        identityPayload = {
+          ...identityPayload,
+          identity_verified_at: null,
+          identity_verified_by: null,
+          professional_tier: 'unverified',
+          profile_visibility: 'hidden',
+          verified_at: null,
+          ...(existingProfile.status === 'approved'
+            ? {
+              review_status: 'pending_review',
+              review_submitted_at: now,
+              status: 'pending_review',
+            }
+            : {}),
+        };
+      }
+
+      const rows = await patchRows(
+        req,
+        `/professional_profiles?user_id=eq.${professionalId}`,
+        identityPayload
+      );
+      const saved = asList(rows)[0];
+
+      if (!saved) {
+        sendError(res, 404, 'Talent profile not found.');
+        return;
+      }
+
+      const owners = await loadProfilesById(req, [professionalId], {
+        includeContact: true,
+        includeManualTriage: true,
+        useServiceRole: true,
+      });
+      const owner = owners.get(professionalId) || {};
+      const mappedProfile = mapTalentProfile(saved, owner, { usePending: true, visibility: 'admin' });
+
+      notifyUser({
+        actionUrl: '/?tab=profile',
+        body: identityStatus === 'approved'
+          ? 'Your identity verification was approved.'
+          : identityStatus === 'rejected'
+            ? 'Your identity verification was rejected. Update your documents and submit again when ready.'
+            : 'Your identity verification was moved back to pending review.',
+        emailSubject: `PB Finance identity verification ${formatStatusLabel(identityStatus)}`,
+        metadata: {
+          identityVerificationStatus: identityStatus,
+          professionalId,
+        },
+        recipientEmail: owner.email,
+        recipientId: professionalId,
+        recipientName: owner.full_name,
+        title: `Identity ${formatStatusLabel(identityStatus)}`,
+        type: 'identity_verification_updated',
+      }).catch(() => {});
+
+      sendJson(res, 200, mappedProfile);
+      return;
+    }
+
+    if (hasIdentityVerification) {
+      sendError(res, 400, 'Update identity verification separately from profile status or document review actions.');
+      return;
+    }
+
     if (hasCredentialReview) {
       let reviewResult;
 
@@ -1941,10 +2523,30 @@ const handlers = {
         return;
       }
 
+      let reviewPayload = reviewResult.payload;
+      const candidateProfile = {
+        ...existingProfile,
+        ...reviewPayload,
+      };
+      const shouldDowngradeVerification = existingProfile.professional_tier === 'verified'
+        && Boolean(getCredentialApprovalBlocker(candidateProfile));
+
+      if (shouldDowngradeVerification) {
+        reviewPayload = {
+          ...reviewPayload,
+          professional_tier: 'unverified',
+          profile_visibility: 'hidden',
+          review_status: 'pending_review',
+          review_submitted_at: existingProfile.review_submitted_at || new Date().toISOString(),
+          status: 'pending_review',
+          verified_at: null,
+        };
+      }
+
       const rows = await patchRows(
         req,
         `/professional_profiles?user_id=eq.${professionalId}`,
-        reviewResult.payload
+        reviewPayload
       );
       const saved = asList(rows)[0];
 
@@ -2071,9 +2673,17 @@ const handlers = {
       }, { prefer: 'return=minimal' });
     }
 
+    const now = new Date().toISOString();
     let payload = {
       ...(status ? { status } : {}),
-      ...(status === 'approved' ? { published_at: new Date().toISOString() } : {}),
+      ...(status === 'approved'
+        ? {
+          professional_tier: 'verified',
+          profile_visibility: 'visible',
+          published_at: now,
+          verified_at: existingProfile.verified_at || now,
+        }
+        : {}),
       ...(titlesUpdate ? { titles: titlesUpdate } : {}),
     };
 
@@ -2090,27 +2700,36 @@ const handlers = {
       payload = {
         ...toProfilePatch(pendingProfile, existingProfile),
         pending_profile: {},
-        published_at: new Date().toISOString(),
+        professional_tier: 'verified',
+        profile_visibility: 'visible',
+        published_at: now,
         review_status: null,
         review_submitted_at: null,
         status: 'approved',
+        verified_at: existingProfile.verified_at || now,
       };
     } else if (status === 'approved' && existingProfile.review_status === 'pending_review') {
       payload = {
         pending_profile: {},
-        published_at: new Date().toISOString(),
+        professional_tier: 'verified',
+        profile_visibility: 'visible',
+        published_at: now,
         review_status: null,
         review_submitted_at: null,
         status: 'approved',
+        verified_at: existingProfile.verified_at || now,
       };
     } else if (status === 'rejected' && existingProfile.status === 'approved') {
       const { workPreferences } = getReviewableWorkPreferences(existingProfile);
 
       payload = {
         pending_profile: {},
+        professional_tier: 'unverified',
+        profile_visibility: 'hidden',
         review_status: null,
-        review_submitted_at: new Date().toISOString(),
+        review_submitted_at: now,
         status: 'pending_review',
+        verified_at: null,
         work_preferences: reopenApprovedWorkPreferences(workPreferences, {
           adminId: user.id,
           message: 'Professional verification was rejected. Approved documents were reopened for review.',
@@ -2123,9 +2742,12 @@ const handlers = {
     } else if (['hidden', 'rejected'].includes(status)) {
       payload = {
         pending_profile: {},
+        professional_tier: 'unverified',
+        profile_visibility: 'hidden',
         review_status: null,
         review_submitted_at: null,
         status,
+        verified_at: null,
       };
     }
 
@@ -2234,8 +2856,16 @@ const handlers = {
   },
 
   'GET /agencies': async (req, res) => {
-    const user = await requireSession(req, res);
+    const user = await requireSession(req, res, ['client']);
     if (!user) return;
+
+    const permissions = requireClientCapability(
+      res,
+      user,
+      'canDiscoverAgencies',
+      'Basic clients cannot access or view the discover agencies feature.'
+    );
+    if (!permissions) return;
 
     const agencies = await readRows(
       req,
@@ -2243,6 +2873,201 @@ const handlers = {
     );
 
     sendJson(res, 200, asList(agencies).map(mapAgency));
+  },
+
+  'GET /client/permissions': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const permissions = getClientPermissions(user);
+    const [monthlyJobUsage, monthlyBackgroundCheckUsage, shortlistRows] = await Promise.all([
+      getClientMonthlyJobUsage(req, user),
+      getClientMonthlyBackgroundCheckUsage(req, user),
+      getClientShortlistUsage(req, user),
+    ]);
+
+    sendJson(res, 200, {
+      permissions,
+      usage: {
+        monthlyBackgroundChecks: monthlyBackgroundCheckUsage,
+        monthlyJobs: monthlyJobUsage,
+        shortlist: shortlistRows.length,
+      },
+    });
+  },
+
+  'GET /client/jobs': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const rows = await readRowsIfPresent(
+      req,
+      `/client_jobs?client_id=eq.${user.id}&select=*&order=created_at.desc&limit=100`,
+      ['client_jobs'],
+      { useServiceRole: true }
+    );
+
+    sendJson(res, 200, asList(rows).map(mapClientJob));
+  },
+
+  'POST /client/jobs': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const allowance = await requireClientJobPostPermission(req, res, user);
+    if (!allowance) return;
+
+    const body = await readJson(req);
+    const title = cleanString(body.title, 180);
+
+    if (!title) {
+      sendError(res, 400, 'Job title is required.');
+      return;
+    }
+
+    const rows = await writeRows(req, '/client_jobs', {
+      client_id: user.id,
+      description: cleanString(body.description, 3000),
+      employment_type: cleanString(body.employmentType || body.employment_type, 80),
+      location: cleanString(body.location, 180),
+      status: ['draft', 'open', 'closed', 'archived'].includes(body.status) ? body.status : 'open',
+      title,
+    });
+
+    sendJson(res, 201, mapClientJob(asList(rows)[0]));
+  },
+
+  'GET /client/reviews': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    const params = getSearchParams(req);
+    const professionalId = cleanString(params.get('professionalId') || params.get('professional_id'), 80);
+    const filters = ['status=eq.published'];
+
+    if (professionalId) {
+      if (!isUuid(professionalId)) {
+        sendError(res, 400, 'A valid professionalId is required.');
+        return;
+      }
+
+      filters.push(`professional_id=eq.${professionalId}`);
+    }
+
+    const rows = await readRowsIfPresent(
+      req,
+      `/professional_reviews?${filters.join('&')}&select=*&order=created_at.desc&limit=100`,
+      ['professional_reviews'],
+      { useServiceRole: true }
+    );
+
+    sendJson(res, 200, asList(rows).map(mapProfessionalReview));
+  },
+
+  'POST /client/reviews': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const permissions = requireClientCapability(
+      res,
+      user,
+      'canReviewProfessionals',
+      'Basic clients can read reviews but cannot leave them.'
+    );
+    if (!permissions) return;
+
+    const body = await readJson(req);
+    const professionalId = cleanString(body.professionalId || body.professional_id, 80);
+    const rating = Number(body.rating);
+
+    if (!isUuid(professionalId)) {
+      sendError(res, 400, 'A valid professionalId is required.');
+      return;
+    }
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      sendError(res, 400, 'Rating must be a whole number from 1 to 5.');
+      return;
+    }
+
+    const professionalProfile = await getProfessionalProfile(req, professionalId, {
+      includeSensitive: false,
+      requireApproved: true,
+      useServiceRole: true,
+    });
+
+    if (!professionalProfile) {
+      sendError(res, 404, 'Approved talent profile not found.');
+      return;
+    }
+
+    const rows = await writeRows(
+      req,
+      '/professional_reviews?on_conflict=client_id,professional_id',
+      {
+        client_id: user.id,
+        professional_id: professionalId,
+        rating,
+        review: cleanString(body.review || body.comment, 2000),
+        status: 'published',
+      },
+      { prefer: 'resolution=merge-duplicates,return=representation' }
+    );
+
+    sendJson(res, 201, mapProfessionalReview(asList(rows)[0]));
+  },
+
+  'GET /client/background-checks': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const allowance = await requireClientBackgroundCheckPermission(req, res, user);
+    if (!allowance) return;
+
+    const rows = await readRowsIfPresent(
+      req,
+      `/client_background_checks?client_id=eq.${user.id}&select=*&order=created_at.desc&limit=100`,
+      ['client_background_checks'],
+      { useServiceRole: true }
+    );
+
+    sendJson(res, 200, asList(rows).map(mapBackgroundCheck));
+  },
+
+  'POST /client/background-checks': async (req, res) => {
+    const user = await requireSession(req, res, ['client']);
+    if (!user) return;
+
+    const allowance = await requireClientBackgroundCheckPermission(req, res, user);
+    if (!allowance) return;
+
+    const body = await readJson(req);
+    const professionalId = cleanString(body.professionalId || body.professional_id, 80);
+
+    if (!isUuid(professionalId)) {
+      sendError(res, 400, 'A valid professionalId is required.');
+      return;
+    }
+
+    const professionalProfile = await getProfessionalProfile(req, professionalId, {
+      includeSensitive: false,
+      requireApproved: true,
+      useServiceRole: true,
+    });
+
+    if (!professionalProfile) {
+      sendError(res, 404, 'Approved talent profile not found.');
+      return;
+    }
+
+    const rows = await writeRows(req, '/client_background_checks', {
+      client_id: user.id,
+      package: cleanString(body.package, 80) || 'standard',
+      professional_id: professionalId,
+      status: 'requested',
+    });
+
+    sendJson(res, 201, mapBackgroundCheck(asList(rows)[0]));
   },
 
   'GET /client/billing': async (req, res) => {
@@ -2387,6 +3212,9 @@ const handlers = {
       return;
     }
 
+    const allowance = await requireClientShortlistPermission(req, res, user, professionalId);
+    if (!allowance) return;
+
     const rows = await writeRows(
       req,
       '/shortlists?on_conflict=client_id,professional_id',
@@ -2429,6 +3257,14 @@ const handlers = {
   'POST /client/interviews': async (req, res) => {
     const user = await requireSession(req, res, ['client']);
     if (!user) return;
+
+    const schedulePermissions = requireClientCapability(
+      res,
+      user,
+      'canScheduleInterviews',
+      'Basic clients cannot schedule interviews.'
+    );
+    if (!schedulePermissions) return;
 
     const body = await readJson(req);
     const professionalId = cleanString(body.professionalId || body.professional_id, 80);
@@ -2476,6 +3312,9 @@ const handlers = {
     let opportunity = asList(activeOpportunities)[0];
 
     if (!opportunity) {
+      const jobAllowance = await requireClientJobPostPermission(req, res, user);
+      if (!jobAllowance) return;
+
       const opportunityRows = await writeRows(req, '/opportunities', {
         client_id: user.id,
         company_name: companyName,
@@ -2616,6 +3455,14 @@ const handlers = {
     const user = await requireSession(req, res, ['client']);
     if (!user) return;
 
+    const permissions = requireClientCapability(
+      res,
+      user,
+      'canUseMatchmaker',
+      'Basic clients cannot access the AI matchmaker.'
+    );
+    if (!permissions) return;
+
     const body = await readJson(req);
     const message = String(body.message || '').trim();
 
@@ -2624,9 +3471,12 @@ const handlers = {
       return;
     }
 
+    const useProMatchmaker = permissions.matchmakerLevel === 'pro';
     const [talent, agencyRows] = await Promise.all([
       loadTalentProfiles(req, { onlyApproved: true }),
-      readRows(req, '/agencies?status=eq.approved&select=*&order=updated_at.desc&limit=100'),
+      useProMatchmaker
+        ? readRows(req, '/agencies?status=eq.approved&select=*&order=updated_at.desc&limit=100')
+        : [],
     ]);
     const agencies = asList(agencyRows).map(mapAgency);
     const tokens = tokenize(message);
@@ -2650,11 +3500,14 @@ const handlers = {
 
     writeRows(req, '/match_requests', {
       client_id: user.id,
+      matchmaker_level: permissions.matchmakerLevel,
       message,
       result_count: matches.length,
+      tier: permissions.tier,
     }, { prefer: 'return=minimal' }).catch(() => {});
 
     sendJson(res, 200, {
+      matchmakerLevel: permissions.matchmakerLevel,
       matches: matches.map((item) => item.match),
       message: matches.length
         ? `I found ${matches.length} relevant match${matches.length === 1 ? '' : 'es'} for that request.`
@@ -2666,6 +3519,9 @@ const handlers = {
   'GET /talent/earnings': async (req, res) => {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
+
+    const access = await requireVerifiedProfessional(req, res, user);
+    if (!access) return;
 
     const timesheets = await readRows(
       req,
@@ -2952,6 +3808,9 @@ const handlers = {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
 
+    const access = await requireVerifiedProfessional(req, res, user);
+    if (!access) return;
+
     const opportunities = await readRows(
       req,
       `/opportunities?professional_id=eq.${user.id}&status=neq.closed&select=*&order=received_at.desc&limit=50`,
@@ -2959,19 +3818,40 @@ const handlers = {
     );
     const opportunityRows = asList(opportunities);
     const opportunityIds = opportunityRows.map((opportunity) => opportunity.id);
-    const interviewRows = opportunityIds.length
-      ? await readRows(
-        req,
-        `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&professional_hidden_at=is.null&select=*&limit=100`,
-        { useServiceRole: true }
-      )
-      : [];
+    const [interviewRows, clientProfiles] = await Promise.all([
+      opportunityIds.length
+        ? readRows(
+          req,
+          `/interviews?opportunity_id=${byIdFilter(opportunityIds)}&professional_id=eq.${user.id}&professional_hidden_at=is.null&select=*&limit=100`,
+          { useServiceRole: true }
+        )
+        : [],
+      loadProfilesById(req, opportunityRows.map((opportunity) => opportunity.client_id), {
+        includeContact: true,
+        useServiceRole: true,
+      }),
+    ]);
     const interviewsByOpportunity = new Map(asList(interviewRows).map((interview) => [interview.opportunity_id, interview]));
 
     sendJson(res, 200, opportunityRows.map((opportunity) => {
       const interview = interviewsByOpportunity.get(opportunity.id) || {};
       const effectiveStatus = interview.status === 'cancelled' ? 'cancelled' : opportunity.status;
-      const clientIdentity = anonymousClientIdentity();
+      const client = clientProfiles.get(opportunity.client_id) || {};
+      const clientName = client.company || client.full_name || 'Client company';
+      const clientIdentity = {
+        clientIdentityVisible: true,
+        clientName,
+        clientProfile: {
+          clientTier: client.client_tier || 'basic',
+          company: client.company || '',
+          email: client.email || '',
+          id: client.id || opportunity.client_id,
+          name: client.full_name || '',
+          role: client.role || 'client',
+          title: client.title || '',
+        },
+        company: client.company || clientName,
+      };
 
       const scheduledParts = getMonthDay(interview.scheduled_for);
       const interviewSchedule = interview.scheduled_for
@@ -3002,6 +3882,9 @@ const handlers = {
   'PATCH /talent/opportunities': async (req, res) => {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
+
+    const access = await requireVerifiedProfessional(req, res, user);
+    if (!access) return;
 
     const body = await readJson(req);
     const opportunityId = cleanString(body.id || body.opportunityId || body.opportunity_id, 80);
@@ -3091,6 +3974,9 @@ const handlers = {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
 
+    const access = await requireVerifiedProfessional(req, res, user);
+    if (!access) return;
+
     const body = await readJson(req);
     const opportunityId = cleanString(body.id || body.opportunityId || body.opportunity_id, 80);
 
@@ -3130,6 +4016,9 @@ const handlers = {
   'PATCH /talent/interviews': async (req, res) => {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
+
+    const access = await requireVerifiedProfessional(req, res, user);
+    if (!access) return;
 
     const body = await readJson(req);
     const interviewId = cleanString(body.id || body.interviewId || body.interview_id, 80);
@@ -3190,11 +4079,243 @@ const handlers = {
     });
   },
 
+  'GET /talent/jobs': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const access = await requireProfessionalCapability(
+      req,
+      res,
+      user,
+      'canViewFullClientProfiles',
+      'Only verified professionals can view full client profiles on job posts.'
+    );
+    if (!access) return;
+
+    const jobs = await readRowsIfPresent(
+      req,
+      '/client_jobs?status=eq.open&select=*&order=created_at.desc&limit=100',
+      ['client_jobs'],
+      { useServiceRole: true }
+    );
+    const jobRows = asList(jobs);
+    const jobIds = jobRows.map((job) => job.id);
+    const [clients, comments, contacts] = await Promise.all([
+      loadProfilesById(req, jobRows.map((job) => job.client_id), {
+        includeContact: true,
+        useServiceRole: true,
+      }),
+      jobIds.length
+        ? readRowsIfPresent(
+          req,
+          `/client_job_comments?job_id=${byIdFilter(jobIds)}&status=eq.published&select=*&order=created_at.asc&limit=200`,
+          ['client_job_comments'],
+          { useServiceRole: true }
+        )
+        : [],
+      jobIds.length
+        ? readRowsIfPresent(
+          req,
+          `/client_job_contacts?job_id=${byIdFilter(jobIds)}&professional_id=eq.${user.id}&select=*&limit=100`,
+          ['client_job_contacts'],
+          { useServiceRole: true }
+        )
+        : [],
+    ]);
+    const commentsByJob = new Map();
+    asList(comments).forEach((comment) => {
+      commentsByJob.set(comment.job_id, [...(commentsByJob.get(comment.job_id) || []), comment]);
+    });
+    const contactsByJob = new Map(asList(contacts).map((contact) => [contact.job_id, contact]));
+
+    sendJson(res, 200, jobRows.map((job) => mapClientJobForProfessional(
+      job,
+      clients.get(job.client_id),
+      {
+        comments: commentsByJob.get(job.id) || [],
+        contact: contactsByJob.get(job.id) || null,
+      }
+    )));
+  },
+
+  'POST /talent/job-comments': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const access = await requireProfessionalCapability(
+      req,
+      res,
+      user,
+      'canCommentOnJobPosts',
+      'Only verified professionals can comment on job posts.'
+    );
+    if (!access) return;
+
+    const body = await readJson(req);
+    const jobId = cleanString(body.jobId || body.job_id, 80);
+    const comment = cleanString(body.comment || body.message, 2000);
+
+    if (!isUuid(jobId)) {
+      sendError(res, 400, 'A valid job id is required.');
+      return;
+    }
+
+    if (!comment) {
+      sendError(res, 400, 'Comment is required.');
+      return;
+    }
+
+    const jobRows = await readRowsIfPresent(
+      req,
+      `/client_jobs?id=eq.${jobId}&status=eq.open&select=*&limit=1`,
+      ['client_jobs'],
+      { useServiceRole: true }
+    );
+    const job = asList(jobRows)[0];
+
+    if (!job) {
+      sendError(res, 404, 'Open job post not found.');
+      return;
+    }
+
+    const rows = await writeRows(
+      req,
+      '/client_job_comments',
+      {
+        comment,
+        job_id: jobId,
+        professional_id: user.id,
+        status: 'published',
+      },
+      { useServiceRole: true }
+    );
+    const saved = asList(rows)[0];
+
+    notifyUser({
+      actionUrl: '/?tab=jobs',
+      body: `${user.name || 'A verified professional'} commented on your job post: ${job.title}.`,
+      emailSubject: 'New comment on your PB Finance job post',
+      metadata: {
+        commentId: saved?.id,
+        jobId,
+        professionalId: user.id,
+      },
+      recipientId: job.client_id,
+      title: 'New job comment',
+      type: 'job_comment_created',
+    }).catch(() => {});
+
+    sendJson(res, 201, mapJobComment(saved));
+  },
+
+  'POST /talent/job-contacts': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const access = await requireProfessionalCapability(
+      req,
+      res,
+      user,
+      'canContactClientsFromJobs',
+      'Only verified professionals can initiate client contact from a job post.'
+    );
+    if (!access) return;
+
+    const body = await readJson(req);
+    const jobId = cleanString(body.jobId || body.job_id, 80);
+    const message = cleanString(body.message || body.note, 2000);
+
+    if (!isUuid(jobId)) {
+      sendError(res, 400, 'A valid job id is required.');
+      return;
+    }
+
+    const jobRows = await readRowsIfPresent(
+      req,
+      `/client_jobs?id=eq.${jobId}&status=eq.open&select=*&limit=1`,
+      ['client_jobs'],
+      { useServiceRole: true }
+    );
+    const job = asList(jobRows)[0];
+
+    if (!job) {
+      sendError(res, 404, 'Open job post not found.');
+      return;
+    }
+
+    const rows = await writeRows(
+      req,
+      '/client_job_contacts?on_conflict=job_id,professional_id',
+      {
+        job_id: jobId,
+        message,
+        professional_id: user.id,
+        status: 'requested',
+      },
+      { prefer: 'resolution=merge-duplicates,return=representation', useServiceRole: true }
+    );
+    const saved = asList(rows)[0];
+
+    notifyUser({
+      actionUrl: '/?tab=jobs',
+      body: `${user.name || 'A verified professional'} initiated contact from your job post: ${job.title}.`,
+      emailSubject: 'A PB Finance professional contacted you',
+      metadata: {
+        contactId: saved?.id,
+        jobId,
+        professionalId: user.id,
+      },
+      recipientId: job.client_id,
+      title: 'New professional contact',
+      type: 'job_contact_requested',
+    }).catch(() => {});
+
+    sendJson(res, 201, mapJobContact(saved));
+  },
+
+  'PATCH /talent/visibility': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const access = await requireProfessionalCapability(
+      req,
+      res,
+      user,
+      'canToggleProfileVisibility',
+      'Only verified professionals can toggle profile visibility.'
+    );
+    if (!access) return;
+
+    const body = await readJson(req);
+    const visibility = cleanString(body.visibility || body.profileVisibility || body.profile_visibility, 40).toLowerCase();
+
+    if (!['hidden', 'visible'].includes(visibility)) {
+      sendError(res, 400, 'Profile visibility must be hidden or visible.');
+      return;
+    }
+
+    const rows = await patchRows(
+      req,
+      `/professional_profiles?user_id=eq.${user.id}`,
+      { profile_visibility: visibility },
+      { useServiceRole: true }
+    );
+    const savedProfile = asList(rows)[0];
+
+    sendJson(res, 200, mapTalentProfile(savedProfile, {
+      email: user.email,
+      full_name: user.name,
+      title: user.title,
+    }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
+  },
+
   'GET /talent/profiles': async (req, res) => {
     const user = await requireSession(req, res);
     if (!user) return;
 
-    const profiles = await loadTalentProfiles(req, { onlyApproved: true });
+    const permissions = getClientPermissions(user);
+    const visibility = user.role === 'client' && permissions.canViewFullDocuments ? 'client_full' : 'directory';
+    const profiles = await loadTalentProfiles(req, { onlyApproved: true, visibility });
     sendJson(res, 200, profiles);
   },
 

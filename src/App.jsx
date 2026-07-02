@@ -157,6 +157,20 @@ const createLocalSessionUser = (formData, role) => {
     return {
       email,
       name,
+      professionalPermissions: {
+        canAccessDashboard: false,
+        canAppearInTalentPool: false,
+        canCommentOnJobPosts: false,
+        canContactClientsFromJobs: false,
+        canToggleProfileVisibility: false,
+        canViewFullClientProfiles: false,
+        label: 'Unverified',
+        tier: 'unverified',
+      },
+      professionalTier: 'unverified',
+      professional_tier: 'unverified',
+      profileVisibility: 'hidden',
+      profile_visibility: 'hidden',
       role: 'professional',
       title: 'Complete your profile',
       location: 'Add location',
@@ -165,6 +179,8 @@ const createLocalSessionUser = (formData, role) => {
   }
 
   return {
+    clientTier: 'basic',
+    client_tier: 'basic',
     company: company || 'Company profile pending',
     email,
     name,

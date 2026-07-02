@@ -87,7 +87,7 @@ const dataOptions = (token) => ({
   useServiceRole: hasServiceRoleKey(),
 });
 
-const profilePath = (userId, select = 'id,email,full_name,company,role,title') => (
+const profilePath = (userId, select = 'id,email,full_name,company,role,title,client_tier') => (
   `/profiles?id=eq.${encodeURIComponent(userId)}&select=${select}&limit=1`
 );
 
@@ -97,11 +97,15 @@ const readProfile = async (userId, token, select) => {
   try {
     rows = await supabaseRestRequest(profilePath(userId, select), dataOptions(token));
   } catch (error) {
-    if (!String(error.message || '').includes('google_link_verified_at')) {
+    if (!String(error.message || '').includes('google_link_verified_at')
+      && !String(error.message || '').includes('client_tier')) {
       throw error;
     }
 
-    rows = await supabaseRestRequest(profilePath(userId), dataOptions(token));
+    rows = await supabaseRestRequest(
+      profilePath(userId, 'id,email,full_name,company,role,title'),
+      dataOptions(token)
+    );
   }
 
   return asList(rows)[0] || null;
@@ -155,6 +159,7 @@ const upsertProfile = async ({ authUser, company, role, token }) => {
       full_name: profileName(authUser),
       id: authUser.id,
       role,
+      client_tier: 'basic',
       title,
     },
     method: 'POST',

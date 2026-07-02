@@ -200,7 +200,9 @@ const getCredentialReviewState = (profile, documents = getReviewDocuments(profil
   const optionalCount = documents.filter((document) => document.reviewScope === 'optional').length;
   let approvalBlocker = '';
 
-  if (!resume) {
+  if (profile.identityVerificationStatus !== 'approved') {
+    approvalBlocker = 'Identity verification must be approved before this professional can be verified.';
+  } else if (!resume) {
     approvalBlocker = 'Resume approval is required before this profile can be approved.';
   } else if (missingDocuments.length) {
     approvalBlocker = `${missingDocuments.length} required certification document${missingDocuments.length === 1 ? '' : 's'} still need to be uploaded.`;
@@ -233,6 +235,7 @@ const statusStyles = {
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   draft: 'border-slate-200 bg-slate-50 text-slate-600',
   hidden: 'border-slate-300 bg-slate-100 text-slate-700',
+  pending: 'border-amber-200 bg-amber-50 text-amber-700',
   pending_review: 'border-amber-200 bg-amber-50 text-amber-700',
   rejected: 'border-red-200 bg-red-50 text-red-700',
 };
@@ -841,6 +844,28 @@ function TalentReview() {
     }
   };
 
+  const updateIdentityVerification = async (record, status) => {
+    const busyKey = `${record.id}:identity:${status}`;
+
+    setBusyId(busyKey);
+    setActionError('');
+
+    try {
+      const updated = await backendApi.admin.updateTalentStatus({
+        identityVerification: { status },
+        professionalId: record.id,
+      });
+
+      setTalent((current) => current.map((item) => (
+        item.id === record.id ? { ...item, ...updated } : item
+      )));
+    } catch (updateError) {
+      setActionError(updateError.message || 'Unable to update identity verification.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
   const updateCredentialStatus = async (profile, document, status, message = '') => {
     const documentKey = document.key || document.id || document.label;
     const busyKey = `${profile.id}:${document.documentType}:${documentKey}:${status}`;
@@ -1056,6 +1081,43 @@ function TalentReview() {
                   </button>
                 </div>
               )}
+
+              <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-slate-950 dark:text-white">Identity Verification</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-500">Required before professional verification can be granted.</div>
+                  </div>
+                  <StatusBadge status={profile.identityVerificationStatus || 'pending'} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { icon: ShieldCheck, label: 'Approve identity', status: 'approved', variant: 'primary' },
+                    { icon: Clock3, label: 'Set pending', status: 'pending', variant: 'neutral' },
+                    { icon: XCircle, label: 'Reject identity', status: 'rejected', variant: 'danger' },
+                  ].filter((action) => action.status !== (profile.identityVerificationStatus || 'pending')).map((action) => {
+                    const Icon = action.icon;
+                    const busyKey = `${profile.id}:identity:${action.status}`;
+                    const buttonClass = action.variant === 'primary'
+                      ? 'border-cyan-600 bg-cyan-600 text-white hover:bg-cyan-700'
+                      : action.variant === 'danger'
+                        ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800';
+
+                    return (
+                      <button
+                        key={action.status}
+                        onClick={() => updateIdentityVerification(profile, action.status)}
+                        disabled={Boolean(busyId)}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${buttonClass}`}
+                      >
+                        {busyId === busyKey ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {(() => {
                 const regulatedInputs = getProfileRegulatedInputs(profile);

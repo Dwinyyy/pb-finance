@@ -31,6 +31,35 @@ const EMPTY_BILLING = Object.freeze({
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 const TALENT_SKILL_FILTERS = ['All', ...SKILLS_OPTIONS];
 const CLIENT_TABS = ['discover', 'agencies', 'shortlist', 'interviews', 'billing'];
+const CLIENT_TIER_PERMISSIONS = Object.freeze({
+  basic: Object.freeze({
+    canDiscoverAgencies: false,
+    canScheduleInterviews: false,
+    canUseMatchmaker: false,
+    canViewFullDocuments: false,
+    label: 'Basic',
+    matchmakerLevel: 'none',
+    shortlistLimit: 5,
+  }),
+  verified: Object.freeze({
+    canDiscoverAgencies: true,
+    canScheduleInterviews: true,
+    canUseMatchmaker: true,
+    canViewFullDocuments: true,
+    label: 'Verified',
+    matchmakerLevel: 'basic',
+    shortlistLimit: null,
+  }),
+  vip: Object.freeze({
+    canDiscoverAgencies: true,
+    canScheduleInterviews: true,
+    canUseMatchmaker: true,
+    canViewFullDocuments: true,
+    label: 'VIP',
+    matchmakerLevel: 'pro',
+    shortlistLimit: null,
+  }),
+});
 const CLIENT_NOTIFICATION_TAB_FALLBACKS = {
   interview_accepted: 'interviews',
   interview_cancelled: 'interviews',
@@ -39,6 +68,16 @@ const CLIENT_NOTIFICATION_TAB_FALLBACKS = {
 };
 
 const asList = (value) => (Array.isArray(value) ? value : []);
+const normalizeClientTier = (value) => {
+  const tier = String(value || '').trim().toLowerCase();
+
+  return Object.hasOwn(CLIENT_TIER_PERMISSIONS, tier) ? tier : 'basic';
+};
+const getClientPortalPermissions = (user) => ({
+  ...CLIENT_TIER_PERMISSIONS[normalizeClientTier(user?.clientTier || user?.client_tier)],
+  ...(user?.clientPermissions || {}),
+  tier: normalizeClientTier(user?.clientTier || user?.client_tier || user?.clientPermissions?.tier),
+});
 const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleString()}` : value || 'Pending');
 const interviewStatusLabel = (status) => String(status === 'requested' ? 'requesting' : status || 'scheduled').replace(/_/g, ' ');
 const interviewStatusStyles = {
@@ -276,6 +315,136 @@ function DocumentPreviewer({ url, type }) {
   );
 }
 
+const getDocumentKey = (document) => document?.key || document?.id || document?.label || document?.fileName || document?.documentType || '';
+
+function ProfileQualificationsSection({ profile }) {
+  const canViewFullDocuments = Boolean(profile?.canViewFullDocuments);
+  const resume = profile?.resume || null;
+  const supportingDocuments = asList(profile?.supportingDocuments);
+  const [preview, setPreview] = useState(null);
+  const [busyKey, setBusyKey] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setPreview(null);
+    setBusyKey('');
+    setError('');
+  }, [profile?.id]);
+
+  const loadDocumentPreview = async (document, fallbackType = 'supporting_document') => {
+    if (!profile?.id || !document) return;
+
+    const documentKey = getDocumentKey(document);
+    const documentType = document.documentType || document.kind || fallbackType;
+
+    setError('');
+    setBusyKey(`${documentType}:${documentKey}`);
+
+    try {
+      const result = await backendApi.documents.getUrl({
+        documentKey,
+        documentType,
+        professionalId: profile.id,
+      });
+
+      setPreview({
+        ...document,
+        contentType: result?.contentType || document.contentType,
+        fileName: result?.fileName || document.fileName || document.label || 'Document preview',
+        url: result?.url,
+      });
+    } catch (previewError) {
+      setError(previewError.message || 'Unable to open this document.');
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  if (!canViewFullDocuments) {
+    return (
+      <div>
+        <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+          Resume and required documents are hidden for Basic clients.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {resume ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-black text-slate-950 dark:text-white">{resume.label || resume.fileName || 'Verified resume'}</div>
+                <div className="text-xs font-semibold text-slate-500">{resume.fileName || 'Approved resume document'}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => loadDocumentPreview(resume, 'resume')}
+                disabled={busyKey === `resume:${getDocumentKey(resume)}`}
+                className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-600 disabled:opacity-70"
+              >
+                {busyKey === `resume:${getDocumentKey(resume)}` ? 'Opening...' : 'Preview Resume'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            No approved resume is available for this profile.
+          </div>
+        )}
+
+        {supportingDocuments.length > 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-3 text-xs font-black uppercase tracking-wider text-slate-400">Certificates & Required Documents</div>
+            <div className="space-y-2">
+              {supportingDocuments.map((document) => {
+                const documentKey = getDocumentKey(document);
+                const documentType = document.documentType || document.kind || 'supporting_document';
+                const busy = busyKey === `${documentType}:${documentKey}`;
+
+                return (
+                  <div key={`${documentType}:${documentKey}`} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{document.label || document.fileName || 'Verified document'}</div>
+                      <div className="text-xs font-semibold text-slate-500">{document.fileName || document.kind || 'Approved credential'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadDocumentPreview(document, documentType)}
+                      disabled={busy}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-primary-200 hover:text-primary-700 disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                      {busy ? 'Opening...' : 'View'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {preview?.url && (
+          <div className="space-y-2">
+            <div className="text-xs font-black uppercase tracking-wider text-slate-400">{preview.fileName || 'Document preview'}</div>
+            <DocumentPreviewer url={preview.url} type={preview.contentType || 'pdf'} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function InterviewDateTimePicker({ value, onChange }) {
   const parsedDate = isScheduleDate(value.date) ? new Date(`${value.date}T00:00:00`) : new Date();
   const [viewDate, setViewDate] = useState(() => new Date(parsedDate.getFullYear(), parsedDate.getMonth(), 1));
@@ -378,9 +547,20 @@ function InterviewDateTimePicker({ value, onChange }) {
 export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'discover';
-  const appView = ['discover', 'agencies', 'shortlist', 'interviews', 'billing'].includes(requestedTab) ? requestedTab : 'discover';
+  const clientPermissions = useMemo(() => getClientPortalPermissions(user), [user]);
+  const availableTabs = useMemo(() => (
+    [
+      { id: 'discover', label: 'Discover Talent' },
+      ...(clientPermissions.canDiscoverAgencies ? [{ id: 'agencies', label: 'Discover Agencies' }] : []),
+      { id: 'shortlist', label: 'My Shortlist' },
+      { id: 'interviews', label: 'Interviews' },
+      { id: 'billing', label: 'Billing & Contracts' },
+    ]
+  ), [clientPermissions.canDiscoverAgencies]);
+  const availableTabIds = useMemo(() => availableTabs.map((tab) => tab.id), [availableTabs]);
+  const appView = availableTabIds.includes(requestedTab) ? requestedTab : 'discover';
   const setAppView = (tab) => setSearchParams({ tab });
-  const [matchmakerVisible, setMatchmakerVisible] = useState(true);
+  const [matchmakerVisible, setMatchmakerVisible] = useState(() => clientPermissions.canUseMatchmaker);
   const onboardingStorageKey = getClientOnboardingStorageKey(user);
   const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
   const notificationState = useNotifications(user?.id);
@@ -390,8 +570,14 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
     fallbackByType: CLIENT_NOTIFICATION_TAB_FALLBACKS,
     notifications,
     storageKey: `pb_client_page_notification_indicators:${user?.id || user?.email || 'unknown'}`,
-    tabIds: CLIENT_TABS,
+    tabIds: availableTabIds,
   });
+
+  useEffect(() => {
+    if (!availableTabIds.includes(requestedTab)) {
+      setSearchParams({ tab: 'discover' }, { replace: true });
+    }
+  }, [availableTabIds, requestedTab, setSearchParams]);
 
   const dismissWorkflowOnboarding = () => {
     try {
@@ -442,9 +628,11 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
                 <Sparkles size={14} className="text-primary-400" />
                 <span className="hidden sm:inline">Guide</span>
               </button>
-              <button onClick={() => setMatchmakerVisible(!matchmakerVisible)} className={`relative transition-colors ${matchmakerVisible ? 'text-primary-400' : 'text-slate-400 hover:text-white'}`} title="Toggle AI Matchmaker">
-                <Bot size={20} />
-              </button>
+              {clientPermissions.canUseMatchmaker && (
+                <button onClick={() => setMatchmakerVisible(!matchmakerVisible)} className={`relative transition-colors ${matchmakerVisible ? 'text-primary-400' : 'text-slate-400 hover:text-white'}`} title={`${clientPermissions.label} AI Matchmaker`}>
+                  <Bot size={20} />
+                </button>
+              )}
               <button onClick={toggleDarkMode} className="text-slate-400 hover:text-white transition-colors" title="Toggle Dark Mode">
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
@@ -470,13 +658,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
         <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8 pt-4 overflow-x-auto scrollbar-hide">
-              {[
-                { id: 'discover', label: 'Discover Talent' },
-                { id: 'agencies', label: 'Discover Agencies' },
-                { id: 'shortlist', label: 'My Shortlist' },
-                { id: 'interviews', label: 'Interviews' },
-                { id: 'billing', label: 'Billing & Contracts' },
-              ].map(tab => {
+              {availableTabs.map(tab => {
                 const unreadCount = tabUnreadCounts[tab.id] || 0;
 
                 return (
@@ -502,25 +684,26 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       {/* App Workspace */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative scroll-smooth">
         {appView === 'discover' && <AppDiscoverView user={user} />}
-        {appView === 'agencies' && <AppAgenciesView />}
+        {appView === 'agencies' && clientPermissions.canDiscoverAgencies && <AppAgenciesView />}
         {appView === 'shortlist' && <AppShortlistView user={user} />}
         {appView === 'interviews' && <AppInterviewsView user={user} />}
         {appView === 'billing' && <AppBillingView />}
       </div>
 
       {/* AI Matchmaker Feature */}
-      {matchmakerVisible && <AITalentMatchmaker />}
+      {clientPermissions.canUseMatchmaker && matchmakerVisible && <AITalentMatchmaker clientPermissions={clientPermissions} />}
     </div>
   );
 }
 
 // --- AI MATCHMAKER COMPONENT ---
-function AITalentMatchmaker() {
+function AITalentMatchmaker({ clientPermissions }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputMsg, setInputMsg] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const matchmakerLabel = clientPermissions?.matchmakerLevel === 'pro' ? 'Pro AI Matchmaker' : 'Basic AI Matchmaker';
   const [messages, setMessages] = useState([
-    { id: 1, sender: 'ai', text: "Hi there! I'm your AI Matchmaker. Describe the problem you're trying to solve (e.g., 'I need help with tax season', 'Looking for an FP&A agency') and I'll find the perfect fit." }
+    { id: 1, sender: 'ai', text: `Hi there! I'm your ${matchmakerLabel}. Describe the problem you're trying to solve and I'll find a strong fit.` }
   ]);
 
   const endOfMessagesRef = useRef(null);
@@ -593,8 +776,8 @@ function AITalentMatchmaker() {
               <Bot size={20} />
             </div>
             <div>
-              <h3 className="font-bold text-white leading-none">AI Matchmaker</h3>
-              <p className="text-[10px] text-cyan-400 uppercase tracking-wider font-bold mt-1">Beta</p>
+              <h3 className="font-bold text-white leading-none">{matchmakerLabel}</h3>
+              <p className="text-[10px] text-cyan-400 uppercase tracking-wider font-bold mt-1">{clientPermissions?.label || 'Client'} tier</p>
             </div>
           </div>
           <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white transition-colors relative z-10">
@@ -1077,18 +1260,7 @@ function AppDiscoverView({ user }) {
               </div>
             </div>
 
-            <div>
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
-              {previewProfile.resume?.url || previewProfile.resumeUrl ? (
-                <div className="space-y-4">
-                  <DocumentPreviewer url={previewProfile.resume?.url || previewProfile.resumeUrl} type={previewProfile.resume?.contentType || 'pdf'} />
-                </div>
-              ) : (
-                <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-500 font-medium">
-                  No verified resume available for this profile.
-                </div>
-              )}
-            </div>
+            <ProfileQualificationsSection profile={previewProfile} />
             
             <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
               <button onClick={() => setPreviewProfile(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
@@ -1187,6 +1359,7 @@ function AppAgenciesView() {
 }
 
 function AppShortlistView({ user }) {
+  const clientPermissions = useMemo(() => getClientPortalPermissions(user), [user]);
   const {
     data: shortlisted,
     error,
@@ -1310,7 +1483,9 @@ function AppShortlistView({ user }) {
     <div className="portal-fade-in max-w-6xl">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-slate-950 dark:text-white mb-2">My Shortlist</h2>
-        <p className="text-slate-600 dark:text-slate-400">Review and schedule interviews with your saved candidates.</p>
+        <p className="text-slate-600 dark:text-slate-400">
+          {clientPermissions.canScheduleInterviews ? 'Review and schedule interviews with your saved candidates.' : 'Review your saved candidates.'}
+        </p>
       </div>
 
       {error && (
@@ -1393,7 +1568,7 @@ function AppShortlistView({ user }) {
                   <div className="w-full rounded-xl bg-primary-50 py-2.5 text-center text-sm font-black text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
                     Requested
                   </div>
-                ) : (
+                ) : clientPermissions.canScheduleInterviews ? (
                   <button
                     onClick={() => openScheduleModal(profile)}
                     disabled={busyAction === `schedule:${profile.id}`}
@@ -1401,6 +1576,10 @@ function AppShortlistView({ user }) {
                   >
                     {busyAction === `schedule:${profile.id}` ? 'Sending...' : 'Schedule'}
                   </button>
+                ) : (
+                  <div className="w-full rounded-xl bg-slate-100 py-2.5 text-center text-sm font-black text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    Scheduling unavailable
+                  </div>
                 )}
                 <button
                   onClick={() => handleRemove(profile)}
@@ -1452,18 +1631,7 @@ function AppShortlistView({ user }) {
               </div>
             </div>
 
-            <div>
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
-              {previewProfile.resume?.url || previewProfile.resumeUrl ? (
-                <div className="space-y-4">
-                  <DocumentPreviewer url={previewProfile.resume?.url || previewProfile.resumeUrl} type={previewProfile.resume?.contentType || 'pdf'} />
-                </div>
-              ) : (
-                <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-500 font-medium">
-                  No verified resume available for this profile.
-                </div>
-              )}
-            </div>
+            <ProfileQualificationsSection profile={previewProfile} />
             
             <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
               <button onClick={() => setPreviewProfile(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">

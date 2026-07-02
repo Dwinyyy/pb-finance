@@ -60,12 +60,33 @@ export const publicUser = (user) => {
   const email = normalizeEmail(user?.email);
   const fallbackName = email ? email.split('@')[0].replace(/[._-]+/g, ' ') : 'PB Finance User';
   const role = ['admin', 'professional'].includes(metadata.role) ? metadata.role : 'client';
+  const clientTier = ['basic', 'verified', 'vip'].includes(String(metadata.client_tier || '').toLowerCase())
+    ? String(metadata.client_tier).toLowerCase()
+    : 'basic';
 
   return {
+    clientTier,
+    client_tier: clientTier,
     company: metadata.company || '',
     email,
     id: user?.id,
     name: metadata.full_name || metadata.name || fallbackName,
+    professionalPermissions: role === 'professional'
+      ? {
+        canAccessDashboard: false,
+        canAppearInTalentPool: false,
+        canCommentOnJobPosts: false,
+        canContactClientsFromJobs: false,
+        canToggleProfileVisibility: false,
+        canViewFullClientProfiles: false,
+        label: 'Unverified',
+        tier: 'unverified',
+      }
+      : undefined,
+    professionalTier: role === 'professional' ? 'unverified' : undefined,
+    professional_tier: role === 'professional' ? 'unverified' : undefined,
+    profileVisibility: role === 'professional' ? 'hidden' : undefined,
+    profile_visibility: role === 'professional' ? 'hidden' : undefined,
     role,
     title: metadata.title || (role === 'professional' ? 'Complete your profile' : ''),
   };
@@ -173,6 +194,7 @@ export const signUpWithPassword = ({ email, password, fullName, company, redirec
         full_name: fullName,
         name: fullName,
         role,
+        client_tier: role === 'client' ? 'basic' : undefined,
         title: role === 'professional' ? 'Complete your profile' : '',
       },
     },

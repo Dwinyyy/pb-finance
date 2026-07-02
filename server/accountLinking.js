@@ -260,14 +260,15 @@ const readProfileByEmail = async (email) => {
   requireServiceRole();
 
   const normalizedEmail = normalizeEmail(email);
-  const path = `/profiles?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,email,full_name,company,role,title,google_link_verified_at,password_login_enabled_at&limit=1`;
+  const path = `/profiles?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,email,full_name,company,role,title,client_tier,google_link_verified_at,password_login_enabled_at&limit=1`;
   let rows;
 
   try {
     rows = await supabaseRestRequest(path, { useServiceRole: true });
   } catch (error) {
     if (!String(error.message || '').includes('google_link_verified_at')
-      && !String(error.message || '').includes('password_login_enabled_at')) {
+      && !String(error.message || '').includes('password_login_enabled_at')
+      && !String(error.message || '').includes('client_tier')) {
       throw error;
     }
 
@@ -302,6 +303,8 @@ const userFromProfile = (authUser, profile) => {
     email: profile.email || base.email,
     name: profile.full_name || base.name,
     role: profile.role || base.role,
+    clientTier: profile.client_tier || base.clientTier,
+    client_tier: profile.client_tier || base.client_tier,
     title: profile.title || base.title,
   };
 };

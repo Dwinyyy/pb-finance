@@ -36,6 +36,8 @@ const countBy = (rows, field) => rows.reduce((counts, row) => {
 
 const requiredTables = [
   'profiles',
+  'client_tier_permissions',
+  'professional_tier_permissions',
   'professional_profiles',
   'client_companies',
   'agencies',
@@ -47,6 +49,11 @@ const requiredTables = [
   'payment_methods',
   'timesheets',
   'match_requests',
+  'client_jobs',
+  'professional_reviews',
+  'client_background_checks',
+  'client_job_comments',
+  'client_job_contacts',
   'notifications',
 ];
 
@@ -81,22 +88,22 @@ const run = async () => {
 
   try {
     await supabaseRestRequest(
-      '/profiles?select=id,manual_triage_required,manual_triage_status,manual_triage_reason,manual_triage_source,manual_triage_domain,manual_triage_flagged_at,manual_triage_resolved_at&limit=1',
+      '/profiles?select=id,client_tier,manual_triage_required,manual_triage_status,manual_triage_reason,manual_triage_source,manual_triage_domain,manual_triage_flagged_at,manual_triage_resolved_at&limit=1',
       { useServiceRole: true }
     );
-    tableChecks.profile_manual_triage_columns = { ok: true };
+    tableChecks.profile_tier_and_manual_triage_columns = { ok: true };
   } catch (error) {
-    tableChecks.profile_manual_triage_columns = { ok: false, error: error.message };
+    tableChecks.profile_tier_and_manual_triage_columns = { ok: false, error: error.message };
   }
 
   try {
     await supabaseRestRequest(
-      '/professional_profiles?select=user_id,titles,pending_profile,review_status,review_submitted_at&limit=1',
+      '/professional_profiles?select=user_id,titles,pending_profile,review_status,review_submitted_at,professional_tier,profile_visibility,identity_verification_status,identity_verified_at,identity_verified_by,identity_verification_notes,verified_at&limit=1',
       { useServiceRole: true }
     );
-    tableChecks.professional_profile_review_columns = { ok: true };
+    tableChecks.professional_profile_review_and_tier_columns = { ok: true };
   } catch (error) {
-    tableChecks.professional_profile_review_columns = { ok: false, error: error.message };
+    tableChecks.professional_profile_review_and_tier_columns = { ok: false, error: error.message };
   }
 
   try {
@@ -112,13 +119,18 @@ const run = async () => {
   const summary = { env, tableChecks };
 
   try {
-    const [profiles, professionals, agencies, shortlists, opportunities, interviews] = await Promise.all([
-      supabaseRestRequest('/profiles?select=role', { useServiceRole: true }),
-      supabaseRestRequest('/professional_profiles?select=status', { useServiceRole: true }),
+    const [profiles, professionals, agencies, shortlists, opportunities, interviews, jobs, reviews, backgroundChecks, jobComments, jobContacts] = await Promise.all([
+      supabaseRestRequest('/profiles?select=role,client_tier', { useServiceRole: true }),
+      supabaseRestRequest('/professional_profiles?select=status,professional_tier,profile_visibility,identity_verification_status', { useServiceRole: true }),
       supabaseRestRequest('/agencies?select=status', { useServiceRole: true }),
       supabaseRestRequest('/shortlists?select=id', { useServiceRole: true }),
       supabaseRestRequest('/opportunities?select=status', { useServiceRole: true }),
       supabaseRestRequest('/interviews?select=status', { useServiceRole: true }),
+      supabaseRestRequest('/client_jobs?select=status', { useServiceRole: true }),
+      supabaseRestRequest('/professional_reviews?select=status', { useServiceRole: true }),
+      supabaseRestRequest('/client_background_checks?select=status', { useServiceRole: true }),
+      supabaseRestRequest('/client_job_comments?select=status', { useServiceRole: true }),
+      supabaseRestRequest('/client_job_contacts?select=status', { useServiceRole: true }),
     ]);
 
     summary.workflowCounts = {
@@ -126,7 +138,16 @@ const run = async () => {
       interviewStatuses: countBy(interviews, 'status'),
       opportunityStatuses: countBy(opportunities, 'status'),
       professionalStatuses: countBy(professionals, 'status'),
+      professionalTiers: countBy(professionals, 'professional_tier'),
+      professionalVisibility: countBy(professionals, 'profile_visibility'),
+      identityVerificationStatuses: countBy(professionals, 'identity_verification_status'),
       profileRoles: countBy(profiles, 'role'),
+      clientTiers: countBy(profiles, 'client_tier'),
+      clientJobStatuses: countBy(jobs, 'status'),
+      clientJobCommentStatuses: countBy(jobComments, 'status'),
+      clientJobContactStatuses: countBy(jobContacts, 'status'),
+      professionalReviewStatuses: countBy(reviews, 'status'),
+      backgroundCheckStatuses: countBy(backgroundChecks, 'status'),
       shortlists: shortlists.length,
     };
   } catch (error) {

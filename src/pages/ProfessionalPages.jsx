@@ -40,6 +40,16 @@ const EMPTY_EARNINGS = Object.freeze({
 });
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 const PROFESSIONAL_TABS = ['profile', 'opportunities', 'earnings'];
+const UNVERIFIED_PROFESSIONAL_PERMISSIONS = Object.freeze({
+  canAccessDashboard: false,
+  canAppearInTalentPool: false,
+  canCommentOnJobPosts: false,
+  canContactClientsFromJobs: false,
+  canToggleProfileVisibility: false,
+  canViewFullClientProfiles: false,
+  label: 'Unverified',
+  tier: 'unverified',
+});
 const PROFESSIONAL_NOTIFICATION_TAB_FALLBACKS = {
   document_status_updated: 'profile',
   interview_cancelled: 'opportunities',
@@ -74,6 +84,30 @@ const formatMoney = (value) => (typeof value === 'number' ? `$${value.toLocaleSt
 const formatMoneyAmount = (value) => formatMoney(value).replace(/^\$/, '');
 const listToText = (value) => asList(value).join(', ');
 const textToList = (value) => String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+const getProfessionalPortalPermissions = (record = {}) => {
+  const permissions = record.professionalPermissions;
+
+  if (permissions && typeof permissions === 'object') {
+    return {
+      ...UNVERIFIED_PROFESSIONAL_PERMISSIONS,
+      ...permissions,
+      tier: permissions.tier || record.professionalTier || record.professional_tier || 'unverified',
+    };
+  }
+
+  return record.professionalTier === 'verified' || record.professional_tier === 'verified'
+    ? {
+      canAccessDashboard: true,
+      canAppearInTalentPool: true,
+      canCommentOnJobPosts: true,
+      canContactClientsFromJobs: true,
+      canToggleProfileVisibility: true,
+      canViewFullClientProfiles: true,
+      label: 'Verified',
+      tier: 'verified',
+    }
+    : UNVERIFIED_PROFESSIONAL_PERMISSIONS;
+};
 const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
 const cleanProfileTitle = (value) => {
   const title = String(value || '').trim();
@@ -640,7 +674,9 @@ function DashboardMetric({ detail, icon, label, value, variant = 'slate' }) {
 export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'profile';
-  const appView = PROFESSIONAL_TABS.includes(requestedTab) ? requestedTab : 'profile';
+  const professionalPermissions = getProfessionalPortalPermissions(user);
+  const availableTabs = professionalPermissions.canAccessDashboard ? PROFESSIONAL_TABS : ['profile'];
+  const appView = availableTabs.includes(requestedTab) ? requestedTab : 'profile';
   const setAppView = (tab) => setSearchParams({ tab });
   const notificationState = useNotifications(user?.id);
   const { notifications } = notificationState;
@@ -649,7 +685,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
     fallbackByType: PROFESSIONAL_NOTIFICATION_TAB_FALLBACKS,
     notifications,
     storageKey: `pb_professional_page_notification_indicators:${user?.id || user?.email || 'unknown'}`,
-    tabIds: PROFESSIONAL_TABS,
+    tabIds: availableTabs,
   });
 
   return (
@@ -694,10 +730,10 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8 pt-4">
               {[
-                { id: 'profile', label: 'My Profile' },
+                { id: 'profile', label: professionalPermissions.canAccessDashboard ? 'My Profile' : 'Verification Center' },
                 { id: 'opportunities', label: 'Opportunities' },
                 { id: 'earnings', label: 'Timesheets & Earnings' },
-              ].map(tab => {
+              ].filter((tab) => availableTabs.includes(tab.id)).map(tab => {
                 const unreadCount = tabUnreadCounts[tab.id] || 0;
 
                 return (
@@ -722,6 +758,11 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
 
       {/* App Workspace */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {!professionalPermissions.canAccessDashboard && (
+          <div className="mb-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+            Professional dashboard access unlocks after admin approves your identity, resume, and required documents. Your profile stays hidden from clients until then.
+          </div>
+        )}
         {appView === 'profile' && <AppTalentProfileView user={user} />}
         {appView === 'opportunities' && <AppTalentOpportunitiesView user={user} />}
         {appView === 'earnings' && <AppTalentEarningsView />}
@@ -750,6 +791,7 @@ function AppTalentProfileView({ user }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editingSection, setEditingSection] = useState('profile');
   const [isSaving, setIsSaving] = useState(false);
+  const [isVisibilitySaving, setIsVisibilitySaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
   const [profileForm, setProfileForm] = useState({});
@@ -768,8 +810,9 @@ function AppTalentProfileView({ user }) {
   const profileTools = asList(displayProfile.tools);
   const skills = [...new Set([...profileSkills, ...profileTools])];
   const readiness = getProfileReadiness(displayProfile, profileTitles);
-  const profileStatus = displayProfile.reviewStatus || displayProfile.status || 'Complete onboarding to publish your profile.';
-  const isProfileApproved = String(profileStatus).toLowerCase() === 'approved';
+  const professionalPermissions = getProfessionalPortalPermissions(displayProfile);
+  const profileVisibility = displayProfile.profileVisibility || displayProfile.profile_visibility || 'hidden';
+  const isProfileVisible = professionalPermissions.canToggleProfileVisibility && profileVisibility === 'visible';
   const profileRequirements = buildCredentialRequirements(profileTitles, getSupportingDocuments(displayProfile));
   const resume = getProfileResume(displayProfile);
   const approvedRequiredCount = [resume, ...profileRequirements.map((requirement) => requirement.upload)]
@@ -857,23 +900,60 @@ function AppTalentProfileView({ user }) {
     }
   };
 
+  const toggleProfileVisibility = async () => {
+    if (!professionalPermissions.canToggleProfileVisibility) return;
+
+    const nextVisibility = profileVisibility === 'visible' ? 'hidden' : 'visible';
+
+    setIsVisibilitySaving(true);
+    setProfileError('');
+    setProfileMessage('');
+
+    try {
+      const updated = await backendApi.talent.updateVisibility({ visibility: nextVisibility });
+      setSavedProfile(updated);
+      setProfileMessage(nextVisibility === 'visible' ? 'Profile is visible to clients.' : 'Profile is hidden from clients.');
+    } catch (visibilityError) {
+      setProfileError(visibilityError.message || 'Unable to update profile visibility.');
+    } finally {
+      setIsVisibilitySaving(false);
+    }
+  };
+
   return (
     <div className="portal-fade-in mx-auto max-w-7xl space-y-6">
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className={`mb-3 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider ${
-              isProfileApproved
+              isProfileVisible
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
                 : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
             }`}>
               <ShieldCheck size={13} />
-              {isProfileApproved ? 'Client visible' : 'Admin review required'}
+              {isProfileVisible ? 'Client visible' : professionalPermissions.canAccessDashboard ? 'Verified hidden' : 'Admin review required'}
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Professional Dashboard</h1>
+            <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">
+              {professionalPermissions.canAccessDashboard ? 'Professional Dashboard' : 'Verification Center'}
+            </h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500 dark:text-slate-400">
               {displayProfile.name || 'Your profile'} {profileTitleText ? `- ${profileTitleText}` : '- complete your title, credentials, and availability.'}
             </p>
+            {professionalPermissions.canToggleProfileVisibility && (
+              <button
+                type="button"
+                onClick={toggleProfileVisibility}
+                disabled={isVisibilitySaving}
+                className={`mt-4 inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                  profileVisibility === 'visible'
+                    ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200'
+                    : 'border-cyan-600 bg-cyan-600 text-white hover:bg-cyan-700'
+                }`}
+              >
+                {isVisibilitySaving ? <Loader2 size={16} className="animate-spin" /> : profileVisibility === 'visible' ? <EyeOff size={16} /> : <ShieldCheck size={16} />}
+                {profileVisibility === 'visible' ? 'Hide from clients' : 'Show to clients'}
+              </button>
+            )}
           </div>
           <div className="grid w-full gap-3 sm:grid-cols-3 lg:max-w-2xl">
             <DashboardMetric
