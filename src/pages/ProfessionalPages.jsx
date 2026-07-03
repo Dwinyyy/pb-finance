@@ -8,6 +8,7 @@ import {
   Mail, Lock, LogOut, Sparkles, Layers3, 
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
+  Camera, Eye, EyeOff, IdCard,
   Bookmark, MessageSquare, SlidersHorizontal,
   ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2, Plus,
@@ -128,8 +129,11 @@ import {
 const getProfileReadiness = (profile, titles) => {
   const profileSkills = asList(profile.skills);
   const profileTools = asList(profile.tools);
+  const identityDocuments = getIdentityDocuments(profile);
   const checks = [
     { label: 'Identity', done: Boolean(profile.name || profile.fullName) },
+    { label: 'Valid ID', done: hasIdentityArtifact(identityDocuments.validIdFront) },
+    { label: 'Liveness', done: hasIdentityArtifact(identityDocuments.livenessSelfie) },
     { label: 'Role title', done: cleanProfileTitles(titles).length > 0 },
     { label: 'Location', done: Boolean(profile.location) },
     { label: 'Bio', done: Boolean(profile.bio) },
@@ -162,6 +166,13 @@ const getWorkPreferences = (profile) => (
     : {}
 );
 const getProfileResume = (profile) => profile?.resume || getWorkPreferences(profile).resume || null;
+const getProfileAvatar = (profile) => profile?.avatarUrl || profile?.avatar_url || '';
+const getIdentityDocuments = (profile) => (
+  typeof profile?.identityVerificationDocuments === 'object' && profile.identityVerificationDocuments !== null
+    ? profile.identityVerificationDocuments
+    : {}
+);
+const hasIdentityArtifact = (document) => Boolean(document?.path || document?.fileName);
 const getExternalLinks = (profile) => asList(profile?.externalLinks || getWorkPreferences(profile).externalLinks);
 const getSupportingDocuments = (profile) => asList(profile?.supportingDocuments || getWorkPreferences(profile).supportingDocuments);
 const formatFileSize = (value) => {
@@ -200,6 +211,7 @@ const requiredCredentialMissingExpiry = (credential) => (
 const getCredentialDisplayLabel = (credential, fallback = 'document') => (
   credential?.reviewLabel || credential?.label || credential?.fileName || fallback
 );
+const getDocumentKey = (document) => document?.key || document?.id || document?.label || document?.fileName || document?.documentType || '';
 const normalizeLinkFields = (links = []) => {
   const linkMap = new Map(asList(links).map((link) => [link.id, link]));
 
@@ -248,6 +260,18 @@ const validateCredentialFile = (file, documentType) => {
     if (documentType === 'resume') return 'Resume uploads must be a PDF, JPG, or PNG.';
     if (documentType === 'certification') return 'Certification uploads must be a PDF, JPG, or PNG.';
     return 'Supporting document uploads must be a PDF, JPG, or PNG.';
+  }
+
+  return '';
+};
+const validateImageFile = (file, label = 'Image') => {
+  if (!file) return `Choose a ${label.toLowerCase()} to upload.`;
+  if (file.size > MAX_CREDENTIAL_UPLOAD_BYTES) return 'Upload must be 3 MB or smaller.';
+
+  const extension = getFileExtension(file.name);
+
+  if (!['.jpg', '.jpeg', '.png'].includes(extension)) {
+    return `${label} must be a JPG or PNG.`;
   }
 
   return '';
@@ -367,11 +391,13 @@ const buildProfileSavePayload = (profile, overrides = {}) => {
 
 
 
-function PortalModal({ children, onClose, title }) {
+function PortalModal({ children, onClose, size = 'default', title }) {
+  const widthClass = size === 'wide' ? 'max-w-3xl' : 'max-w-lg';
+
   return createPortal(
     <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/65 px-4 py-6 backdrop-blur-sm sm:py-10">
       <div className="flex min-h-full items-start justify-center">
-        <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+        <div className={`w-full ${widthClass} rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900`}>
           <div className="mb-5 flex items-center justify-between gap-4">
             <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
             <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
@@ -795,6 +821,10 @@ function AppTalentProfileView({ user }) {
   const [profileError, setProfileError] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
   const [profileForm, setProfileForm] = useState({});
+  const [previewTier, setPreviewTier] = useState('');
+  const [previewProfile, setPreviewProfile] = useState(null);
+  const [previewError, setPreviewError] = useState('');
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   useEffect(() => {
     setSavedProfile(profile || EMPTY_PROFILE);
@@ -809,6 +839,7 @@ function AppTalentProfileView({ user }) {
   const profileSkills = asList(displayProfile.skills);
   const profileTools = asList(displayProfile.tools);
   const skills = [...new Set([...profileSkills, ...profileTools])];
+  const profileAvatar = getProfileAvatar(displayProfile);
   const readiness = getProfileReadiness(displayProfile, profileTitles);
   const professionalPermissions = getProfessionalPortalPermissions(displayProfile);
   const profileVisibility = displayProfile.profileVisibility || displayProfile.profile_visibility || 'hidden';
@@ -845,6 +876,7 @@ function AppTalentProfileView({ user }) {
   };
 
   const buildProfileForm = (overrides = {}) => ({
+    avatarUrl: profileAvatar,
     titles: profileTitles,
     availability: displayProfile.availability || displayProfile.available || 'Immediate Start',
     bio: displayProfile.bio || '',
@@ -879,6 +911,12 @@ function AppTalentProfileView({ user }) {
     setProfileError('');
     setProfileMessage('');
 
+    if (!profileForm.avatarUrl) {
+      setProfileError('Upload a profile photo before saving profile settings.');
+      setIsSaving(false);
+      return;
+    }
+
     try {
       const nextTitles = cleanProfileTitles(profileForm.titles);
       const updated = await backendApi.talent.updateMyProfile({
@@ -897,6 +935,50 @@ function AppTalentProfileView({ user }) {
       setProfileError(saveError.message || 'Unable to save profile.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleProfilePhotoUpload = async (file) => {
+    const fileError = validateImageFile(file, 'Profile photo');
+
+    if (fileError) {
+      throw new Error(fileError);
+    }
+
+    const fileData = await fileToDataUrl(file);
+    const upload = await backendApi.talent.uploadProfilePhoto({
+      contentType: getContentTypeForFile(file),
+      fileData,
+      fileName: file.name,
+    });
+
+    setSavedProfile((current) => ({
+      ...current,
+      avatarUrl: upload.avatarUrl,
+      avatar_url: upload.avatarUrl,
+    }));
+    setProfileForm((current) => ({
+      ...current,
+      avatarUrl: upload.avatarUrl,
+    }));
+    setProfileMessage('Profile photo uploaded.');
+
+    return upload;
+  };
+
+  const openProfilePreview = async (tier) => {
+    setPreviewTier(tier);
+    setPreviewProfile(null);
+    setPreviewError('');
+    setIsPreviewLoading(true);
+
+    try {
+      const preview = await backendApi.talent.getProfilePreview({ tier });
+      setPreviewProfile(preview);
+    } catch (error) {
+      setPreviewError(error.message || 'Unable to load profile preview.');
+    } finally {
+      setIsPreviewLoading(false);
     }
   };
 
@@ -954,6 +1036,28 @@ function AppTalentProfileView({ user }) {
                 {profileVisibility === 'visible' ? 'Hide from clients' : 'Show to clients'}
               </button>
             )}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-400">View Profile As</span>
+              {[
+                { icon: EyeOff, label: 'Basic Client', tier: 'basic' },
+                { icon: Eye, label: 'Verified Client', tier: 'verified' },
+              ].map((option) => {
+                const Icon = option.icon;
+
+                return (
+                  <button
+                    key={option.tier}
+                    type="button"
+                    onClick={() => openProfilePreview(option.tier)}
+                    disabled={isPreviewLoading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                  >
+                    {isPreviewLoading && previewTier === option.tier ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="grid w-full gap-3 sm:grid-cols-3 lg:max-w-2xl">
             <DashboardMetric
@@ -987,8 +1091,12 @@ function AppTalentProfileView({ user }) {
         <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div className="bg-slate-950 h-24"></div>
           <div className="p-6 relative">
-            <div className="w-20 h-20 bg-gradient-to-br from-cyan-100 to-primary-50 rounded-2xl border-4 border-white flex items-center justify-center font-bold text-cyan-700 text-3xl absolute -top-10 shadow-sm">
-              {(displayProfile.name || '?').charAt(0)}
+            <div className="absolute -top-10 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-gradient-to-br from-cyan-100 to-primary-50 text-3xl font-bold text-cyan-700 shadow-sm dark:border-slate-900">
+              {profileAvatar ? (
+                <img src={profileAvatar} alt="" className="h-full w-full object-cover" />
+              ) : (
+                (displayProfile.name || '?').charAt(0)
+              )}
             </div>
             
             <div className="mt-12 mb-6">
@@ -1045,42 +1153,9 @@ function AppTalentProfileView({ user }) {
                 </div>
               </div>
 
-              {isEditing && editingSection === 'profile' ? (
-                <form onSubmit={handleProfileSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Full name
-                    <input value={profileForm.fullName || ''} onChange={(event) => handleProfileChange('fullName', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                  </label>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Professional titles
-                    <MultiSelectPicker getRemoveDisabledReason={getTitleRemoveDisabledReason} value={profileForm.titles || []} onChange={(titles) => handleProfileChange('titles', titles)} optionsList={PROFESSIONAL_TITLE_OPTIONS} placeholder="Select professional titles" />
-                  </label>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Location
-                    <input value={profileForm.location || ''} onChange={(event) => handleProfileChange('location', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                  </label>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Availability
-                    <select value={profileForm.availability || 'Immediate Start'} onChange={(event) => handleProfileChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500">
-                      {AVAILABILITY_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
-                      {isSaving ? 'Saving...' : 'Save'}
-                    </button>
-                    <button type="button" onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <button onClick={() => openEditor('profile')} className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-900 dark:text-slate-50 py-2.5 rounded-xl text-sm font-bold transition-colors">
-                   <Settings size={16} /> Profile Settings
-                </button>
-              )}
+              <button onClick={() => openEditor('profile')} className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-900 dark:text-slate-50 py-2.5 rounded-xl text-sm font-bold transition-colors">
+                 <Settings size={16} /> Profile Settings
+              </button>
             </div>
           </div>
         </div>
@@ -1105,22 +1180,7 @@ function AppTalentProfileView({ user }) {
               <h3 className="text-xl font-bold text-slate-950 dark:text-white">Professional Bio</h3>
               <button onClick={() => openEditor('bio')} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
-            {isEditing && editingSection === 'bio' ? (
-              <form onSubmit={handleProfileSubmit} className="space-y-4">
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Bio
-                  <textarea value={profileForm.bio || ''} onChange={(event) => handleProfileChange('bio', event.target.value)} rows={5} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                </label>
-                <div className="flex gap-2">
-                  <button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
-                    {isSaving ? 'Saving...' : 'Save Bio'}
-                  </button>
-                  <button type="button" onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : displayProfile.bio ? (
+            {displayProfile.bio ? (
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{displayProfile.bio}</p>
             ) : (
               <EmptyState
@@ -1139,40 +1199,6 @@ function AppTalentProfileView({ user }) {
               <button onClick={() => openEditor('rates')} className="text-cyan-600 font-bold text-sm hover:underline">Edit</button>
             </div>
 
-            {isEditing && editingSection === 'rates' ? (
-              <form onSubmit={handleProfileSubmit} className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Hourly rate
-                    <input type="number" min="0" step="1" value={profileForm.hourlyRate || ''} onChange={(event) => handleProfileChange('hourlyRate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                  </label>
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Years experience
-                    <input type="number" min="0" step="1" value={profileForm.yearsExperience || ''} onChange={(event) => handleProfileChange('yearsExperience', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500" />
-                  </label>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Tools / Software
-                    <MultiSelectPicker value={profileForm.tools || []} onChange={(val) => handleProfileChange('tools', val)} optionsList={SOFTWARE_OPTIONS} placeholder="Select software" />
-                  </label>
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Skills
-                    <MultiSelectPicker value={profileForm.skills || []} onChange={(val) => handleProfileChange('skills', val)} optionsList={SKILLS_OPTIONS} placeholder="Select skills" />
-                  </label>
-                </div>
-
-                <div className="flex gap-2">
-                  <button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
-                    {isSaving ? 'Saving...' : 'Save Rates'}
-                  </button>
-                  <button type="button" onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
             <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
               <div>
@@ -1199,11 +1225,17 @@ function AppTalentProfileView({ user }) {
               </div>
             </div>
             </>
-            )}
           </div>
         </FadeIn>
 
         <FadeIn delay={200}>
+          <ProfessionalIdentityVerificationPanel
+            onProfileUpdated={setSavedProfile}
+            profile={savedProfile}
+          />
+        </FadeIn>
+
+        <FadeIn delay={250}>
           <AppTalentCredentialsSection
             isLoading={isProfileLoading}
             onProfileUpdated={setSavedProfile}
@@ -1213,6 +1245,522 @@ function AppTalentProfileView({ user }) {
           />
         </FadeIn>
       </div>
+      </div>
+      {isEditing && (
+        <ProfileSettingsModal
+          activeSection={editingSection}
+          form={profileForm}
+          getTitleRemoveDisabledReason={getTitleRemoveDisabledReason}
+          isSaving={isSaving}
+          onChange={handleProfileChange}
+          onClose={() => setIsEditing(false)}
+          onPhotoUpload={handleProfilePhotoUpload}
+          onSectionChange={setEditingSection}
+          onSubmit={handleProfileSubmit}
+        />
+      )}
+      {previewTier && (
+        <ProfessionalProfilePreviewModal
+          error={previewError}
+          isLoading={isPreviewLoading}
+          onClose={() => {
+            setPreviewTier('');
+            setPreviewProfile(null);
+            setPreviewError('');
+          }}
+          profile={previewProfile}
+          tier={previewTier}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProfileSettingsModal({
+  activeSection,
+  form,
+  getTitleRemoveDisabledReason,
+  isSaving,
+  onChange,
+  onClose,
+  onPhotoUpload,
+  onSectionChange,
+  onSubmit,
+}) {
+  const [photoError, setPhotoError] = useState('');
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
+  const sections = [
+    { id: 'profile', icon: User, label: 'Profile' },
+    { id: 'bio', icon: FileText, label: 'Bio' },
+    { id: 'rates', icon: DollarSign, label: 'Rates' },
+  ];
+
+  const uploadPhoto = async (file) => {
+    if (!file) return;
+
+    setPhotoError('');
+    setIsPhotoUploading(true);
+
+    try {
+      await onPhotoUpload(file);
+    } catch (error) {
+      setPhotoError(error.message || 'Unable to upload profile photo.');
+    } finally {
+      setIsPhotoUploading(false);
+    }
+  };
+
+  return (
+    <PortalModal title="Profile Settings" size="wide" onClose={onClose}>
+      <form onSubmit={onSubmit} className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                {form.avatarUrl ? (
+                  <img src={form.avatarUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <Camera size={24} className="text-slate-400" />
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-slate-400">Required Photo</div>
+                <div className="text-sm font-black text-slate-950 dark:text-white">{form.avatarUrl ? 'Photo uploaded' : 'Upload a photo'}</div>
+              </div>
+            </div>
+            <p className="mb-3 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
+              Use a clear head-and-shoulders photo in business attire, facing the camera with neutral lighting and a professional pose.
+            </p>
+            {photoError && (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                {photoError}
+              </div>
+            )}
+            <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-cyan-600">
+              {isPhotoUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {isPhotoUploading ? 'Uploading...' : 'Upload Photo'}
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                className="hidden"
+                onChange={async (event) => {
+                  await uploadPhoto(event.target.files?.[0]);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="min-w-0">
+            <div className="mb-5 flex flex-wrap gap-2">
+              {sections.map((section) => {
+                const Icon = section.icon;
+                const isActive = activeSection === section.id;
+
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => onSectionChange(section.id)}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black transition-colors ${
+                      isActive
+                        ? 'border-cyan-600 bg-cyan-600 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {section.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeSection === 'profile' && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Full name
+                  <input value={form.fullName || ''} onChange={(event) => onChange('fullName', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900" />
+                </label>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Location
+                  <input value={form.location || ''} onChange={(event) => onChange('location', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900" />
+                </label>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 md:col-span-2">
+                  Professional titles
+                  <MultiSelectPicker getRemoveDisabledReason={getTitleRemoveDisabledReason} value={form.titles || []} onChange={(titles) => onChange('titles', titles)} optionsList={PROFESSIONAL_TITLE_OPTIONS} placeholder="Select professional titles" />
+                </label>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 md:col-span-2">
+                  Availability
+                  <select value={form.availability || 'Immediate Start'} onChange={(event) => onChange('availability', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900">
+                    {AVAILABILITY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {activeSection === 'bio' && (
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                Bio
+                <textarea value={form.bio || ''} onChange={(event) => onChange('bio', event.target.value)} rows={8} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-relaxed outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900" />
+              </label>
+            )}
+
+            {activeSection === 'rates' && (
+              <div className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Hourly rate
+                    <input type="number" min="0" step="1" value={form.hourlyRate || ''} onChange={(event) => onChange('hourlyRate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900" />
+                  </label>
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Years experience
+                    <input type="number" min="0" step="1" value={form.yearsExperience || ''} onChange={(event) => onChange('yearsExperience', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900" />
+                  </label>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Skills
+                    <MultiSelectPicker value={form.skills || []} onChange={(skills) => onChange('skills', skills)} optionsList={SKILLS_OPTIONS} placeholder="Select skills" />
+                  </label>
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Tools / Software
+                    <MultiSelectPicker value={form.tools || []} onChange={(tools) => onChange('tools', tools)} optionsList={SOFTWARE_OPTIONS} placeholder="Select software" />
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-5 dark:border-slate-800">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+            Cancel
+          </button>
+          <button type="submit" disabled={isSaving || isPhotoUploading} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-black text-white transition-colors hover:bg-cyan-600 disabled:opacity-70">
+            {isSaving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
+            {isSaving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+      </form>
+    </PortalModal>
+  );
+}
+
+function ProfessionalProfilePreviewModal({ error, isLoading, onClose, profile, tier }) {
+  const [previewDocument, setPreviewDocument] = useState(null);
+  const [documentError, setDocumentError] = useState('');
+  const [busyKey, setBusyKey] = useState('');
+  const canViewFullDocuments = Boolean(profile?.canViewFullDocuments);
+  const resume = profile?.resume || null;
+  const supportingDocuments = asList(profile?.supportingDocuments);
+  const skills = [...new Set([...asList(profile?.skills), ...asList(profile?.tools)])];
+  const tierLabel = tier === 'verified' ? 'Verified Client' : 'Basic Client';
+
+  useEffect(() => {
+    setPreviewDocument(null);
+    setDocumentError('');
+    setBusyKey('');
+  }, [profile?.id, tier]);
+
+  const openPreviewDocument = async (document, fallbackType = 'supporting_document') => {
+    if (!profile?.id || !document) return;
+
+    const documentKey = getDocumentKey(document);
+    const documentType = document.documentType || document.kind || fallbackType;
+
+    setDocumentError('');
+    setBusyKey(`${documentType}:${documentKey}`);
+
+    try {
+      const result = await backendApi.documents.getUrl({
+        documentKey,
+        documentType,
+        previewTier: tier,
+        professionalId: profile.id,
+      });
+
+      setPreviewDocument({
+        contentType: result?.contentType || document.contentType,
+        fileName: result?.fileName || document.fileName || document.label || 'Document preview',
+        previewUrl: result?.url,
+      });
+    } catch (openError) {
+      setDocumentError(openError.message || 'Unable to open this document.');
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  return (
+    <>
+      {previewDocument && (
+        <DocumentPreviewModal
+          key={previewDocument.previewUrl || previewDocument.fileName || 'preview-document'}
+          previewDocument={previewDocument}
+          onClose={() => setPreviewDocument(null)}
+        />
+      )}
+      <PortalModal title={`View Profile As ${tierLabel}`} size="wide" onClose={onClose}>
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950">
+            <Loader2 size={18} className="animate-spin" />
+            Loading preview
+          </div>
+        ) : error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : profile ? (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center">
+              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white text-2xl font-black text-cyan-700 dark:bg-slate-900">
+                {getProfileAvatar(profile) ? (
+                  <img src={getProfileAvatar(profile)} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  (profile.name || profile.fullName || '?').charAt(0)
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+                  {canViewFullDocuments ? <Eye size={13} /> : <EyeOff size={13} />}
+                  {tierLabel}
+                </div>
+                <h3 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{profile.name || profile.fullName || 'Professional profile'}</h3>
+                <p className="mt-1 text-sm font-bold text-cyan-700 dark:text-cyan-400">{profile.title || profile.role || 'Finance Professional'}</p>
+                <p className="mt-2 text-sm font-medium text-slate-500">{profile.location || 'Location pending'} · {profile.rate ? `${formatMoney(profile.rate)}/hr` : 'Rate pending'}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+              <section className="space-y-5">
+                <div>
+                  <h4 className="mb-2 text-sm font-black text-slate-950 dark:text-white">Bio</h4>
+                  <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">{profile.bio || 'No bio is visible yet.'}</p>
+                </div>
+                <div>
+                  <h4 className="mb-2 text-sm font-black text-slate-950 dark:text-white">Skills & Software</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {skills.length ? skills.map((skill) => (
+                      <span key={skill} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                        {skill}
+                      </span>
+                    )) : (
+                      <span className="text-sm font-semibold text-slate-500">No skills visible yet.</span>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h4 className="mb-3 text-sm font-black text-slate-950 dark:text-white">Verified Qualifications & Resume</h4>
+                {documentError && (
+                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                    {documentError}
+                  </div>
+                )}
+                {!canViewFullDocuments ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-slate-400 dark:bg-slate-900">
+                      <EyeOff size={22} />
+                    </div>
+                    Resume and required documents are hidden for Basic clients.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {[resume, ...supportingDocuments].filter(Boolean).map((document, index) => {
+                      const documentType = document.documentType || document.kind || (index === 0 ? 'resume' : 'supporting_document');
+                      const key = getDocumentKey(document);
+                      const busy = busyKey === `${documentType}:${key}`;
+
+                      return (
+                        <div key={`${documentType}:${key}`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <div className="text-sm font-black text-slate-950 dark:text-white">{document.label || document.fileName || 'Verified document'}</div>
+                              <div className="text-xs font-semibold text-slate-500">{document.fileName || 'Approved credential'}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openPreviewDocument(document, documentType)}
+                              disabled={busy}
+                              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-70 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            >
+                              {busy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                              {busy ? 'Opening...' : 'View'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!resume && supportingDocuments.length === 0 && (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950">
+                        No approved documents are visible to Verified clients yet.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        ) : null}
+      </PortalModal>
+    </>
+  );
+}
+
+function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
+  const [busyKind, setBusyKind] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const identityDocuments = getIdentityDocuments(profile);
+  const rows = [
+    {
+      accept: DOCUMENT_ACCEPTS.other_document,
+      description: 'Government-issued ID, front side. PDF, JPG, or PNG.',
+      document: identityDocuments.validIdFront,
+      icon: IdCard,
+      kind: 'valid_id_front',
+      label: 'Valid ID front',
+      required: true,
+      validator: (file) => validateCredentialFile(file, 'other_document'),
+    },
+    {
+      accept: DOCUMENT_ACCEPTS.other_document,
+      description: 'Back side if your ID has separate rear details.',
+      document: identityDocuments.validIdBack,
+      icon: IdCard,
+      kind: 'valid_id_back',
+      label: 'Valid ID back',
+      required: false,
+      validator: (file) => validateCredentialFile(file, 'other_document'),
+    },
+    {
+      accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
+      description: 'A fresh selfie facing the camera for liveness review.',
+      document: identityDocuments.livenessSelfie,
+      icon: Camera,
+      kind: 'liveness_selfie',
+      label: 'Liveness selfie',
+      required: true,
+      validator: (file) => validateImageFile(file, 'Liveness selfie'),
+    },
+  ];
+  const requiredComplete = rows.filter((row) => row.required).every((row) => hasIdentityArtifact(row.document));
+
+  const uploadIdentityFile = async (row, file) => {
+    if (!file) return;
+
+    const fileError = row.validator(file);
+
+    if (fileError) {
+      setError(fileError);
+      return;
+    }
+
+    setBusyKind(row.kind);
+    setError('');
+    setMessage('');
+
+    try {
+      const fileData = await fileToDataUrl(file);
+      const updated = await backendApi.talent.uploadIdentity({
+        contentType: getContentTypeForFile(file),
+        fileData,
+        fileName: file.name,
+        kind: row.kind,
+      });
+
+      onProfileUpdated(updated);
+      setMessage(`${row.label} uploaded for identity verification.`);
+    } catch (uploadError) {
+      setError(uploadError.message || `Unable to upload ${row.label.toLowerCase()}.`);
+    } finally {
+      setBusyKind('');
+    }
+  };
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+            <IdCard size={14} />
+            Professional onboarding
+          </div>
+          <h3 className="text-xl font-bold text-slate-950 dark:text-white">Valid ID & Liveness Check</h3>
+          <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard access stays locked until PB Finance manually approves your identity and required documents.</p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black ${
+          requiredComplete
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
+            : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
+        }`}>
+          {requiredComplete ? <CheckCircle size={14} /> : <Clock3 size={14} />}
+          {requiredComplete ? 'Ready for review' : 'Required'}
+        </span>
+      </div>
+
+      {error && (
+        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
+      {message && (
+        <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+          {message}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {rows.map((row) => {
+          const Icon = row.icon;
+          const uploaded = hasIdentityArtifact(row.document);
+          const busy = busyKind === row.kind;
+
+          return (
+            <div key={row.kind} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-cyan-700 dark:bg-slate-900 dark:text-cyan-300">
+                    <Icon size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-slate-950 dark:text-white">{row.label}</div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{row.required ? 'Required' : 'Optional'}</div>
+                  </div>
+                </div>
+                <span className={`rounded-lg border px-2 py-1 text-[11px] font-black ${
+                  uploaded
+                    ? getCredentialStatusStyle(row.document?.status || 'draft')
+                    : 'border-slate-200 bg-white text-slate-400 dark:border-slate-800 dark:bg-slate-900'
+                }`}>
+                  {uploaded ? getCredentialStatusLabel(row.document?.status) : 'Missing'}
+                </span>
+              </div>
+              <p className="mb-4 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">{row.description}</p>
+              {uploaded && (
+                <div className="mb-4 truncate rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                  {row.document.fileName || row.document.label}
+                </div>
+              )}
+              <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-cyan-600">
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                {busy ? 'Uploading...' : uploaded ? 'Replace' : 'Upload'}
+                <input
+                  type="file"
+                  accept={row.accept}
+                  className="hidden"
+                  onChange={async (event) => {
+                    await uploadIdentityFile(row, event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1260,6 +1808,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     ...user,
     ...(profile || EMPTY_PROFILE),
   };
+  const identityDocuments = getIdentityDocuments(displayProfile);
   const savedProfileTitles = cleanProfileTitles(displayProfile.titles, cleanProfileTitles(displayProfile.title || displayProfile.role));
   const profileTitles = cleanProfileTitles(selectedTitles, savedProfileTitles);
   const profileTitleKey = profileTitles.join('|');
@@ -1318,8 +1867,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
   const hasRequiredRegulatedInputs = requiredRegulatedInputs.length > 0;
 
   const approvalRequirementText = certificationRequirements.length
-    ? `To get approved, upload your resume${hasRequiredRegulatedInputs ? ', complete Required Regulatory Inputs,' : ''} and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required upload. Other Documents are optional and will not block approval.`
-    : `To get approved, upload your resume${hasRequiredRegulatedInputs ? ' and complete Required Regulatory Inputs' : ''}. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.`;
+    ? `To get approved, upload Valid ID, complete liveness, upload your resume${hasRequiredRegulatedInputs ? ', complete Required Regulatory Inputs,' : ''} and all ${certificationRequirements.length} required certification document${certificationRequirements.length === 1 ? '' : 's'}. Admin must approve each required upload. Other Documents are optional and will not block approval.`
+    : `To get approved, upload Valid ID, complete liveness, upload your resume${hasRequiredRegulatedInputs ? ' and complete Required Regulatory Inputs' : ''}. Required certification documents appear after you choose a mapped professional title; Other Documents are optional and will not block approval.`;
   const resume = credentialForm.resume;
   const uploadedCertificationCount = certificationRequirements.filter((requirement) => requirement.upload).length;
   const missingCertificationCount = certificationRequirements.length - uploadedCertificationCount;
@@ -1349,6 +1898,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     !String(credentialForm.regulatedInputs?.[field.id] || '').trim()
   ));
   const verifyBlockers = [
+    !hasIdentityArtifact(identityDocuments.validIdFront) ? 'Upload Valid ID front.' : '',
+    !hasIdentityArtifact(identityDocuments.livenessSelfie) ? 'Complete liveness selfie.' : '',
     !resume ? 'Upload your resume.' : '',
     ...certificationRequirements
       .filter((requirement) => !requirement.upload)

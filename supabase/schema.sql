@@ -114,6 +114,7 @@ create table if not exists public.professional_profiles (
   professional_tier text not null default 'unverified',
   profile_visibility text not null default 'hidden',
   identity_verification_status text not null default 'pending',
+  identity_verification_documents jsonb not null default '{}'::jsonb,
   identity_verified_at timestamptz,
   identity_verified_by uuid references public.profiles(id) on delete set null,
   identity_verification_notes text,
@@ -154,6 +155,7 @@ alter table public.professional_profiles add column if not exists review_submitt
 alter table public.professional_profiles add column if not exists professional_tier text not null default 'unverified';
 alter table public.professional_profiles add column if not exists profile_visibility text not null default 'hidden';
 alter table public.professional_profiles add column if not exists identity_verification_status text not null default 'pending';
+alter table public.professional_profiles add column if not exists identity_verification_documents jsonb not null default '{}'::jsonb;
 alter table public.professional_profiles add column if not exists identity_verified_at timestamptz;
 alter table public.professional_profiles add column if not exists identity_verified_by uuid references public.profiles(id) on delete set null;
 alter table public.professional_profiles add column if not exists identity_verification_notes text;
@@ -516,6 +518,18 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.document_expiration_events (
+  id uuid primary key default gen_random_uuid(),
+  professional_id uuid not null references public.professional_profiles(user_id) on delete cascade,
+  document_key text not null,
+  event_type text not null check (event_type in ('reminder_60', 'reminder_30', 'reminder_7', 'expired')),
+  expiry_date date not null,
+  document_label text,
+  document_file_name text,
+  created_at timestamptz not null default now(),
+  unique (professional_id, document_key, event_type, expiry_date)
+);
+
 create index if not exists professional_profiles_status_idx on public.professional_profiles(status);
 create index if not exists professional_profiles_tier_visibility_idx on public.professional_profiles(professional_tier, profile_visibility, status);
 create index if not exists profiles_manual_triage_idx on public.profiles(manual_triage_required, manual_triage_status);
@@ -537,6 +551,7 @@ create index if not exists client_job_contacts_professional_id_idx on public.cli
 create index if not exists notifications_recipient_id_idx on public.notifications(recipient_id);
 create index if not exists notifications_unread_idx on public.notifications(recipient_id, created_at desc)
   where read_at is null;
+create index if not exists document_expiration_events_professional_id_idx on public.document_expiration_events(professional_id);
 
 do $$
 declare
@@ -582,6 +597,9 @@ alter table public.client_background_checks enable row level security;
 alter table public.client_job_comments enable row level security;
 alter table public.client_job_contacts enable row level security;
 alter table public.notifications enable row level security;
+alter table public.document_expiration_events enable row level security;
+
+grant select, insert, update, delete on public.document_expiration_events to service_role;
 
 create or replace function public.profile_role_for(p_user_id uuid)
 returns text

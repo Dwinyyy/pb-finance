@@ -65,7 +65,7 @@ const withProfessionalPermissions = (user, profile) => {
 const getProfileUser = async (req, user) => {
   const token = getBearerToken(req);
   const rows = await supabaseRestRequest(
-    `/profiles?id=eq.${user.id}&select=id,email,full_name,company,role,title,client_tier&limit=1`,
+    `/profiles?id=eq.${user.id}&select=id,avatar_url,email,full_name,company,role,title,client_tier&limit=1`,
     {
       token,
       useServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
@@ -79,6 +79,8 @@ const getProfileUser = async (req, user) => {
 
   const profileUser = {
     ...user,
+    avatarUrl: profile.avatar_url || user.avatarUrl,
+    avatar_url: profile.avatar_url || user.avatar_url,
     company: profile.company || user.company,
     email: profile.email || user.email,
     name: profile.full_name || user.name,

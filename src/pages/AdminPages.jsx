@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Building,
+  Camera,
   CheckCircle,
   Clock3,
   Download,
   EyeOff,
   FileText,
+  IdCard,
   Loader2,
   LogOut,
   MessageSquare,
@@ -118,6 +120,30 @@ const getProfileWorkPreferences = (profile) => {
 };
 const getProfileResume = (profile) => profile.resume || getProfileWorkPreferences(profile).resume || null;
 const getProfileSupportingDocuments = (profile) => asList(profile.supportingDocuments || getProfileWorkPreferences(profile).supportingDocuments);
+const getProfileIdentityDocuments = (profile) => {
+  const documents = profile.identityVerificationDocuments || profile.identity_verification_documents;
+
+  return typeof documents === 'object' && documents !== null ? documents : {};
+};
+const hasIdentityArtifact = (document) => Boolean(document?.path || document?.fileName);
+const getIdentityReviewDocuments = (profile) => {
+  const documents = getProfileIdentityDocuments(profile);
+
+  return [
+    { document: documents.validIdFront, documentType: 'valid_id_front', icon: IdCard, label: 'Valid ID front', required: true },
+    { document: documents.validIdBack, documentType: 'valid_id_back', icon: IdCard, label: 'Valid ID back', required: false },
+    { document: documents.livenessSelfie, documentType: 'liveness_selfie', icon: Camera, label: 'Liveness selfie', required: true },
+  ].map((item) => ({
+    ...item,
+    document: item.document
+      ? {
+        ...item.document,
+        documentType: item.document.kind || item.documentType,
+        reviewLabel: item.label,
+      }
+      : null,
+  }));
+};
 const getProfileRegulatedInputs = (profile) => {
   const wp = getProfileWorkPreferences(profile);
   return (wp.regulatedInputs && typeof wp.regulatedInputs === 'object') ? wp.regulatedInputs : {};
@@ -185,6 +211,7 @@ const getReviewDocumentKindLabel = (document) => {
   return 'Supporting document';
 };
 const getCredentialReviewState = (profile, documents = getReviewDocuments(profile)) => {
+  const identityDocuments = getProfileIdentityDocuments(profile);
   const resume = documents.find((document) => document.documentType === 'resume');
   const supportingDocuments = documents.filter((document) => document.documentType !== 'resume');
   const allSupportingDocs = [...supportingDocuments, ...getProfileSupportingDocuments(profile)];
@@ -200,7 +227,11 @@ const getCredentialReviewState = (profile, documents = getReviewDocuments(profil
   const optionalCount = documents.filter((document) => document.reviewScope === 'optional').length;
   let approvalBlocker = '';
 
-  if (profile.identityVerificationStatus !== 'approved') {
+  if (!hasIdentityArtifact(identityDocuments.validIdFront)) {
+    approvalBlocker = 'Valid ID front is required before identity approval.';
+  } else if (!hasIdentityArtifact(identityDocuments.livenessSelfie)) {
+    approvalBlocker = 'Liveness selfie is required before identity approval.';
+  } else if (profile.identityVerificationStatus !== 'approved') {
     approvalBlocker = 'Identity verification must be approved before this professional can be verified.';
   } else if (!resume) {
     approvalBlocker = 'Resume approval is required before this profile can be approved.';
@@ -1045,6 +1076,7 @@ function TalentReview() {
         <div className="grid gap-5 xl:grid-cols-2">
           {talent.map((profile, index) => {
             const reviewDocuments = getReviewDocuments(profile);
+            const identityDocuments = getIdentityReviewDocuments(profile);
             const reviewState = getCredentialReviewState(profile, reviewDocuments);
 
             return (
@@ -1089,6 +1121,47 @@ function TalentReview() {
                     <div className="mt-1 text-xs font-semibold text-slate-500">Required before professional verification can be granted.</div>
                   </div>
                   <StatusBadge status={profile.identityVerificationStatus || 'pending'} />
+                </div>
+                <div className="mb-4 grid gap-2 md:grid-cols-3">
+                  {identityDocuments.map((item) => {
+                    const Icon = item.icon;
+                    const uploaded = hasIdentityArtifact(item.document);
+
+                    return (
+                      <div key={item.documentType} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Icon size={15} className="text-cyan-600 dark:text-cyan-400" />
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">{item.label}</span>
+                          </div>
+                          <span className={`rounded-md border px-2 py-0.5 text-[10px] font-black ${
+                            uploaded
+                              ? getCredentialStatusStyle(item.document?.status || 'draft')
+                              : 'border-slate-200 bg-slate-50 text-slate-400'
+                          }`}>
+                            {uploaded ? statusLabel(item.document?.status || 'draft') : item.required ? 'missing' : 'optional'}
+                          </span>
+                        </div>
+                        {uploaded ? (
+                          <div className="space-y-2">
+                            <div className="truncate text-xs font-semibold text-slate-500">{item.document.fileName || item.document.label}</div>
+                            <button
+                              type="button"
+                              onClick={() => openDocument(profile, item.document)}
+                              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            >
+                              <FileText size={13} />
+                              View
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-xs font-semibold text-slate-400">
+                            {item.required ? 'Required before identity approval.' : 'Not uploaded.'}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
