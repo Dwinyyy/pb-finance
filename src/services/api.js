@@ -208,6 +208,7 @@ export const backendApi = {
   talent: {
     listProfiles: (params) => request(`/talent/profiles${toQueryString(params)}`),
     getMyProfile: () => request('/talent/me'),
+    getProfilePreview: (params) => request(`/talent/profile-preview${toQueryString(params)}`),
     updateMyProfile: (payload) => request('/talent/me', { method: 'PATCH', body: payload }),
     updateVisibility: (payload) => request('/talent/visibility', { method: 'PATCH', body: payload }),
     listOpportunities: () => request('/talent/opportunities'),
@@ -219,6 +220,8 @@ export const backendApi = {
     contactClientFromJob: (payload) => request('/talent/job-contacts', { method: 'POST', body: payload }),
     getEarnings: () => request('/talent/earnings'),
     uploadCredential: (payload) => request('/talent/uploads', { method: 'POST', body: payload }),
+    uploadIdentity: (payload) => request('/talent/identity-uploads', { method: 'POST', body: payload }),
+    uploadProfilePhoto: (payload) => request('/talent/profile-photo', { method: 'POST', body: payload }),
     requestDocumentChange: (payload) => request('/talent/document-request', { method: 'POST', body: payload }),
   },
   documents: {

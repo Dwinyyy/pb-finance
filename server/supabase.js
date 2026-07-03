@@ -65,6 +65,8 @@ export const publicUser = (user) => {
     : 'basic';
 
   return {
+    avatarUrl: metadata.avatar_url || '',
+    avatar_url: metadata.avatar_url || '',
     clientTier,
     client_tier: clientTier,
     company: metadata.company || '',

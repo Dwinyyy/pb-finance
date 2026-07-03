@@ -43,6 +43,24 @@ const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
 ]);
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+]);
+const PROFILE_PHOTO_BUCKET = 'profile-photos';
+const IDENTITY_UPLOAD_KINDS = new Set(['valid_id_front', 'valid_id_back', 'liveness_selfie']);
+const IDENTITY_UPLOAD_KEYS = Object.freeze({
+  liveness_selfie: 'livenessSelfie',
+  valid_id_back: 'validIdBack',
+  valid_id_front: 'validIdFront',
+});
+const IDENTITY_UPLOAD_LABELS = Object.freeze({
+  liveness_selfie: 'Liveness selfie',
+  valid_id_back: 'Valid ID back',
+  valid_id_front: 'Valid ID front',
+});
+const PROFILE_PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
+const EXPIRATION_NOTIFICATION_THRESHOLDS = Object.freeze([60, 30, 7]);
 const DOCUMENT_TYPE_FILE_RULES = {
   certification: {
     extensions: new Set(['.pdf', '.jpg', '.jpeg', '.png']),
@@ -81,8 +99,8 @@ const PROFESSIONAL_PROFILE_DIRECTORY_SELECT = [
   'published_at',
   'updated_at',
 ].join(',');
-const PROFILE_OWNER_BASE_SELECT = ['id', 'full_name', 'role', 'title'];
-const PROFILE_OWNER_CONTACT_SELECT = ['id', 'email', 'full_name', 'company', 'role', 'title', 'client_tier'];
+const PROFILE_OWNER_BASE_SELECT = ['id', 'avatar_url', 'full_name', 'role', 'title'];
+const PROFILE_OWNER_CONTACT_SELECT = ['id', 'avatar_url', 'email', 'full_name', 'company', 'role', 'title', 'client_tier'];
 const PROFILE_OWNER_MANUAL_TRIAGE_SELECT = [
   ...PROFILE_OWNER_CONTACT_SELECT,
   'manual_triage_required',
@@ -93,7 +111,28 @@ const PROFILE_OWNER_MANUAL_TRIAGE_SELECT = [
 const talentPrivateVisibilities = new Set(['admin', 'internal', 'owner']);
 const talentCredentialVisibilities = new Set(['admin', 'internal', 'owner', 'client_full']);
 const talentOwnerContactVisibilities = new Set(['admin', 'internal', 'owner']);
-const CLIENT_PROFILE_SELECT = 'id,email,full_name,company,role,title,client_tier';
+const basicClientRestrictedTalentProfileFields = Object.freeze([
+  'email',
+  'externalLinks',
+  'hasPendingChanges',
+  'identityVerificationNotes',
+  'identityVerificationDocuments',
+  'identityVerificationStatus',
+  'pendingDraftOnly',
+  'professionalPermissions',
+  'professionalTier',
+  'professionalTierLabel',
+  'profileVisibility',
+  'resume',
+  'reviewStatus',
+  'supportingDocuments',
+  'verifiedAt',
+  'workPreferences',
+]);
+const basicClientRestrictedTalentProfileNulls = Object.freeze(Object.fromEntries(
+  basicClientRestrictedTalentProfileFields.map((field) => [field, null])
+));
+const CLIENT_PROFILE_SELECT = 'id,avatar_url,email,full_name,company,role,title,client_tier';
 const CLIENT_TIERS = new Set(['basic', 'verified', 'vip']);
 const CLIENT_TIER_PERMISSIONS = Object.freeze({
   basic: Object.freeze({
@@ -310,6 +349,48 @@ const cleanCredentialFileRecord = (file) => {
     inputValue: cleanString(record.inputValue, 200),
   };
 };
+const cleanIdentityVerificationDocuments = (documents) => {
+  const record = cleanRecord(documents);
+
+  return {
+    livenessSelfie: cleanCredentialFileRecord(record.livenessSelfie || record.liveness_selfie),
+    validIdBack: cleanCredentialFileRecord(record.validIdBack || record.valid_id_back),
+    validIdFront: cleanCredentialFileRecord(record.validIdFront || record.valid_id_front),
+  };
+};
+const hasCredentialArtifact = (credential) => {
+  const record = cleanCredentialFileRecord(credential);
+
+  return Boolean(record?.path || record?.fileName);
+};
+const getIdentitySubmissionBlocker = (profile) => {
+  const documents = cleanIdentityVerificationDocuments(profile?.identity_verification_documents || profile?.identityVerificationDocuments);
+
+  if (!hasCredentialArtifact(documents.validIdFront)) {
+    return 'Upload a valid ID before requesting verification.';
+  }
+
+  if (!hasCredentialArtifact(documents.livenessSelfie)) {
+    return 'Complete the liveness selfie check before requesting verification.';
+  }
+
+  return '';
+};
+const markIdentityVerificationDocumentsSubmitted = (documents) => {
+  const cleanDocuments = cleanIdentityVerificationDocuments(documents);
+
+  return Object.fromEntries(
+    Object.entries(cleanDocuments)
+      .filter(([, document]) => document?.path)
+      .map(([key, document]) => [
+        key,
+        {
+          ...document,
+          status: document.status === 'approved' ? 'approved' : 'pending_review',
+        },
+      ])
+  );
+};
 const cleanSupportingDocuments = (documents) => asList(documents)
   .map((document) => cleanCredentialFileRecord(document))
   .filter(Boolean)
@@ -402,6 +483,8 @@ const getProfileUserForSession = async (session) => {
       ...user,
       company: profile.company || user.company,
       email: profile.email || user.email,
+      avatarUrl: profile.avatar_url || user.avatarUrl,
+      avatar_url: profile.avatar_url || user.avatar_url,
       name: profile.full_name || user.name,
       role: profile.role || user.role,
       clientTier: normalizeClientTier(profile.client_tier),
@@ -547,6 +630,106 @@ const readRowsIfPresent = async (req, path, missingNames, options = {}) => {
 
     throw error;
   }
+};
+const getDocumentExpirationSentKeys = async (req) => {
+  const rows = await readRowsIfPresent(
+    req,
+    '/document_expiration_events?select=professional_id,document_key,event_type,expiry_date&limit=5000',
+    ['document_expiration_events'],
+    { useServiceRole: true }
+  );
+
+  return new Set(asList(rows).map((row) => getDocumentExpirationEventKey({
+    documentKey: row.document_key,
+    eventType: row.event_type,
+    expiryDate: row.expiry_date,
+    professionalId: row.professional_id,
+  })));
+};
+const recordDocumentExpirationEvent = async (req, action) => {
+  try {
+    await writeRows(
+      req,
+      '/document_expiration_events?on_conflict=professional_id,document_key,event_type,expiry_date',
+      {
+        document_file_name: action.document.fileName || '',
+        document_key: action.documentKey,
+        document_label: action.document.label || action.document.fileName || '',
+        event_type: action.eventType,
+        expiry_date: action.expiryDate,
+        professional_id: action.professionalId,
+      },
+      { prefer: 'resolution=ignore-duplicates,return=minimal', useServiceRole: true }
+    );
+  } catch (error) {
+    if (!isMissingSchemaError(error, ['document_expiration_events'])) {
+      throw error;
+    }
+  }
+};
+const notifyDocumentExpirationAction = async (profile, action) => {
+  const documentLabel = action.document.label || action.document.fileName || 'Required document';
+  const isExpired = action.eventType === 'expired';
+
+  return notifyUser({
+    actionUrl: '/?tab=profile',
+    body: isExpired
+      ? `Your verified document "${documentLabel}" has expired. Your professional verification has been downgraded until you upload a renewal and PB Finance approves it.`
+      : `Your verified document "${documentLabel}" will expire in ${action.daysToExpiry} days. Upload a renewal before it expires to keep verified access.`,
+    emailSubject: isExpired
+      ? `Document expired: ${documentLabel}`
+      : `Document expiring in ${action.daysToExpiry} days: ${documentLabel}`,
+    metadata: {
+      documentKey: action.documentKey,
+      eventType: action.eventType,
+      expiryDate: action.expiryDate,
+      professionalId: action.professionalId,
+    },
+    recipientEmail: profile.email,
+    recipientId: profile.id || profile.user_id,
+    recipientName: profile.fullName || profile.name,
+    title: isExpired ? 'Document expired' : 'Document expiring soon',
+    type: isExpired ? 'document_expired' : 'document_expiring',
+  });
+};
+const runDocumentExpirationCheck = async (req) => {
+  const profiles = await loadTalentProfiles(req, { onlyApproved: true, visibility: 'internal' });
+  const sentKeys = await getDocumentExpirationSentKeys(req);
+  const now = new Date();
+  const downgradedProfessionalIds = new Set();
+  let notifications = 0;
+
+  for (const profile of profiles) {
+    const actions = getDocumentExpirationActions(profile, { now, sentKeys });
+
+    for (const action of actions) {
+      await notifyDocumentExpirationAction(profile, action);
+      notifications += 1;
+
+      if (action.eventType === 'expired' && !downgradedProfessionalIds.has(action.professionalId)) {
+        await patchRows(
+          req,
+          `/professional_profiles?user_id=eq.${action.professionalId}`,
+          {
+            ...getProfessionalDowngradePayload(),
+            review_submitted_at: now.toISOString(),
+          },
+          { useServiceRole: true }
+        );
+        downgradedProfessionalIds.add(action.professionalId);
+      }
+
+      await recordDocumentExpirationEvent(req, action);
+      sentKeys.add(action.eventKey);
+    }
+  }
+
+  return {
+    checked: profiles.length,
+    downgraded: downgradedProfessionalIds.size,
+    notifications,
+    ok: true,
+  };
 };
 const getMonthStartIso = () => {
   const now = new Date();
@@ -817,6 +1000,8 @@ const mapTalentProfile = (profile, owner = {}, {
   const mapped = {
     available: viewProfile.availability || 'Immediate Start',
     availability: viewProfile.availability || 'Immediate Start',
+    avatarUrl: owner.avatar_url || owner.avatarUrl || '',
+    avatar_url: owner.avatar_url || owner.avatarUrl || '',
     bio: viewProfile.bio || '',
     certifications: asList(viewProfile.certifications),
     exp: years ? `${years}+ yrs` : '',
@@ -857,6 +1042,7 @@ const mapTalentProfile = (profile, owner = {}, {
     mapped.hasPendingChanges = hasPendingProfile(profile);
     mapped.identityVerificationNotes = profile.identity_verification_notes || '';
     mapped.identityVerificationStatus = profile.identity_verification_status || 'pending';
+    mapped.identityVerificationDocuments = cleanIdentityVerificationDocuments(profile.identity_verification_documents);
     mapped.pendingDraftOnly = hasDraftPending;
     mapped.professionalPermissions = professionalPermissions;
     mapped.professionalTier = professionalPermissions.tier;
@@ -875,6 +1061,64 @@ const mapTalentProfile = (profile, owner = {}, {
 
   return mapped;
 };
+
+const getTalentProfileVisibilityForViewer = (viewer, fallback = 'directory') => {
+  if (viewer?.role !== 'client') {
+    return fallback;
+  }
+
+  return getClientPermissions(viewer).canViewFullDocuments ? 'client_full' : 'directory';
+};
+
+const scrubTalentProfileForViewer = (profile, viewer) => {
+  if (viewer?.role !== 'client') {
+    return profile;
+  }
+
+  const permissions = getClientPermissions(viewer);
+
+  if (permissions.canViewFullDocuments) {
+    return {
+      ...profile,
+      canViewFullDocuments: true,
+    };
+  }
+
+  return {
+    ...profile,
+    ...basicClientRestrictedTalentProfileNulls,
+    canViewFullDocuments: false,
+  };
+};
+
+const mapTalentProfileForViewer = (profile, owner = {}, viewer = {}, options = {}) => {
+  const visibility = options.visibility || getTalentProfileVisibilityForViewer(
+    viewer,
+    options.defaultVisibility || 'directory'
+  );
+
+  return scrubTalentProfileForViewer(
+    mapTalentProfile(profile, owner, {
+      ...options,
+      visibility,
+    }),
+    viewer
+  );
+};
+
+const mapTalentProfilePreviewForTier = (profile, owner = {}, tier = 'basic') => mapTalentProfileForViewer(
+  profile,
+  owner,
+  {
+    clientTier: normalizeClientTier(tier),
+    client_tier: normalizeClientTier(tier),
+    id: 'profile-preview-client',
+    role: 'client',
+  },
+  {
+    usePending: false,
+  }
+);
 
 const loadTalentProfiles = async (req, {
   ids,
@@ -918,6 +1162,19 @@ const loadTalentProfiles = async (req, {
   });
 
   return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id), { usePending, visibility }));
+};
+
+const loadTalentProfilesForViewer = async (req, viewer, options = {}) => {
+  const visibility = options.visibility || getTalentProfileVisibilityForViewer(
+    viewer,
+    options.defaultVisibility || 'directory'
+  );
+  const profiles = await loadTalentProfiles(req, {
+    ...options,
+    visibility,
+  });
+
+  return profiles.map((profile) => scrubTalentProfileForViewer(profile, viewer));
 };
 
 const mapAgency = (agency) => ({
@@ -1226,6 +1483,7 @@ const buildAgencyPayload = (body, fallback = {}) => {
 };
 
 let credentialBucketReady = false;
+let profilePhotoBucketReady = false;
 
 const encodeStoragePath = (path) => path
   .split('/')
@@ -1253,7 +1511,7 @@ const getCredentialFileRule = (documentType) => (
   DOCUMENT_TYPE_FILE_RULES[documentType] || DOCUMENT_TYPE_FILE_RULES.other_document
 );
 
-const parseCredentialUpload = (body) => {
+const parseBase64Upload = (body) => {
   const fileData = String(body.fileData || body.dataUrl || '');
   const dataUrlMatch = fileData.match(/^data:([^;]+);base64,(.+)$/);
 
@@ -1261,11 +1519,18 @@ const parseCredentialUpload = (body) => {
     throw new Error('A valid file upload is required.');
   }
 
+  return {
+    bytes: Buffer.from(dataUrlMatch[2], 'base64'),
+    declaredContentType: cleanString(body.contentType || dataUrlMatch[1], 120),
+  };
+};
+
+const parseCredentialUpload = (body) => {
+  const { bytes, declaredContentType } = parseBase64Upload(body);
   const documentType = cleanString(body.documentType || body.kind || 'credential', 80);
   const rule = getCredentialFileRule(documentType);
   const fileName = safeFileName(body.fileName || body.name);
   const extension = getFileExtension(fileName);
-  const declaredContentType = cleanString(body.contentType || dataUrlMatch[1], 120);
   const contentType = ALLOWED_CREDENTIAL_MIME_TYPES.has(declaredContentType)
     ? declaredContentType
     : '';
@@ -1274,7 +1539,26 @@ const parseCredentialUpload = (body) => {
     throw new Error(rule.message);
   }
 
-  const bytes = Buffer.from(dataUrlMatch[2], 'base64');
+  if (!bytes.length || bytes.length > MAX_CREDENTIAL_UPLOAD_BYTES) {
+    throw new Error('Upload must be 3 MB or smaller.');
+  }
+
+  return {
+    bytes,
+    contentType,
+    fileName,
+  };
+};
+
+const parseImageUpload = (body, { message = 'Upload must be a JPG or PNG image.' } = {}) => {
+  const { bytes, declaredContentType } = parseBase64Upload(body);
+  const fileName = safeFileName(body.fileName || body.name || 'profile-photo.jpg');
+  const extension = getFileExtension(fileName);
+  const contentType = ALLOWED_IMAGE_MIME_TYPES.has(declaredContentType) ? declaredContentType : '';
+
+  if (!contentType || !PROFILE_PHOTO_EXTENSIONS.has(extension)) {
+    throw new Error(message);
+  }
 
   if (!bytes.length || bytes.length > MAX_CREDENTIAL_UPLOAD_BYTES) {
     throw new Error('Upload must be 3 MB or smaller.');
@@ -1308,6 +1592,29 @@ const ensureCredentialBucket = async () => {
   }
 
   credentialBucketReady = true;
+};
+
+const ensureProfilePhotoBucket = async () => {
+  if (profilePhotoBucketReady) return;
+
+  try {
+    await supabaseStorageRequest('/bucket', {
+      body: {
+        allowed_mime_types: [...ALLOWED_IMAGE_MIME_TYPES],
+        file_size_limit: MAX_CREDENTIAL_UPLOAD_BYTES,
+        id: PROFILE_PHOTO_BUCKET,
+        name: PROFILE_PHOTO_BUCKET,
+        public: true,
+      },
+      method: 'POST',
+    });
+  } catch (error) {
+    if (!String(error.message || '').toLowerCase().includes('already exists')) {
+      throw error;
+    }
+  }
+
+  profilePhotoBucketReady = true;
 };
 
 const uploadCredentialFile = async ({ body, userId }) => {
@@ -1345,6 +1652,84 @@ const uploadCredentialFile = async ({ body, userId }) => {
     status: 'draft',
     storageKey: documentKey,
     uploadedAt,
+  };
+};
+
+const uploadIdentityVerificationFile = async ({ body, userId }) => {
+  const kind = cleanString(body.kind || body.documentType || body.document_type, 80).toLowerCase();
+
+  if (!IDENTITY_UPLOAD_KINDS.has(kind)) {
+    throw new Error('Valid ID front, Valid ID back, or liveness selfie is required.');
+  }
+
+  const { bytes, contentType, fileName } = kind === 'liveness_selfie'
+    ? parseImageUpload(body, { message: 'Liveness selfie must be a JPG or PNG image.' })
+    : parseCredentialUpload({
+      ...body,
+      documentType: 'other_document',
+    });
+  const uploadedAt = new Date().toISOString();
+  const path = `${userId}/identity/${kind}/${Date.now()}-${fileName}`;
+
+  await ensureCredentialBucket();
+  await supabaseStorageRequest(
+    `/object/${CREDENTIAL_UPLOAD_BUCKET}/${encodeStoragePath(path)}`,
+    {
+      body: bytes,
+      contentType,
+      headers: { 'x-upsert': 'true' },
+      method: 'POST',
+    }
+  );
+
+  return {
+    contentType,
+    fileName,
+    fileSize: bytes.length,
+    id: `${kind}:${uploadedAt}`,
+    key: IDENTITY_UPLOAD_KEYS[kind],
+    kind,
+    label: IDENTITY_UPLOAD_LABELS[kind],
+    path,
+    status: 'draft',
+    storageKey: kind,
+    uploadedAt,
+  };
+};
+
+const getSupabasePublicStorageUrl = (bucket, path) => {
+  const baseUrl = cleanString(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, 500).replace(/\/+$/, '');
+
+  if (!baseUrl) {
+    throw new Error('SUPABASE_URL is required for public storage links.');
+  }
+
+  return `${baseUrl}/storage/v1/object/public/${bucket}/${encodeStoragePath(path)}`;
+};
+
+const uploadProfilePhotoFile = async ({ body, userId }) => {
+  const { bytes, contentType, fileName } = parseImageUpload(body, {
+    message: 'Profile photo must be a JPG or PNG image.',
+  });
+  const path = `${userId}/profile/${Date.now()}-${fileName}`;
+
+  await ensureProfilePhotoBucket();
+  await supabaseStorageRequest(
+    `/object/${PROFILE_PHOTO_BUCKET}/${encodeStoragePath(path)}`,
+    {
+      body: bytes,
+      contentType,
+      headers: { 'x-upsert': 'true' },
+      method: 'POST',
+    }
+  );
+
+  return {
+    avatarUrl: getSupabasePublicStorageUrl(PROFILE_PHOTO_BUCKET, path),
+    contentType,
+    fileName,
+    fileSize: bytes.length,
+    path,
   };
 };
 
@@ -1390,6 +1775,7 @@ const getSupabaseStorageObject = async (path) => {
 
 const findCredentialRecord = (profile, { documentKey, documentType, path }) => {
   const { workPreferences } = getReviewableWorkPreferences(profile);
+  const identityDocuments = cleanIdentityVerificationDocuments(profile?.identity_verification_documents);
   const targetKey = cleanString(documentKey, 180);
   const targetPath = cleanString(path, 700);
   const targetType = cleanString(documentType, 80);
@@ -1399,6 +1785,13 @@ const findCredentialRecord = (profile, { documentKey, documentType, path }) => {
       ...document,
       documentType: document.kind || 'supporting_document',
     })),
+    ...Object.entries(identityDocuments)
+      .filter(([, document]) => document?.path)
+      .map(([key, document]) => ({
+        ...document,
+        documentType: document.kind || key,
+        identityDocument: true,
+      })),
   ];
 
   return documents.find((document) => (
@@ -1409,6 +1802,7 @@ const findCredentialRecord = (profile, { documentKey, documentType, path }) => {
       || document.label === targetKey
     ))
     || (targetType === 'resume' && document.documentType === 'resume')
+    || (targetType && targetType === document.documentType)
   ));
 };
 
@@ -1424,9 +1818,17 @@ const getAccessibleCredentialDocument = async (req, user, body) => {
   const isAdmin = user.role === 'admin';
   const isProfessionalOwner = user.role === 'professional' && professionalId === user.id;
   const isClientViewer = user.role === 'client';
+  const requestedPreviewTier = cleanString(body.previewTier || body.viewerTier || body.viewAs, 40);
+  const professionalPreviewTier = isProfessionalOwner && requestedPreviewTier
+    ? normalizeClientTier(requestedPreviewTier)
+    : '';
+  const isProfessionalPreview = Boolean(professionalPreviewTier);
   const clientPermissions = getClientPermissions(user);
 
-  if (isClientViewer && !clientPermissions.canViewFullDocuments) {
+  if (
+    (isClientViewer && !clientPermissions.canViewFullDocuments)
+    || (isProfessionalPreview && !CLIENT_TIER_PERMISSIONS[professionalPreviewTier].canViewFullDocuments)
+  ) {
     const error = new Error('Basic clients cannot view resumes or required documents.');
     error.status = 403;
     throw error;
@@ -1438,13 +1840,13 @@ const getAccessibleCredentialDocument = async (req, user, body) => {
     throw error;
   }
 
-  if (isAdmin || isClientViewer) {
+  if (isAdmin || isClientViewer || isProfessionalPreview) {
     req.useServiceRole = true;
   }
 
   const profile = await getProfessionalProfile(req, professionalId, {
     requireApproved: isClientViewer,
-    useServiceRole: isAdmin || isClientViewer,
+    useServiceRole: isAdmin || isClientViewer || isProfessionalPreview,
   });
   if (profile && isProfessionalOwner) {
     profile.__includePendingProfile = true;
@@ -1461,7 +1863,7 @@ const getAccessibleCredentialDocument = async (req, user, body) => {
     throw error;
   }
 
-  if (isClientViewer && document.status !== 'approved') {
+  if ((isClientViewer || isProfessionalPreview) && (document.identityDocument || document.status !== 'approved')) {
     const error = new Error('Document not found.');
     error.status = 404;
     throw error;
@@ -1568,6 +1970,95 @@ const listCredentialDocuments = (workPreferences) => {
       fallbackKey: `supporting:${index}`,
     })),
   ];
+};
+
+const normalizeExpiryDate = (value) => {
+  const text = cleanString(value, 80);
+  if (!text) return '';
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return text.slice(0, 10);
+};
+
+const getDaysUntilDate = (dateText, now = new Date()) => {
+  const expiryDate = new Date(`${normalizeExpiryDate(dateText)}T00:00:00.000Z`);
+  const currentDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  if (Number.isNaN(expiryDate.getTime())) return null;
+
+  return Math.ceil((expiryDate - currentDate) / (1000 * 60 * 60 * 24));
+};
+
+const getDocumentExpirationEventKey = ({
+  documentKey,
+  eventType,
+  expiryDate,
+  professionalId,
+}) => [
+  cleanString(professionalId, 80),
+  cleanString(documentKey, 180),
+  cleanString(eventType, 80),
+  normalizeExpiryDate(expiryDate),
+].join('|');
+
+const getProfessionalDowngradePayload = () => ({
+  professional_tier: 'unverified',
+  profile_visibility: 'hidden',
+  review_status: 'pending_review',
+  status: 'pending_review',
+  verified_at: null,
+});
+
+const getDocumentExpirationActions = (profile, {
+  now = new Date(),
+  sentKeys = new Set(),
+} = {}) => {
+  const professionalId = profile?.id || profile?.user_id;
+  const approvedDocuments = listCredentialDocuments(profile?.work_preferences || profile?.workPreferences)
+    .map((document) => cleanCredentialFileRecord(document))
+    .filter((document) => document?.status === 'approved' && !document.noExpiryRequired && normalizeExpiryDate(document.expiryDate));
+  const actions = [];
+
+  approvedDocuments.forEach((document) => {
+    const expiryDate = normalizeExpiryDate(document.expiryDate);
+    const daysToExpiry = getDaysUntilDate(expiryDate, now);
+    const documentKey = credentialNotificationKey(document, document.fallbackKey);
+    let eventType = '';
+
+    if (daysToExpiry === null) return;
+    if (daysToExpiry <= 0) {
+      eventType = 'expired';
+    } else if (EXPIRATION_NOTIFICATION_THRESHOLDS.includes(daysToExpiry)) {
+      eventType = `reminder_${daysToExpiry}`;
+    }
+
+    if (!eventType) return;
+
+    const eventKey = getDocumentExpirationEventKey({
+      documentKey,
+      eventType,
+      expiryDate,
+      professionalId,
+    });
+
+    if (sentKeys.has(eventKey)) return;
+
+    actions.push({
+      daysToExpiry,
+      document,
+      documentKey,
+      eventKey,
+      eventType,
+      expiryDate,
+      professionalId,
+    });
+  });
+
+  return actions.some((action) => action.eventType === 'expired')
+    ? actions.filter((action) => action.eventType === 'expired')
+    : actions;
 };
 
 const getCredentialDocumentChanges = (beforeWorkPreferences, afterWorkPreferences) => {
@@ -2425,6 +2916,13 @@ const handlers = {
       };
 
       if (identityStatus === 'approved') {
+        const identityBlocker = getIdentitySubmissionBlocker(existingProfile);
+
+        if (identityBlocker) {
+          sendError(res, 400, identityBlocker);
+          return;
+        }
+
         identityPayload = {
           ...identityPayload,
           identity_verified_at: now,
@@ -2652,9 +3150,12 @@ const handlers = {
       }
 
       const approvalBlocker = getCredentialApprovalBlocker(existingProfile);
+      const identityApprovalBlocker = existingProfile.identity_verification_status === 'approved'
+        ? getIdentitySubmissionBlocker(existingProfile)
+        : 'Identity verification must be approved before approving this professional.';
 
-      if (approvalBlocker) {
-        sendError(res, 400, approvalBlocker);
+      if (identityApprovalBlocker || approvalBlocker) {
+        sendError(res, 400, identityApprovalBlocker || approvalBlocker);
         return;
       }
     }
@@ -3158,7 +3659,7 @@ const handlers = {
     const rows = asList(shortlists);
     const professionalIds = rows.map((row) => row.professional_id);
     const [profiles, opportunities, interviews] = await Promise.all([
-      loadTalentProfiles(req, { ids: professionalIds }),
+      loadTalentProfilesForViewer(req, user, { ids: professionalIds, onlyApproved: true }),
       professionalIds.length
         ? readRows(req, `/opportunities?client_id=eq.${user.id}&professional_id=${byIdFilter(professionalIds)}&status=in.(invited,accepted,active)&select=id,professional_id,status,title,received_at&order=received_at.desc&limit=100`)
         : [],
@@ -3569,6 +4070,78 @@ const handlers = {
     }
   },
 
+  'POST /talent/identity-uploads': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const upload = await uploadIdentityVerificationFile({ body, userId: user.id });
+      const key = IDENTITY_UPLOAD_KEYS[upload.kind];
+      const currentProfile = await getProfessionalProfile(req, user.id, { useServiceRole: true });
+      const currentDocuments = cleanIdentityVerificationDocuments(currentProfile?.identity_verification_documents);
+      const nextDocuments = {
+        ...Object.fromEntries(Object.entries(currentDocuments).filter(([, document]) => document?.path)),
+        [key]: upload,
+      };
+      const now = new Date().toISOString();
+      const profilePayload = {
+        identity_verification_documents: nextDocuments,
+        identity_verification_status: 'pending',
+        identity_verified_at: null,
+        identity_verified_by: null,
+        professional_tier: 'unverified',
+        profile_visibility: 'hidden',
+        status: currentProfile?.status === 'approved' ? 'pending_review' : (currentProfile?.status || 'draft'),
+        user_id: user.id,
+        verified_at: null,
+        ...(currentProfile?.status === 'approved'
+          ? {
+            review_status: 'pending_review',
+            review_submitted_at: now,
+          }
+          : {}),
+      };
+      const rows = await writeRows(
+        req,
+        '/professional_profiles?on_conflict=user_id',
+        profilePayload,
+        { prefer: 'resolution=merge-duplicates,return=representation', useServiceRole: true }
+      );
+      const savedProfile = asList(rows)[0];
+
+      sendJson(res, 201, mapTalentProfile(savedProfile, {
+        avatar_url: user.avatar_url || user.avatarUrl,
+        email: user.email,
+        full_name: user.name,
+        title: user.title,
+      }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
+    } catch (error) {
+      sendError(res, 400, error.message || 'Unable to upload identity verification file.');
+    }
+  },
+
+  'POST /talent/profile-photo': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const upload = await uploadProfilePhotoFile({ body, userId: user.id });
+
+      await patchRows(
+        req,
+        `/profiles?id=eq.${user.id}`,
+        { avatar_url: upload.avatarUrl },
+        { prefer: 'return=minimal', useServiceRole: true }
+      );
+
+      sendJson(res, 201, upload);
+    } catch (error) {
+      sendError(res, 400, error.message || 'Unable to upload profile photo.');
+    }
+  },
+
   'GET /talent/me': async (req, res) => {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
@@ -3581,11 +4154,33 @@ const handlers = {
 
     sendJson(res, 200, professionalProfile
       ? mapTalentProfile(professionalProfile, {
+        avatar_url: user.avatar_url || user.avatarUrl,
         email: user.email,
         full_name: user.name,
         title: user.title,
       }, { includeDraftPending: true, usePending: true, visibility: 'owner' })
       : user);
+  },
+
+  'GET /talent/profile-preview': async (req, res) => {
+    const user = await requireSession(req, res, ['professional']);
+    if (!user) return;
+
+    const params = getSearchParams(req);
+    const tier = normalizeClientTier(params.get('tier') || 'basic');
+    const profile = await getProfessionalProfile(req, user.id, { useServiceRole: true });
+
+    if (!profile) {
+      sendError(res, 404, 'Professional profile not found.');
+      return;
+    }
+
+    sendJson(res, 200, mapTalentProfilePreviewForTier(profile, {
+      avatar_url: user.avatar_url || user.avatarUrl,
+      email: user.email,
+      full_name: user.name,
+      title: user.title,
+    }, tier));
   },
 
   'PATCH /talent/me': async (req, res) => {
@@ -3663,14 +4258,19 @@ const handlers = {
     };
 
     if (submitForReview) {
+      const submittedIdentityDocuments = currentProfile?.identity_verification_status === 'approved'
+        ? cleanIdentityVerificationDocuments(currentProfile.identity_verification_documents)
+        : markIdentityVerificationDocumentsSubmitted(currentProfile?.identity_verification_documents);
       const submissionProfile = {
         ...(currentProfile || {}),
         __includePendingProfile: true,
+        identity_verification_documents: submittedIdentityDocuments,
         pending_profile: currentProfile?.status === 'approved' ? profilePayload : {},
         ...toProfilePatch(profilePayload, currentProfile || {}),
         work_preferences: workPreferences,
       };
-      const submissionBlocker = getCredentialSubmissionBlocker(submissionProfile);
+      const identitySubmissionBlocker = getIdentitySubmissionBlocker(submissionProfile);
+      const submissionBlocker = identitySubmissionBlocker || getCredentialSubmissionBlocker(submissionProfile);
 
       if (submissionBlocker) {
         sendError(res, 400, submissionBlocker);
@@ -3704,6 +4304,9 @@ const handlers = {
         `/professional_profiles?user_id=eq.${user.id}`,
         submitForReview
           ? {
+            identity_verification_documents: currentProfile?.identity_verification_status === 'approved'
+              ? currentProfile.identity_verification_documents
+              : markIdentityVerificationDocumentsSubmitted(currentProfile?.identity_verification_documents),
             pending_profile: profilePayload,
             review_status: 'pending_review',
             review_submitted_at: new Date().toISOString(),
@@ -3733,6 +4336,7 @@ const handlers = {
         submitForReview
           ? {
             ...toProfilePatch(profilePayload),
+            identity_verification_documents: markIdentityVerificationDocumentsSubmitted(currentProfile?.identity_verification_documents),
             pending_profile: {},
             review_status: null,
             review_submitted_at: new Date().toISOString(),
@@ -3798,6 +4402,7 @@ const handlers = {
     }
 
     sendJson(res, 200, mapTalentProfile(savedProfile, {
+      avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: fullName,
       title: primaryTitle,
@@ -4303,6 +4908,7 @@ const handlers = {
     const savedProfile = asList(rows)[0];
 
     sendJson(res, 200, mapTalentProfile(savedProfile, {
+      avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: user.name,
       title: user.title,
@@ -4313,9 +4919,7 @@ const handlers = {
     const user = await requireSession(req, res);
     if (!user) return;
 
-    const permissions = getClientPermissions(user);
-    const visibility = user.role === 'client' && permissions.canViewFullDocuments ? 'client_full' : 'directory';
-    const profiles = await loadTalentProfiles(req, { onlyApproved: true, visibility });
+    const profiles = await loadTalentProfilesForViewer(req, user, { onlyApproved: true });
     sendJson(res, 200, profiles);
   },
 
@@ -4437,6 +5041,7 @@ const handlers = {
     }).catch(() => {});
     
     sendJson(res, 200, mapTalentProfile(savedProfile, {
+      avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: user.name,
       title: user.title,
@@ -4447,56 +5052,14 @@ const handlers = {
     const user = await requireAdminOrCronSecret(req, res);
     if (!user) return;
 
-    const profiles = await loadTalentProfiles(req, { onlyApproved: true, visibility: 'internal' });
-    const now = new Date();
-    const notificationThresholds = [60, 30, 7];
-    
-    for (const profile of profiles) {
-      if (profile.status !== 'approved') continue;
-      
-      const docs = [profile.resume, ...asList(profile.supportingDocuments)].filter(Boolean);
-      let isExpired = false;
-      
-      for (const doc of docs) {
-        if (!doc.expiryDate) continue;
-        const expiry = new Date(doc.expiryDate);
-        if (isNaN(expiry.getTime())) continue;
-        
-        const daysToExpiry = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-        
-        if (daysToExpiry <= 0) {
-           isExpired = true;
-           notifyUser({
-             actionUrl: '/?tab=profile',
-             body: `Your verified document "${doc.label || doc.fileName}" has expired. Your profile verification status has been downgraded.`,
-             emailSubject: `Document Expired: ${doc.label || doc.fileName}`,
-             recipientEmail: profile.email,
-             recipientId: profile.id,
-             recipientName: profile.fullName || profile.name,
-             title: 'Document Expired',
-             type: 'document_expired',
-           }).catch(() => {});
-        } else if (notificationThresholds.includes(daysToExpiry)) {
-           notifyUser({
-             actionUrl: '/?tab=profile',
-             body: `Your verified document "${doc.label || doc.fileName}" will expire in ${daysToExpiry} days. Please upload a renewal to maintain your verified status.`,
-             emailSubject: `Document Expiring Soon: ${doc.label || doc.fileName}`,
-             recipientEmail: profile.email,
-             recipientId: profile.id,
-             recipientName: profile.fullName || profile.name,
-             title: 'Document Expiring Soon',
-             type: 'document_expiring',
-           }).catch(() => {});
-        }
-      }
-      
-      if (isExpired) {
-        // Downgrade status if not already pending
-        await patchRows(req, `/professional_profiles?user_id=eq.${profile.id}`, { status: 'pending_review' }, { useServiceRole: true });
-      }
-    }
-    
-    sendJson(res, 200, { ok: true, message: 'Expiration checks completed.' });
+    sendJson(res, 200, await runDocumentExpirationCheck(req));
+  },
+
+  'GET /admin/check-expirations': async (req, res) => {
+    const user = await requireAdminOrCronSecret(req, res);
+    if (!user) return;
+
+    sendJson(res, 200, await runDocumentExpirationCheck(req));
   },
 };
 
@@ -4529,6 +5092,17 @@ const checkRateLimit = (req, res) => {
     return false;
   }
   return true;
+};
+
+export const __testing = {
+  getDocumentExpirationActions,
+  getDocumentExpirationEventKey,
+  getIdentitySubmissionBlocker,
+  getProfessionalDowngradePayload,
+  mapTalentProfilePreviewForTier,
+  mapTalentProfileForViewer,
+  scrubTalentProfileForViewer,
+  toClientVisibleWorkPreferences,
 };
 
 export default async function handler(req, res) {
