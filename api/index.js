@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { getRoutePath, handleOptions, readJson, sendError, sendJson, setCorsHeaders } from '../server/http.js';
 import {
@@ -70,7 +70,6 @@ const IDENTITY_UPLOAD_LABELS = Object.freeze({
   valid_id_front: 'Valid ID front',
 });
 const PROFILE_PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
-const EXPIRATION_NOTIFICATION_THRESHOLDS = Object.freeze([60, 30, 7]);
 const DOCUMENT_TYPE_FILE_RULES = {
   certification: {
     extensions: new Set(['.pdf', '.jpg', '.jpeg', '.png']),
@@ -326,6 +325,7 @@ const cleanExternalLinks = (links) => asList(links)
 const cleanCredentialFileRecord = (file) => {
   const record = cleanRecord(file);
   const fileName = cleanString(record.fileName || record.name, 220);
+  const fileSha256 = cleanString(record.fileSha256 || record.file_sha256, 64).toLowerCase();
   const uploadedAt = cleanString(record.uploadedAt, 80);
 
   if (!fileName || !uploadedAt) return null;
@@ -333,6 +333,7 @@ const cleanCredentialFileRecord = (file) => {
   return {
     contentType: cleanString(record.contentType, 120),
     fileName,
+    fileSha256: /^[a-f0-9]{64}$/.test(fileSha256) ? fileSha256 : '',
     fileSize: toNumber(record.fileSize),
     id: cleanString(record.id, 80),
     key: cleanString(record.key, 180),
@@ -373,7 +374,7 @@ const hasCredentialArtifact = (credential) => {
 
   return Boolean(record?.path || record?.fileName);
 };
-const getIdentitySubmissionBlocker = (profile) => {
+const getIdentitySubmissionBlocker = (profile, { now = new Date() } = {}) => {
   const documents = cleanIdentityVerificationDocuments(profile?.identity_verification_documents || profile?.identityVerificationDocuments);
 
   if (!hasCredentialArtifact(documents.validIdFront)) {
@@ -382,6 +383,16 @@ const getIdentitySubmissionBlocker = (profile) => {
 
   if (!hasCredentialArtifact(documents.livenessSelfie)) {
     return 'Complete the liveness selfie check before requesting verification.';
+  }
+
+  const expiryDate = normalizeExpiryDate(documents.validIdFront?.expiryDate);
+
+  if (!expiryDate) {
+    return 'Add the valid ID expiration date before requesting verification.';
+  }
+
+  if (getDaysUntilDate(expiryDate, now) <= 0) {
+    return 'The valid ID is expired. Upload a current ID before requesting verification.';
   }
 
   return '';
@@ -1557,6 +1568,7 @@ const parseCredentialUpload = (body) => {
   return {
     bytes,
     contentType,
+    fileSha256: createHash('sha256').update(bytes).digest('hex'),
     fileName,
   };
 };
@@ -1651,8 +1663,8 @@ const ensureProfilePhotoBucket = async () => {
   profilePhotoBucketReady = true;
 };
 
-const uploadCredentialFile = async ({ body, userId }) => {
-  const { bytes, contentType, fileName } = parseCredentialUpload(body);
+const uploadCredentialFile = async ({ body, profile, userId }) => {
+  const { bytes, contentType, fileName, fileSha256 } = parseCredentialUpload(body);
   const documentType = cleanString(body.documentType || body.kind || 'credential', 80);
   const rawDocumentKey = cleanString(body.documentKey || body.key || documentType, 140);
   const documentKey = rawDocumentKey
@@ -1660,8 +1672,17 @@ const uploadCredentialFile = async ({ body, userId }) => {
     .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'credential';
   const label = cleanString(body.documentLabel || body.label || fileName, 180);
+  const duplicateBlocker = getDuplicateRequiredCredentialUploadBlocker(profile, {
+    documentKey: rawDocumentKey,
+    fileSha256,
+  });
+
+  if (duplicateBlocker) {
+    throw new Error(duplicateBlocker);
+  }
+
   const uploadedAt = new Date().toISOString();
-  const path = `${userId}/${documentKey}/${Date.now()}-${fileName}`;
+  const path = `${userId}/${documentKey}/${fileSha256}-${randomUUID()}-${fileName}`;
 
   await ensureCredentialBucket();
   await supabaseStorageRequest(
@@ -1677,6 +1698,7 @@ const uploadCredentialFile = async ({ body, userId }) => {
   return {
     contentType,
     fileName,
+    fileSha256,
     fileSize: bytes.length,
     id: `${documentKey}:${uploadedAt}`,
     key: rawDocumentKey || documentKey,
@@ -1696,14 +1718,24 @@ const uploadIdentityVerificationFile = async ({ body, userId }) => {
     throw new Error('Valid ID front, Valid ID back, or liveness selfie is required.');
   }
 
-  const { bytes, contentType, fileName } = kind === 'liveness_selfie'
+  const parsedUpload = kind === 'liveness_selfie'
     ? parseImageUpload(body, { message: 'Liveness selfie must be a JPG or PNG image.' })
     : parseCredentialUpload({
       ...body,
       documentType: 'other_document',
     });
+  const { bytes, contentType, fileName } = parsedUpload;
+  const fileSha256 = parsedUpload.fileSha256 || createHash('sha256').update(bytes).digest('hex');
+  const expiryDate = kind === 'liveness_selfie'
+    ? ''
+    : normalizeExpiryDate(body.expiryDate || body.expiry_date);
+
+  if (kind !== 'liveness_selfie' && !expiryDate) {
+    throw new Error('A valid ID expiration date is required.');
+  }
+
   const uploadedAt = new Date().toISOString();
-  const path = `${userId}/identity/${kind}/${Date.now()}-${fileName}`;
+  const path = `${userId}/identity/${kind}/${fileSha256}-${randomUUID()}-${fileName}`;
 
   await ensureCredentialBucket();
   await supabaseStorageRequest(
@@ -1718,7 +1750,9 @@ const uploadIdentityVerificationFile = async ({ body, userId }) => {
 
   return {
     contentType,
+    expiryDate,
     fileName,
+    fileSha256,
     fileSize: bytes.length,
     id: `${kind}:${uploadedAt}`,
     key: IDENTITY_UPLOAD_KEYS[kind],
@@ -2074,9 +2108,23 @@ const getDocumentExpirationActions = (profile, {
   sentKeys = new Set(),
 } = {}) => {
   const professionalId = profile?.id || profile?.user_id;
-  const approvedDocuments = listCredentialDocuments(profile?.work_preferences || profile?.workPreferences)
+  const approvedCredentialDocuments = listCredentialDocuments(profile?.work_preferences || profile?.workPreferences)
     .map((document) => cleanCredentialFileRecord(document))
     .filter((document) => document?.status === 'approved' && !document.noExpiryRequired && normalizeExpiryDate(document.expiryDate));
+  const identityDocuments = cleanIdentityVerificationDocuments(
+    profile?.identity_verification_documents || profile?.identityVerificationDocuments
+  );
+  const approvedIdentityDocuments = profile?.identity_verification_status === 'approved'
+    ? Object.entries(identityDocuments)
+      .filter(([key, document]) => key !== 'livenessSelfie' && document && normalizeExpiryDate(document.expiryDate))
+      .map(([key, document]) => ({
+        ...document,
+        documentType: 'identity',
+        key: `identity:${key}`,
+        status: 'approved',
+      }))
+    : [];
+  const approvedDocuments = [...approvedCredentialDocuments, ...approvedIdentityDocuments];
   const actions = [];
 
   approvedDocuments.forEach((document) => {
@@ -2088,8 +2136,12 @@ const getDocumentExpirationActions = (profile, {
     if (daysToExpiry === null) return;
     if (daysToExpiry <= 0) {
       eventType = 'expired';
-    } else if (EXPIRATION_NOTIFICATION_THRESHOLDS.includes(daysToExpiry)) {
-      eventType = `reminder_${daysToExpiry}`;
+    } else if (daysToExpiry <= 7) {
+      eventType = 'reminder_7';
+    } else if (daysToExpiry <= 30) {
+      eventType = 'reminder_30';
+    } else if (daysToExpiry <= 60) {
+      eventType = 'reminder_60';
     }
 
     if (!eventType) return;
@@ -2114,9 +2166,7 @@ const getDocumentExpirationActions = (profile, {
     });
   });
 
-  return actions.some((action) => action.eventType === 'expired')
-    ? actions.filter((action) => action.eventType === 'expired')
-    : actions;
+  return actions;
 };
 
 const getCredentialDocumentChanges = (beforeWorkPreferences, afterWorkPreferences) => {
@@ -2276,6 +2326,56 @@ const getRequiredCredentialLabels = (profile) => [
     .flatMap((title) => asList(PROFESSIONAL_TITLE_CERTIFICATION_OPTIONS[title]))),
 ];
 
+const getRequiredCredentialDocuments = (profile) => {
+  const { workPreferences } = getReviewableWorkPreferences(profile);
+  const requiredLabels = getRequiredCredentialLabels(profile);
+
+  return asList(workPreferences.supportingDocuments).filter((document) => (
+    requiredLabels.some((label) => documentMatchesCredentialLabel(document, label))
+  ));
+};
+
+const getDuplicateRequiredCredentialBlocker = (profile) => {
+  const digestLabels = new Map();
+
+  for (const document of getRequiredCredentialDocuments(profile)) {
+    const record = cleanCredentialFileRecord(document);
+
+    if (!record?.fileSha256) continue;
+
+    const previousLabel = digestLabels.get(record.fileSha256);
+
+    if (previousLabel) {
+      return `${previousLabel} and ${getCredentialDisplayLabel(record)} must use a distinct file for each required certification.`;
+    }
+
+    digestLabels.set(record.fileSha256, getCredentialDisplayLabel(record));
+  }
+
+  return '';
+};
+
+const getDuplicateRequiredCredentialUploadBlocker = (profile, { documentKey, fileSha256 }) => {
+  if (!profile || !fileSha256) return '';
+
+  const requiredLabels = getRequiredCredentialLabels(profile);
+  const targetLabel = requiredLabels.find((label) => (
+    documentKey === label || documentKey === `certification:${label}` || String(documentKey || '').endsWith(`:${label}`)
+  ));
+
+  if (!targetLabel) return '';
+
+  const duplicate = getRequiredCredentialDocuments(profile).find((document) => {
+    const record = cleanCredentialFileRecord(document);
+
+    return record?.fileSha256 === fileSha256 && !documentMatchesCredentialLabel(record, targetLabel);
+  });
+
+  return duplicate
+    ? `${getCredentialDisplayLabel(duplicate)} already uses this upload. Choose a distinct file for ${targetLabel}.`
+    : '';
+};
+
 const validateRegulatedInputValue = (field, value) => {
   const text = cleanString(value, 200);
 
@@ -2345,6 +2445,7 @@ const getCredentialApprovalBlocker = (profile) => {
   const rejectedDocuments = requiredDocuments.filter((document) => document.status === 'rejected');
   const pendingDocuments = requiredDocuments.filter((document) => (document.status || 'pending_review') === 'pending_review');
   const expiryBlocker = getRequiredExpiryBlocker(requiredDocuments);
+  const duplicateBlocker = getDuplicateRequiredCredentialBlocker(profile);
 
   if (profile?.identity_verification_status !== 'approved') {
     return 'Identity verification must be approved before this professional can be verified.';
@@ -2368,6 +2469,10 @@ const getCredentialApprovalBlocker = (profile) => {
 
   if (expiryBlocker) {
     return expiryBlocker;
+  }
+
+  if (duplicateBlocker) {
+    return duplicateBlocker;
   }
 
   return getRegulatedInputBlocker(getReviewableProfessionalTitles(profile), workPreferences.regulatedInputs || {});
@@ -2394,6 +2499,7 @@ const getCredentialSubmissionBlocker = (profile) => {
     )),
   ];
   const expiryBlocker = getRequiredExpiryBlocker(requiredDocuments);
+  const duplicateBlocker = getDuplicateRequiredCredentialBlocker(profile);
 
   if (!resume) {
     return 'Upload your resume before requesting verification.';
@@ -2409,6 +2515,10 @@ const getCredentialSubmissionBlocker = (profile) => {
 
   if (expiryBlocker) {
     return expiryBlocker;
+  }
+
+  if (duplicateBlocker) {
+    return duplicateBlocker;
   }
 
   return getRegulatedInputBlocker(getReviewableProfessionalTitles(profile), workPreferences.regulatedInputs || {});
@@ -4520,7 +4630,8 @@ const handlers = {
 
     try {
       const body = await readJson(req);
-      const upload = await uploadCredentialFile({ body, userId: user.id });
+      const profile = await getProfessionalProfile(req, user.id, { useServiceRole: true });
+      const upload = await uploadCredentialFile({ body, profile, userId: user.id });
 
       sendJson(res, 201, upload);
     } catch (error) {
@@ -5553,6 +5664,7 @@ const checkRateLimit = (req, res) => {
 };
 
 export const __testing = {
+  getDuplicateRequiredCredentialBlocker,
   getDocumentExpirationActions,
   getDocumentExpirationEventKey,
   getIdentitySubmissionBlocker,

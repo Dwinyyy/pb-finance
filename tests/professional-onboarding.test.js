@@ -61,6 +61,15 @@ const baseProfile = {
   },
 };
 
+const identityDocument = (overrides = {}) => ({
+  expiryDate: '2027-07-03',
+  fileName: 'id-front.jpg',
+  path: 'identity/id-front.jpg',
+  status: 'approved',
+  uploadedAt: '2026-07-03T00:00:00.000Z',
+  ...overrides,
+});
+
 test('professional review submission requires valid ID and liveness selfie artifacts', () => {
   assert.match(
     __testing.getIdentitySubmissionBlocker({ identity_verification_documents: {} }),
@@ -71,6 +80,7 @@ test('professional review submission requires valid ID and liveness selfie artif
     __testing.getIdentitySubmissionBlocker({
       identity_verification_documents: {
         validIdFront: {
+          expiryDate: '2027-07-03',
           fileName: 'id-front.jpg',
           path: 'identity/id-front.jpg',
           status: 'draft',
@@ -91,6 +101,7 @@ test('professional review submission requires valid ID and liveness selfie artif
           uploadedAt: '2026-07-03T00:00:00.000Z',
         },
         validIdFront: {
+          expiryDate: '2027-07-03',
           fileName: 'id-front.jpg',
           path: 'identity/id-front.jpg',
           status: 'draft',
@@ -100,6 +111,86 @@ test('professional review submission requires valid ID and liveness selfie artif
     }),
     ''
   );
+});
+
+test('professional review submission requires a future valid ID expiration date', () => {
+  const profile = {
+    identity_verification_documents: {
+      livenessSelfie: {
+        fileName: 'selfie.jpg',
+        path: 'identity/selfie.jpg',
+        status: 'draft',
+        uploadedAt: '2026-07-03T00:00:00.000Z',
+      },
+      validIdFront: identityDocument({ status: 'draft' }),
+    },
+  };
+  const now = new Date('2026-07-03T12:00:00.000Z');
+
+  assert.match(
+    __testing.getIdentitySubmissionBlocker({
+      ...profile,
+      identity_verification_documents: {
+        ...profile.identity_verification_documents,
+        validIdFront: identityDocument({ expiryDate: '', status: 'draft' }),
+      },
+    }, { now }),
+    /expiration date/i
+  );
+  assert.match(
+    __testing.getIdentitySubmissionBlocker({
+      ...profile,
+      identity_verification_documents: {
+        ...profile.identity_verification_documents,
+        validIdFront: identityDocument({ expiryDate: '2026-07-03', status: 'draft' }),
+      },
+    }, { now }),
+    /expired/i
+  );
+  assert.equal(__testing.getIdentitySubmissionBlocker(profile, { now }), '');
+});
+
+test('required certification slots reject identical file digests', () => {
+  const duplicateProfile = {
+    identity_verification_status: 'approved',
+    titles: ['Certified Public Accountant'],
+    work_preferences: {
+      resume: {
+        expiryDate: '2027-01-01',
+        fileName: 'resume.pdf',
+        fileSha256: 'c'.repeat(64),
+        path: 'resume.pdf',
+        status: 'approved',
+        uploadedAt: '2026-07-03T00:00:00.000Z',
+      },
+      supportingDocuments: [
+        {
+          expiryDate: '2027-01-01',
+          fileName: 'prc.pdf',
+          fileSha256: 'a'.repeat(64),
+          key: 'certification:PRC License',
+          label: 'PRC License',
+          path: 'prc.pdf',
+          status: 'approved',
+          uploadedAt: '2026-07-03T00:00:00.000Z',
+        },
+        {
+          expiryDate: '2027-01-01',
+          fileName: 'boa.pdf',
+          fileSha256: 'a'.repeat(64),
+          key: 'certification:BOA Accreditation',
+          label: 'BOA Accreditation',
+          path: 'boa.pdf',
+          status: 'approved',
+          uploadedAt: '2026-07-03T00:00:00.000Z',
+        },
+      ],
+    },
+  };
+
+  assert.match(__testing.getDuplicateRequiredCredentialBlocker(duplicateProfile), /distinct file/i);
+  duplicateProfile.work_preferences.supportingDocuments[1].fileSha256 = 'b'.repeat(64);
+  assert.equal(__testing.getDuplicateRequiredCredentialBlocker(duplicateProfile), '');
 });
 
 test('owner preview maps professional profile exactly as basic and verified clients see it', () => {
@@ -153,6 +244,13 @@ test('document expiration actions are thresholded and idempotent by document/dat
   assert.equal(freshActions[0].document.fileName, 'resume.pdf');
   assert.equal(freshActions[1].document.fileName, 'license.pdf');
 
+  const recoveredActions = __testing.getDocumentExpirationActions(baseProfile, {
+    now: new Date('2026-07-04T00:00:00.000Z'),
+    sentKeys: new Set(),
+  });
+
+  assert.deepEqual(recoveredActions.map((action) => action.eventType), ['reminder_60', 'reminder_30']);
+
   const expiredActions = __testing.getDocumentExpirationActions(
     {
       ...baseProfile,
@@ -170,7 +268,7 @@ test('document expiration actions are thresholded and idempotent by document/dat
     }
   );
 
-  assert.deepEqual(expiredActions.map((action) => action.eventType), ['expired']);
+  assert.deepEqual(expiredActions.map((action) => action.eventType), ['expired', 'reminder_30']);
   assert.deepEqual(__testing.getProfessionalDowngradePayload(), {
     professional_tier: 'unverified',
     profile_visibility: 'hidden',
@@ -178,4 +276,38 @@ test('document expiration actions are thresholded and idempotent by document/dat
     status: 'pending_review',
     verified_at: null,
   });
+});
+
+test('approved valid ID participates in expiration reminders and downgrade actions', () => {
+  const profile = {
+    ...baseProfile,
+    identity_verification_documents: {
+      livenessSelfie: {
+        fileName: 'selfie.jpg',
+        path: 'identity/selfie.jpg',
+        status: 'approved',
+        uploadedAt: '2026-01-01T00:00:00.000Z',
+      },
+      validIdFront: identityDocument({ expiryDate: '2026-07-10' }),
+    },
+    identity_verification_status: 'approved',
+  };
+
+  const reminderActions = __testing.getDocumentExpirationActions(profile, {
+    now: new Date('2026-07-04T00:00:00.000Z'),
+    sentKeys: new Set(),
+  });
+  assert.equal(
+    reminderActions.find((action) => action.documentKey === 'identity:validIdFront')?.eventType,
+    'reminder_7'
+  );
+
+  const expiredActions = __testing.getDocumentExpirationActions(profile, {
+    now: new Date('2026-07-10T00:00:00.000Z'),
+    sentKeys: new Set(),
+  });
+  assert.equal(
+    expiredActions.find((action) => action.documentKey === 'identity:validIdFront')?.eventType,
+    'expired'
+  );
 });
