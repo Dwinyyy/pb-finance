@@ -1148,6 +1148,14 @@ function TalentReview() {
                         {uploaded ? (
                           <div className="space-y-2">
                             <div className="truncate text-xs font-semibold text-slate-500">{item.document.fileName || item.document.label}</div>
+                            {item.document.expiryDate && item.documentType !== 'liveness_selfie' && (
+                              <div className="text-[11px] font-bold text-slate-400">Expires {formatDocumentDate(item.document.expiryDate)}</div>
+                            )}
+                            {item.document.changeRequestStatus === 'pending' && (
+                              <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-2 text-[11px] font-semibold leading-relaxed text-cyan-800 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
+                                Identity change request: {item.document.changeRequest?.reason || 'No reason provided.'} Use Set pending below to reopen identity verification.
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={() => openDocument(profile, item.document)}

@@ -257,6 +257,9 @@ export const backendApi = {
     list: () => request('/notifications'),
     markRead: (payload) => request('/notifications', { method: 'PATCH', body: payload }),
     markAllRead: () => request('/notifications', { method: 'PATCH', body: {} }),
+    getPushConfig: () => request('/notifications/push-config'),
+    savePushSubscription: (payload) => request('/notifications/push-subscription', { method: 'POST', body: payload }),
+    removePushSubscription: (payload) => request('/notifications/push-subscription', { method: 'DELETE', body: payload }),
   },
   admin: {
     listClientVerifications: () => request('/admin/client-verifications'),

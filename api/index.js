@@ -11,6 +11,7 @@ import {
 } from '../server/accountLinking.js';
 import { finalizeOAuthAccount, flagGoogleProfessionalAccount, getAuthProviders } from '../server/authTriage.js';
 import { notifyAdmins, notifyUser } from '../server/notifications.js';
+import { getWebPushConfig, normalizePushSubscription } from '../server/pushNotifications.js';
 import { requestRegistrationVerification, verifyRegistrationOtp } from '../server/registrationVerification.js';
 import { getSessionUser } from '../server/session.js';
 import {
@@ -2831,6 +2832,79 @@ const handlers = {
     sendJson(res, 200, asList(rows).map(mapNotification));
   },
 
+  'GET /notifications/push-config': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    sendJson(res, 200, getWebPushConfig());
+  },
+
+  'POST /notifications/push-subscription': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    if (!hasServiceRoleKey()) {
+      sendError(res, 500, 'Push notifications require SUPABASE_SERVICE_ROLE_KEY on the server.');
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      const subscription = normalizePushSubscription(body.subscription || body);
+      const rows = await writeRows(
+        req,
+        '/push_subscriptions?on_conflict=endpoint',
+        {
+          auth: subscription.auth,
+          endpoint: subscription.endpoint,
+          expiration_time: subscription.expirationTime,
+          p256dh: subscription.p256dh,
+          user_agent: cleanString(req.headers['user-agent'], 500),
+          user_id: user.id,
+        },
+        { prefer: 'resolution=merge-duplicates,return=representation', useServiceRole: true }
+      );
+
+      sendJson(res, 200, {
+        enabled: Boolean(asList(rows)[0]),
+      });
+    } catch (error) {
+      sendError(res, 400, error.message || 'Unable to enable push notifications.');
+    }
+  },
+
+  'DELETE /notifications/push-subscription': async (req, res) => {
+    const user = await requireSession(req, res);
+    if (!user) return;
+
+    if (!hasServiceRoleKey()) {
+      sendError(res, 500, 'Push notifications require SUPABASE_SERVICE_ROLE_KEY on the server.');
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      const endpoint = cleanString(body.endpoint || body.subscription?.endpoint, 2000);
+      const parsedEndpoint = new URL(endpoint);
+
+      if (parsedEndpoint.protocol !== 'https:') {
+        throw new Error('A valid push subscription endpoint is required.');
+      }
+
+      await supabaseRestRequest(
+        `/push_subscriptions?user_id=eq.${encodeURIComponent(user.id)}&endpoint=eq.${encodeURIComponent(parsedEndpoint.href)}`,
+        {
+          method: 'DELETE',
+          prefer: 'return=minimal',
+          useServiceRole: true,
+        }
+      );
+      sendJson(res, 200, { enabled: false });
+    } catch (error) {
+      sendError(res, 400, error.message || 'Unable to disable push notifications.');
+    }
+  },
+
   'POST /auth/login': async (req, res) => {
     let email = '';
 
@@ -5544,9 +5618,70 @@ const handlers = {
     }
 
     const currentProfile = await getProfessionalProfile(req, user.id);
-    const { pendingProfile, usePendingProfile, workPreferences } = getReviewableWorkPreferences(currentProfile || {});
     const targetType = cleanString(body.documentType || body.targetType || body.kind, 80);
     const targetKey = cleanString(body.documentKey || body.key || body.id || body.documentName, 180);
+
+    if (targetType === 'identity') {
+      if (currentProfile?.identity_verification_status !== 'approved') {
+        sendError(res, 409, 'Only approved identity documents are locked for change requests.');
+        return;
+      }
+
+      const identityDocuments = cleanIdentityVerificationDocuments(currentProfile.identity_verification_documents);
+      const identityEntry = Object.entries(identityDocuments).find(([key, document]) => (
+        key === targetKey
+        || document?.key === targetKey
+        || document?.id === targetKey
+        || document?.label === targetKey
+      ));
+
+      if (!identityEntry?.[1]) {
+        sendError(res, 404, 'Identity document not found.');
+        return;
+      }
+
+      if (identityEntry[1].changeRequestStatus === 'pending') {
+        sendError(res, 409, 'A change request for this identity document is already pending.');
+        return;
+      }
+
+      const [identityKey, identityDocument] = identityEntry;
+      const updatedDocument = buildDocumentChangeRequestRecord(identityDocument, { reason, userId: user.id });
+      const rows = await patchRows(
+        req,
+        `/professional_profiles?user_id=eq.${user.id}`,
+        {
+          identity_verification_documents: {
+            ...Object.fromEntries(Object.entries(identityDocuments).filter(([, document]) => document?.path)),
+            [identityKey]: updatedDocument,
+          },
+        }
+      );
+      const savedProfile = asList(rows)[0];
+
+      notifyAdmins({
+        actionUrl: '/?tab=talent',
+        body: `${user.name || user.full_name || user.email || 'A professional'} requested to change or remove their approved identity document: ${updatedDocument.label || updatedDocument.fileName}. Reason: ${reason}`,
+        emailSubject: 'Identity document change request',
+        metadata: {
+          documentKey: updatedDocument.key,
+          documentType: 'identity',
+          professionalId: user.id,
+        },
+        title: 'Identity document change request',
+        type: 'talent_profile_submitted',
+      }).catch(() => {});
+
+      sendJson(res, 200, mapTalentProfile(savedProfile, {
+        avatar_url: user.avatar_url || user.avatarUrl,
+        email: user.email,
+        full_name: user.name,
+        title: user.title,
+      }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
+      return;
+    }
+
+    const { pendingProfile, usePendingProfile, workPreferences } = getReviewableWorkPreferences(currentProfile || {});
     let updatedDocument = null;
     let nextWorkPreferences = workPreferences;
 
