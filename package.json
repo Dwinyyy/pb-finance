@@ -8,7 +8,9 @@
     "build": "vite build",
     "check:backend": "node scripts/check-backend.mjs",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test",
+    "test:client-verification": "node --test tests/client-verification.test.js tests/client-verification-ui.test.js tests/client-verification-schema.test.js"
   },
   "dependencies": {
     "@sentry/react": "^10.54.0",
