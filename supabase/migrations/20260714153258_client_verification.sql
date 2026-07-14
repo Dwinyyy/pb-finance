@@ -162,6 +162,156 @@ create trigger set_client_verification_documents_updated_at
   for each row
   execute function public.set_updated_at();
 
+create or replace function public.register_client_verification_document(
+  p_client_id uuid,
+  p_kind text,
+  p_business_document_type text,
+  p_storage_bucket text,
+  p_storage_path text,
+  p_original_file_name text,
+  p_content_type text,
+  p_file_size integer,
+  p_file_sha256 text
+)
+returns setof public.client_verification_documents
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_case_status text;
+  v_document_id uuid;
+begin
+  if p_kind not in ('valid_id', 'liveness_selfie', 'profile_photo', 'business_proof') then
+    raise exception 'A valid client verification document kind is required.';
+  end if;
+
+  if (
+    p_kind = 'business_proof'
+    and p_business_document_type not in ('cp575_ein_letter', 'state_business_registration', 'eu_vat_certificate')
+  ) or (p_kind <> 'business_proof' and p_business_document_type is not null) then
+    raise exception 'A valid business document type is required only for business proof.';
+  end if;
+
+  insert into public.client_verifications (client_id)
+  values (p_client_id)
+  on conflict (client_id) do nothing;
+
+  select status into v_case_status
+  from public.client_verifications
+  where client_id = p_client_id
+  for update;
+
+  if v_case_status not in ('draft', 'rejected') then
+    raise exception 'Documents are locked while verification is pending or approved.';
+  end if;
+
+  update public.client_verification_documents
+  set
+    is_current = false,
+    status = 'superseded',
+    superseded_at = now()
+  where client_id = p_client_id
+    and kind = p_kind
+    and is_current;
+
+  insert into public.client_verification_documents (
+    client_id,
+    kind,
+    business_document_type,
+    storage_bucket,
+    storage_path,
+    original_file_name,
+    content_type,
+    file_size,
+    file_sha256
+  ) values (
+    p_client_id,
+    p_kind,
+    p_business_document_type,
+    p_storage_bucket,
+    p_storage_path,
+    p_original_file_name,
+    p_content_type,
+    p_file_size,
+    p_file_sha256
+  )
+  returning id into v_document_id;
+
+  insert into public.client_verification_events (
+    client_id,
+    actor_id,
+    event_type,
+    metadata
+  ) values (
+    p_client_id,
+    p_client_id,
+    'document_uploaded',
+    jsonb_build_object('documentId', v_document_id, 'kind', p_kind)
+  );
+
+  return query
+  select * from public.client_verification_documents where id = v_document_id;
+end;
+$$;
+
+create or replace function public.submit_client_verification(p_client_id uuid)
+returns setof public.client_verifications
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_case_status text;
+  v_document_count integer;
+begin
+  select status into v_case_status
+  from public.client_verifications
+  where client_id = p_client_id
+  for update;
+
+  if v_case_status not in ('draft', 'rejected') then
+    raise exception 'Only draft or rejected client verification cases may be submitted.';
+  end if;
+
+  select count(*) into v_document_count
+  from public.client_verification_documents
+  where client_id = p_client_id
+    and is_current
+    and status in ('draft', 'submitted')
+    and kind in ('valid_id', 'liveness_selfie', 'profile_photo', 'business_proof');
+
+  if v_document_count <> 4 then
+    raise exception 'All four current verification requirements must be ready.';
+  end if;
+
+  update public.client_verification_documents
+  set
+    status = 'submitted',
+    rejection_reason = null,
+    submitted_at = coalesce(submitted_at, now()),
+    reviewed_at = null,
+    reviewed_by = null
+  where client_id = p_client_id and is_current;
+
+  update public.client_verifications
+  set
+    status = 'pending_review',
+    decision_reason = null,
+    internal_review_notes = null,
+    submitted_at = now(),
+    reviewed_at = null,
+    reviewed_by = null
+  where client_id = p_client_id;
+
+  insert into public.client_verification_events (client_id, actor_id, event_type)
+  values (p_client_id, p_client_id, 'verification_submitted');
+
+  return query
+  select * from public.client_verifications where client_id = p_client_id;
+end;
+$$;
+
 create or replace function public.approve_client_verification(
   p_client_id uuid,
   p_reviewer_id uuid,
@@ -396,6 +546,12 @@ begin
   select * from public.client_verifications where client_id = p_client_id;
 end;
 $$;
+
+revoke execute on function public.register_client_verification_document(uuid, text, text, text, text, text, text, integer, text) from public, anon, authenticated;
+grant execute on function public.register_client_verification_document(uuid, text, text, text, text, text, text, integer, text) to service_role;
+
+revoke execute on function public.submit_client_verification(uuid) from public, anon, authenticated;
+grant execute on function public.submit_client_verification(uuid) to service_role;
 
 revoke execute on function public.approve_client_verification(uuid, uuid, text, text) from public, anon, authenticated;
 grant execute on function public.approve_client_verification(uuid, uuid, text, text) to service_role;

@@ -43,6 +43,8 @@ test('owner policies are select-only and scoped with auth uid', () => {
 
 test('decision RPCs are service-role only', () => {
   for (const fn of [
+    'register_client_verification_document',
+    'submit_client_verification',
     'approve_client_verification',
     'reject_client_verification',
     'reset_client_verification',

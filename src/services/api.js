@@ -230,6 +230,10 @@ export const backendApi = {
   },
   client: {
     getPermissions: () => request('/client/permissions'),
+    getVerification: () => request('/client/verification'),
+    uploadVerificationDocument: (payload) => request('/client/verification/uploads', { method: 'POST', body: payload }),
+    submitVerification: () => request('/client/verification/submit', { method: 'POST' }),
+    getVerificationDocumentUrl: (payload) => request('/client/verification/document-url', { method: 'POST', body: payload }),
     listJobs: () => request('/client/jobs'),
     postJob: (payload) => request('/client/jobs', { method: 'POST', body: payload }),
     listAgencies: (params) => request(`/agencies${toQueryString(params)}`),
@@ -255,6 +259,9 @@ export const backendApi = {
     markAllRead: () => request('/notifications', { method: 'PATCH', body: {} }),
   },
   admin: {
+    listClientVerifications: () => request('/admin/client-verifications'),
+    decideClientVerification: (payload) => request('/admin/client-verifications/decision', { method: 'POST', body: payload }),
+    resetClientVerification: (payload) => request('/admin/client-verifications/reset', { method: 'POST', body: payload }),
     listTalent: () => request('/admin/talent'),
     updateTalentStatus: (payload) => request('/admin/talent', { method: 'PATCH', body: payload }),
     listAgencies: () => request('/admin/agencies'),

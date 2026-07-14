@@ -242,7 +242,12 @@ export const validateClientVerificationDecision = (input) => {
     errors.push('Legal Business Name must be 240 characters or fewer.');
   }
 
-  if (/[\u0000-\u001f\u007f]/.test(verifiedBusinessName)) {
+  const hasControlCharacters = [...verifiedBusinessName].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint <= 31 || codePoint === 127;
+  });
+
+  if (hasControlCharacters) {
     errors.push('Legal Business Name cannot contain control characters.');
   }
 
@@ -258,6 +263,34 @@ export const validateClientVerificationDecision = (input) => {
     errors,
     valid: errors.length === 0,
     verifiedBusinessName: errors.length ? '' : verifiedBusinessName,
+  };
+};
+
+export const validateClientVerificationRejection = (input) => {
+  const value = asRecord(input);
+  const decisionReason = String(value.decisionReason || value.reason || '').trim();
+  const requestedKinds = Array.isArray(value.rejectedKinds) ? value.rejectedKinds : [];
+  const rejectedKinds = [...new Set(requestedKinds.map((kind) => cleanText(kind, 80).toLowerCase()))];
+  const errors = [];
+
+  if (!decisionReason) {
+    errors.push('A rejection reason is required.');
+  } else if (decisionReason.length > 1000) {
+    errors.push('The rejection reason must be 1000 characters or fewer.');
+  }
+
+  if (
+    rejectedKinds.length === 0
+    || rejectedKinds.some((kind) => !DOCUMENT_KIND_SET.has(kind))
+  ) {
+    errors.push('Choose at least one valid rejected requirement.');
+  }
+
+  return {
+    decisionReason: errors.length ? '' : decisionReason,
+    errors,
+    rejectedKinds: errors.length ? [] : rejectedKinds,
+    valid: errors.length === 0,
   };
 };
 

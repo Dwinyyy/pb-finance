@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
 import {
@@ -9,6 +10,7 @@ import {
   parseClientVerificationUpload,
   toVerifiedBusinessIdentity,
   validateClientVerificationDecision,
+  validateClientVerificationRejection,
   validateClientVerificationSubmission,
 } from '../server/clientVerification.js';
 
@@ -207,4 +209,28 @@ test('payment identity returns the exact name only for approved verification', (
     verificationStatus: 'approved',
     verifiedBusinessName: 'Exact Legal Name, LLC',
   });
+});
+
+test('admin rejection requires a reason and at least one valid rejected requirement', () => {
+  assert.deepEqual(
+    validateClientVerificationRejection({
+      decisionReason: 'The registration is not legible.',
+      rejectedKinds: ['business_proof'],
+    }),
+    {
+      decisionReason: 'The registration is not legible.',
+      errors: [],
+      rejectedKinds: ['business_proof'],
+      valid: true,
+    }
+  );
+
+  const invalid = validateClientVerificationRejection({
+    decisionReason: ' ',
+    rejectedKinds: ['business_proof', 'unknown'],
+  });
+
+  assert.equal(invalid.valid, false);
+  assert.match(invalid.errors.join(' '), /reason/i);
+  assert.match(invalid.errors.join(' '), /requirement/i);
 });

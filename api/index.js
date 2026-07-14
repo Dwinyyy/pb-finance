@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { getRoutePath, handleOptions, readJson, sendError, sendJson, setCorsHeaders } from '../server/http.js';
 import {
   completePasswordSetupWithGoogle,
@@ -11,6 +13,13 @@ import { finalizeOAuthAccount, flagGoogleProfessionalAccount, getAuthProviders }
 import { notifyAdmins, notifyUser } from '../server/notifications.js';
 import { requestRegistrationVerification, verifyRegistrationOtp } from '../server/registrationVerification.js';
 import { getSessionUser } from '../server/session.js';
+import {
+  mapClientVerification,
+  parseClientVerificationUpload,
+  validateClientVerificationDecision,
+  validateClientVerificationRejection,
+  validateClientVerificationSubmission,
+} from '../server/clientVerification.js';
 import {
   getBearerToken,
   getOAuthSignInUrl,
@@ -37,6 +46,7 @@ const getDataOptions = (req, { useServiceRole = false } = {}) => ({
 const asList = (value) => (Array.isArray(value) ? value : []);
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 const CREDENTIAL_UPLOAD_BUCKET = 'professional-documents';
+const CLIENT_VERIFICATION_UPLOAD_BUCKET = 'client-verification-documents';
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
 const ALLOWED_CREDENTIAL_MIME_TYPES = new Set([
   'application/pdf',
@@ -1483,6 +1493,7 @@ const buildAgencyPayload = (body, fallback = {}) => {
 };
 
 let credentialBucketReady = false;
+let clientVerificationBucketReady = false;
 let profilePhotoBucketReady = false;
 
 const encodeStoragePath = (path) => path
@@ -1592,6 +1603,29 @@ const ensureCredentialBucket = async () => {
   }
 
   credentialBucketReady = true;
+};
+
+const ensureClientVerificationBucket = async () => {
+  if (clientVerificationBucketReady) return;
+
+  try {
+    await supabaseStorageRequest('/bucket', {
+      body: {
+        allowed_mime_types: [...ALLOWED_CREDENTIAL_MIME_TYPES],
+        file_size_limit: MAX_CREDENTIAL_UPLOAD_BYTES,
+        id: CLIENT_VERIFICATION_UPLOAD_BUCKET,
+        name: CLIENT_VERIFICATION_UPLOAD_BUCKET,
+        public: false,
+      },
+      method: 'POST',
+    });
+  } catch (error) {
+    if (!String(error.message || '').toLowerCase().includes('already exists')) {
+      throw error;
+    }
+  }
+
+  clientVerificationBucketReady = true;
 };
 
 const ensureProfilePhotoBucket = async () => {
@@ -1733,15 +1767,39 @@ const uploadProfilePhotoFile = async ({ body, userId }) => {
   };
 };
 
-const getSupabaseStorageSignedUrl = async (path) => {
-  const storagePath = cleanString(path, 700);
+const uploadClientVerificationFile = async ({ body, userId }) => {
+  const upload = parseClientVerificationUpload(body);
+  const path = `${userId}/${upload.kind}/${randomUUID()}-${upload.fileName}`;
 
-  if (!storagePath) {
+  await ensureClientVerificationBucket();
+  await supabaseStorageRequest(
+    `/object/${CLIENT_VERIFICATION_UPLOAD_BUCKET}/${encodeStoragePath(path)}`,
+    {
+      body: upload.bytes,
+      contentType: upload.contentType,
+      headers: { 'x-upsert': 'false' },
+      method: 'POST',
+    }
+  );
+
+  return {
+    ...upload,
+    bytes: undefined,
+    path,
+    storageBucket: CLIENT_VERIFICATION_UPLOAD_BUCKET,
+  };
+};
+
+const getSupabaseStorageSignedUrl = async (path, bucket = CREDENTIAL_UPLOAD_BUCKET) => {
+  const storagePath = cleanString(path, 700);
+  const storageBucket = cleanString(bucket, 120);
+
+  if (!storagePath || !storageBucket) {
     throw new Error('A document path is required.');
   }
 
   const signed = await supabaseStorageRequest(
-    `/object/sign/${CREDENTIAL_UPLOAD_BUCKET}/${encodeStoragePath(storagePath)}`,
+    `/object/sign/${encodeURIComponent(storageBucket)}/${encodeStoragePath(storagePath)}`,
     {
       body: { expiresIn: 300 },
       method: 'POST',
@@ -1759,8 +1817,8 @@ const getSupabaseStorageSignedUrl = async (path) => {
   return `${baseUrl}/storage/v1${signedUrl.startsWith('/') ? signedUrl : `/${signedUrl}`}`;
 };
 
-const getSupabaseStorageObject = async (path) => {
-  const signedUrl = await getSupabaseStorageSignedUrl(path);
+const getSupabaseStorageObject = async (path, bucket = CREDENTIAL_UPLOAD_BUCKET) => {
+  const signedUrl = await getSupabaseStorageSignedUrl(path, bucket);
   const response = await fetch(signedUrl);
 
   if (!response.ok) {
@@ -2478,6 +2536,128 @@ const applyCredentialReview = (profile, review, adminId) => {
   };
 };
 
+const requireClientVerificationSession = async (req, res, roles = ['client']) => {
+  const user = await requireSession(req, res, roles);
+
+  if (!user) return null;
+
+  if (!hasServiceRoleKey()) {
+    sendError(res, 500, 'Client verification requires SUPABASE_SERVICE_ROLE_KEY on the server.');
+    return null;
+  }
+
+  req.useServiceRole = true;
+  return user;
+};
+
+const loadClientVerification = async (req, clientId) => {
+  const [caseRows, documentRows] = await Promise.all([
+    readRows(
+      req,
+      `/client_verifications?client_id=eq.${clientId}&select=*&limit=1`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/client_verification_documents?client_id=eq.${clientId}&is_current=eq.true&select=*&order=uploaded_at.desc`,
+      { useServiceRole: true }
+    ),
+  ]);
+
+  return {
+    caseRow: asList(caseRows)[0] || { client_id: clientId, status: 'draft' },
+    documentRows: asList(documentRows),
+  };
+};
+
+const mapAdminClientVerification = (caseRow, documentRows, profile = {}) => ({
+  ...mapClientVerification(caseRow, documentRows),
+  client: {
+    avatarUrl: cleanString(profile.avatar_url, 700),
+    company: cleanString(profile.company, 240),
+    email: cleanString(profile.email, 320),
+    id: caseRow.client_id,
+    name: cleanString(profile.full_name, 240) || cleanString(profile.email, 320) || 'Client',
+  },
+  internalReviewNotes: cleanString(caseRow.internal_review_notes, 2000),
+  reviewedBy: cleanString(caseRow.reviewed_by, 80) || null,
+});
+
+const loadAdminClientVerificationQueue = async (req) => {
+  const caseRows = asList(await readRows(
+    req,
+    '/client_verifications?select=*&order=submitted_at.desc.nullslast,updated_at.desc&limit=250',
+    { useServiceRole: true }
+  ));
+
+  if (!caseRows.length) return [];
+
+  const clientIds = [...new Set(caseRows.map((row) => row.client_id).filter(isUuid))];
+  const idFilter = clientIds.join(',');
+  const [documentRows, profiles] = await Promise.all([
+    readRows(
+      req,
+      `/client_verification_documents?client_id=in.(${idFilter})&is_current=eq.true&select=*&order=uploaded_at.desc`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/profiles?id=in.(${idFilter})&select=id,email,full_name,company,avatar_url`,
+      { useServiceRole: true }
+    ),
+  ]);
+  const documentsByClient = asList(documentRows).reduce((grouped, row) => {
+    const documents = grouped.get(row.client_id) || [];
+    documents.push(row);
+    grouped.set(row.client_id, documents);
+    return grouped;
+  }, new Map());
+  const profilesById = new Map(asList(profiles).map((profile) => [profile.id, profile]));
+
+  return caseRows.map((caseRow) => mapAdminClientVerification(
+    caseRow,
+    documentsByClient.get(caseRow.client_id) || [],
+    profilesById.get(caseRow.client_id) || {}
+  ));
+};
+
+const getAccessibleClientVerificationDocument = async (req, user, input) => {
+  const documentId = cleanString(input.documentId || input.document_id || input.id, 80);
+
+  if (!isUuid(documentId)) {
+    const error = new Error('A valid verification document id is required.');
+    error.status = 400;
+    throw error;
+  }
+
+  const rows = await readRows(
+    req,
+    `/client_verification_documents?id=eq.${documentId}&select=*&limit=1`,
+    { useServiceRole: true }
+  );
+  const document = asList(rows)[0];
+
+  if (!document) {
+    const error = new Error('Verification document not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  if (user.role !== 'admin' && document.client_id !== user.id) {
+    const error = new Error('You do not have access to this verification document.');
+    error.status = 403;
+    throw error;
+  }
+
+  if (document.storage_bucket !== CLIENT_VERIFICATION_UPLOAD_BUCKET) {
+    const error = new Error('Verification document storage is invalid.');
+    error.status = 409;
+    throw error;
+  }
+
+  return document;
+};
+
 const handlers = {
   'GET /health': async (req, res) => {
     const checks = {
@@ -2847,6 +3027,162 @@ const handlers = {
     } catch (error) {
       sendError(res, error.status || 500, error.message || 'Unable to verify registration.');
     }
+  },
+
+  'GET /admin/client-verifications': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    sendJson(res, 200, await loadAdminClientVerificationQueue(req));
+  },
+
+  'POST /admin/client-verifications/decision': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const clientId = cleanString(body.clientId || body.client_id, 80);
+    const decision = cleanString(body.decision || body.status, 40).toLowerCase();
+
+    if (!isUuid(clientId)) {
+      sendError(res, 400, 'A valid clientId is required.');
+      return;
+    }
+
+    const current = await loadClientVerification(req, clientId);
+
+    if (current.caseRow.status !== 'pending_review') {
+      sendError(res, 409, 'Only pending client verification cases can be reviewed.');
+      return;
+    }
+
+    if (decision === 'approve') {
+      const validation = validateClientVerificationDecision(body);
+
+      if (!validation.valid) {
+        sendError(res, 400, validation.errors.join(' '));
+        return;
+      }
+
+      await writeRows(
+        req,
+        '/rpc/approve_client_verification',
+        {
+          p_client_id: clientId,
+          p_internal_review_notes: cleanString(body.internalReviewNotes, 2000) || null,
+          p_reviewer_id: user.id,
+          p_verified_business_name: validation.verifiedBusinessName,
+        },
+        { useServiceRole: true }
+      );
+    } else if (decision === 'reject') {
+      const validation = validateClientVerificationRejection(body);
+
+      if (!validation.valid) {
+        sendError(res, 400, validation.errors.join(' '));
+        return;
+      }
+
+      await writeRows(
+        req,
+        '/rpc/reject_client_verification',
+        {
+          p_client_id: clientId,
+          p_decision_reason: validation.decisionReason,
+          p_internal_review_notes: cleanString(body.internalReviewNotes, 2000) || null,
+          p_rejected_kinds: validation.rejectedKinds,
+          p_reviewer_id: user.id,
+        },
+        { useServiceRole: true }
+      );
+    } else {
+      sendError(res, 400, 'Decision must be approve or reject.');
+      return;
+    }
+
+    const [updated, profileRows] = await Promise.all([
+      loadClientVerification(req, clientId),
+      readRows(
+        req,
+        `/profiles?id=eq.${clientId}&select=id,email,full_name,company,avatar_url&limit=1`,
+        { useServiceRole: true }
+      ),
+    ]);
+    const profile = asList(profileRows)[0] || {};
+    const approved = decision === 'approve';
+
+    notifyUser({
+      actionUrl: '/?tab=verification',
+      body: approved
+        ? 'PB Finance approved your client verification. Verified client features are now available.'
+        : `PB Finance needs updated verification evidence. ${updated.caseRow.decision_reason || ''}`.trim(),
+      emailSubject: approved ? 'Client verification approved' : 'Client verification needs updates',
+      metadata: { clientId, decision },
+      recipientEmail: profile.email,
+      recipientId: clientId,
+      recipientName: profile.full_name,
+      title: approved ? 'Verification approved' : 'Verification needs updates',
+      type: approved ? 'client_verification_approved' : 'client_verification_rejected',
+    }).catch(() => {});
+
+    sendJson(res, 200, mapAdminClientVerification(
+      updated.caseRow,
+      updated.documentRows,
+      profile
+    ));
+  },
+
+  'POST /admin/client-verifications/reset': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const clientId = cleanString(body.clientId || body.client_id, 80);
+    const reason = cleanString(body.reason, 1000);
+
+    if (!isUuid(clientId) || !reason) {
+      sendError(res, 400, 'A valid clientId and reset reason are required.');
+      return;
+    }
+
+    await writeRows(
+      req,
+      '/rpc/reset_client_verification',
+      {
+        p_client_id: clientId,
+        p_reason: reason,
+        p_reviewer_id: user.id,
+      },
+      { useServiceRole: true }
+    );
+
+    const [updated, profileRows] = await Promise.all([
+      loadClientVerification(req, clientId),
+      readRows(
+        req,
+        `/profiles?id=eq.${clientId}&select=id,email,full_name,company,avatar_url&limit=1`,
+        { useServiceRole: true }
+      ),
+    ]);
+    const profile = asList(profileRows)[0] || {};
+
+    notifyUser({
+      actionUrl: '/?tab=verification',
+      body: `PB Finance reset your client verification. Upload new evidence to continue. Reason: ${reason}`,
+      emailSubject: 'Client verification reset',
+      metadata: { clientId },
+      recipientEmail: profile.email,
+      recipientId: clientId,
+      recipientName: profile.full_name,
+      title: 'Verification reset',
+      type: 'client_verification_reset',
+    }).catch(() => {});
+
+    sendJson(res, 200, mapAdminClientVerification(
+      updated.caseRow,
+      updated.documentRows,
+      profile
+    ));
   },
 
   'GET /admin/talent': async (req, res) => {
@@ -3395,6 +3731,128 @@ const handlers = {
         shortlist: shortlistRows.length,
       },
     });
+  },
+
+  'GET /client/verification': async (req, res) => {
+    const user = await requireClientVerificationSession(req, res);
+    if (!user) return;
+
+    const verification = await loadClientVerification(req, user.id);
+    sendJson(res, 200, mapClientVerification(
+      verification.caseRow,
+      verification.documentRows
+    ));
+  },
+
+  'POST /client/verification/uploads': async (req, res) => {
+    const user = await requireClientVerificationSession(req, res);
+    if (!user) return;
+
+    const current = await loadClientVerification(req, user.id);
+
+    if (['pending_review', 'approved'].includes(current.caseRow.status)) {
+      sendError(res, 409, 'Verification evidence is locked while pending or approved.');
+      return;
+    }
+
+    const body = await readJson(req);
+    let upload;
+
+    try {
+      upload = await uploadClientVerificationFile({ body, userId: user.id });
+      await writeRows(
+        req,
+        '/rpc/register_client_verification_document',
+        {
+          p_business_document_type: upload.businessDocumentType,
+          p_client_id: user.id,
+          p_content_type: upload.contentType,
+          p_file_sha256: upload.fileSha256,
+          p_file_size: upload.fileSize,
+          p_kind: upload.kind,
+          p_original_file_name: upload.fileName,
+          p_storage_bucket: upload.storageBucket,
+          p_storage_path: upload.path,
+        },
+        { useServiceRole: true }
+      );
+    } catch (error) {
+      if (upload?.path) {
+        supabaseStorageRequest(
+          `/object/${CLIENT_VERIFICATION_UPLOAD_BUCKET}/${encodeStoragePath(upload.path)}`,
+          { method: 'DELETE' }
+        ).catch(() => {});
+      }
+
+      sendError(res, error.status || 400, error.message || 'Unable to upload verification evidence.');
+      return;
+    }
+
+    const updated = await loadClientVerification(req, user.id);
+    sendJson(res, 201, mapClientVerification(updated.caseRow, updated.documentRows));
+  },
+
+  'POST /client/verification/submit': async (req, res) => {
+    const user = await requireClientVerificationSession(req, res);
+    if (!user) return;
+
+    const current = await loadClientVerification(req, user.id);
+    const validation = validateClientVerificationSubmission(current.documentRows);
+
+    if (!['draft', 'rejected'].includes(current.caseRow.status)) {
+      sendError(res, 409, 'Only draft or rejected verification can be submitted.');
+      return;
+    }
+
+    if (!validation.valid) {
+      sendError(
+        res,
+        400,
+        `Complete every verification requirement before submitting: ${validation.missingKinds.join(', ')}.`
+      );
+      return;
+    }
+
+    await writeRows(
+      req,
+      '/rpc/submit_client_verification',
+      { p_client_id: user.id },
+      { useServiceRole: true }
+    );
+
+    const updated = await loadClientVerification(req, user.id);
+
+    notifyAdmins({
+      actionUrl: '/?tab=client-verifications',
+      body: `${user.name || user.email || 'A client'} submitted identity and business evidence for manual review.`,
+      emailSubject: 'Client verification submitted',
+      metadata: { clientId: user.id },
+      title: 'Client verification submitted',
+      type: 'client_verification_submitted',
+    }).catch(() => {});
+
+    sendJson(res, 200, mapClientVerification(updated.caseRow, updated.documentRows));
+  },
+
+  'POST /client/verification/document-url': async (req, res) => {
+    const user = await requireClientVerificationSession(req, res, ['admin', 'client']);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const document = await getAccessibleClientVerificationDocument(req, user, body);
+
+      sendJson(res, 200, {
+        contentType: document.content_type,
+        fileName: document.original_file_name,
+        url: await getSupabaseStorageSignedUrl(
+          document.storage_path,
+          document.storage_bucket
+        ),
+      });
+    } catch (error) {
+      sendError(res, error.status || 400, error.message || 'Unable to open this verification document.');
+    }
   },
 
   'GET /client/jobs': async (req, res) => {
