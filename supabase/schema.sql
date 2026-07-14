@@ -518,6 +518,18 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  expiration_time bigint,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.document_expiration_events (
   id uuid primary key default gen_random_uuid(),
   professional_id uuid not null references public.professional_profiles(user_id) on delete cascade,
@@ -551,6 +563,7 @@ create index if not exists client_job_contacts_professional_id_idx on public.cli
 create index if not exists notifications_recipient_id_idx on public.notifications(recipient_id);
 create index if not exists notifications_unread_idx on public.notifications(recipient_id, created_at desc)
   where read_at is null;
+create index if not exists push_subscriptions_user_id_idx on public.push_subscriptions(user_id);
 create index if not exists document_expiration_events_professional_id_idx on public.document_expiration_events(professional_id);
 
 do $$
@@ -597,9 +610,12 @@ alter table public.client_background_checks enable row level security;
 alter table public.client_job_comments enable row level security;
 alter table public.client_job_contacts enable row level security;
 alter table public.notifications enable row level security;
+alter table public.push_subscriptions enable row level security;
 alter table public.document_expiration_events enable row level security;
 
 grant select, insert, update, delete on public.document_expiration_events to service_role;
+revoke all on table public.push_subscriptions from public, anon, authenticated;
+grant select, insert, update, delete on table public.push_subscriptions to service_role;
 
 create or replace function public.profile_role_for(p_user_id uuid)
 returns text
@@ -1573,6 +1589,12 @@ begin
   return new;
 end;
 $$;
+
+drop trigger if exists set_push_subscriptions_updated_at on public.push_subscriptions;
+create trigger set_push_subscriptions_updated_at
+  before update on public.push_subscriptions
+  for each row
+  execute function public.set_updated_at();
 
 create or replace function public.prevent_profile_owner_role_tier_change()
 returns trigger

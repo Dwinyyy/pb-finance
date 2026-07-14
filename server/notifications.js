@@ -1,4 +1,9 @@
 import { normalizeEmail, supabaseRestRequest } from './supabase.js';
+import { sendPushNotifications } from './pushNotifications.js';
+
+export const shouldSendNotificationEmail = (env = process.env) => (
+  String(env.NOTIFICATION_EMAILS_DISABLED || '').trim().toLowerCase() !== 'true'
+);
 
 const getAppBaseUrl = () => {
   const url = process.env.PUBLIC_APP_URL || process.env.ALLOWED_ORIGIN || '';
@@ -40,8 +45,7 @@ const sendEmail = async ({ actionUrl, body, subject, title, toEmail, toName }) =
     return { skipped: true };
   }
 
-  // Email notifications temporarily disabled by default (except for verification codes).
-  if (process.env.NOTIFICATION_EMAILS_DISABLED !== 'false') {
+  if (!shouldSendNotificationEmail()) {
     return { skipped: true };
   }
 
@@ -171,6 +175,7 @@ export const notifyUser = async ({
   const result = {
     emailSent: false,
     notificationCreated: false,
+    pushSent: 0,
   };
 
   try {
@@ -199,6 +204,21 @@ export const notifyUser = async ({
     result.emailSent = !email?.skipped;
   } catch (error) {
     result.emailError = error.message;
+  }
+
+  try {
+    const push = await sendPushNotifications({
+      actionUrl,
+      body,
+      recipientId,
+      title,
+      type,
+    });
+    result.pushSent = push.sent;
+    result.pushRemoved = push.removed;
+    result.pushErrors = push.errors;
+  } catch (error) {
+    result.pushError = error.message;
   }
 
   return result;
