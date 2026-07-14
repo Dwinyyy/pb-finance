@@ -28,6 +28,9 @@ Implemented endpoints:
 - `GET /api/health`
 - `GET /api/notifications`
 - `PATCH /api/notifications`
+- `GET /api/notifications/push-config`
+- `POST /api/notifications/push-subscription`
+- `DELETE /api/notifications/push-subscription`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `POST /api/auth/register`
@@ -45,6 +48,8 @@ Implemented endpoints:
 - `GET /api/talent/me`
 - `PATCH /api/talent/me`
 - `POST /api/talent/uploads`
+- `POST /api/talent/identity-uploads`
+- `POST /api/talent/document-request`
 - `GET /api/talent/opportunities`
 - `PATCH /api/talent/opportunities`
 - `GET /api/talent/earnings`
@@ -56,6 +61,8 @@ Implemented endpoints:
 - `POST /api/client/interviews`
 - `GET /api/client/billing`
 - `POST /api/matchmaker/suggestions`
+- `GET /api/admin/check-expirations`
+- `POST /api/admin/check-expirations`
 
 Auth is backed by Supabase Auth. For production, set these in Vercel Project Settings -> Environment Variables and redeploy:
 
@@ -69,7 +76,12 @@ PUBLIC_APP_URL=https://your-production-domain.com
 BREVO_API_KEY=your-brevo-api-key
 NOTIFICATION_FROM_EMAIL=your-verified-sender@email.com
 NOTIFICATION_FROM_NAME=PB Finance
+NOTIFICATION_EMAILS_DISABLED=false
 ADMIN_NOTIFICATION_EMAIL=your-admin@email.com
+WEB_PUSH_VAPID_PUBLIC_KEY=your-public-vapid-key
+WEB_PUSH_VAPID_PRIVATE_KEY=your-private-vapid-key
+WEB_PUSH_SUBJECT=mailto:security@your-production-domain.com
+CRON_SECRET=generate-a-long-random-secret
 MANUAL_TRIAGE_EMAIL_DOMAINS=deloitte.com,ey.com,pwc.com,kpmg.com
 ```
 
@@ -86,6 +98,29 @@ Google Sign-In is available from login and signup. Professional Google accounts 
 
 For production confirmation emails, use Brevo as the free SMTP provider. See `docs/smtp-brevo.md` and `scripts/configure-supabase-brevo-smtp.ps1`.
 Runtime workflow emails also support Brevo. If `BREVO_API_KEY` and `NOTIFICATION_FROM_EMAIL` are missing, the app still creates in-app notifications and silently skips email sending.
+Configured workflow emails send by default. Set `NOTIFICATION_EMAILS_DISABLED=true` only when you intentionally need to pause them; any other value leaves delivery enabled.
+
+Browser push notifications use the standard Web Push protocol and are opt-in per browser. Generate one VAPID key pair and reuse it across deployments:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Store the private key only in Vercel server environment variables. The public key is returned to authenticated users by `/api/notifications/push-config`. Subscriptions are stored in `public.push_subscriptions`, which has RLS enabled, no direct `anon` or `authenticated` grants, and explicit `service_role` access only. Apply `supabase/migrations/20260714162000_professional_verification_hardening.sql` (or the current `supabase/schema.sql`) before enabling push in production.
+
+## Professional Verification Operations
+
+Professional onboarding is a mandatory post-account Verification Center. The main Professional dashboard stays locked until a PB Finance admin approves identity evidence, resume, required regulated inputs, and every separate certification required by the selected professional titles.
+
+- Valid ID front and liveness selfie are required. The ID front requires a future expiration date; ID back uses an expiration date when uploaded.
+- PRC licenses, BOA accreditations, tax certifications, and other title-mapped certifications remain distinct required slots. The server derives SHA-256 from each upload, then re-reads and hashes the private Storage bytes again at submission before rejecting identical evidence reused across required certification slots.
+- Approved identity, resume, and certification evidence is locked. The professional must use Request Change/Removal and give a reason; PB Finance admins see the reason in Talent Review and decide whether to reopen the evidence.
+- Profile Settings remains a modal for Bio, Rates, Skills, and profile photo. The professional can preview the published profile with View Profile As Basic Client or Verified Client.
+- `vercel.json` runs `/api/admin/check-expirations` daily at `08:00 UTC`. Vercel authenticates the request with `Authorization: Bearer $CRON_SECRET`; manual admin calls remain supported.
+- Reminder recovery uses urgency bands: 31-60 days (`reminder_60`), 8-30 days (`reminder_30`), and 1-7 days (`reminder_7`). A missed exact day is recovered on the next run. Expired approved evidence immediately downgrades the professional to unverified/Basic and hides the profile pending renewal and admin approval.
+- In-app, configured Brevo email, and opted-in browser push notifications are best effort after compliance state is committed.
+
+The expiration event key is professional + document + reminder band + expiration date, preventing duplicate sends when Vercel retries a daily cron invocation.
 
 Optional database setup:
 

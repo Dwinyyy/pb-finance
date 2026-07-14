@@ -31,13 +31,13 @@
 **Interfaces:**
 - Produces: `getIdentitySubmissionBlocker(profile, { now })`, `getDuplicateRequiredCredentialBlocker(profile)`, `getDocumentExpirationActions(profile, options)`, and sanitized `fileSha256`/`expiryDate` metadata.
 
-- [ ] Write failing tests for missing, invalid, and expired ID expiry; duplicate certification digests; 59/29/6-day reminder recovery; mixed expiry/reminder actions; and approved identity expiration.
-- [ ] Run `node --test tests/professional-onboarding.test.js` and confirm the failures are caused by the missing behavior.
-- [ ] Derive SHA-256 from decoded bytes, preserve the digest through sanitization, compare only required certification slots, and reject duplicate required evidence at upload and submission/approval validation.
-- [ ] Require a future `validIdFront.expiryDate` and include approved ID evidence in expiration actions.
-- [ ] Replace exact-day reminder matching with the 60/30/7 urgency bands while retaining existing event-key idempotence.
-- [ ] Run the focused tests and `npm run check:backend`; expect zero failures.
-- [ ] Commit as `feat: harden professional compliance evidence`.
+- [x] Write failing tests for missing, invalid, and expired ID expiry; duplicate certification digests; 59/29/6-day reminder recovery; mixed expiry/reminder actions; and approved identity expiration.
+- [x] Run `node --test tests/professional-onboarding.test.js` and confirm the failures are caused by the missing behavior.
+- [x] Derive SHA-256 from decoded bytes, preserve the digest through sanitization, compare only required certification slots, and reject duplicate required evidence at upload and submission/approval validation.
+- [x] Require a future `validIdFront.expiryDate` and include approved ID evidence in expiration actions.
+- [x] Replace exact-day reminder matching with the 60/30/7 urgency bands while retaining existing event-key idempotence.
+- [x] Run the focused tests and attempt `npm run check:backend`; tests pass and the live check reports the isolated worktree's missing Supabase environment values.
+- [x] Commit as `feat: harden professional compliance evidence`.
 
 ### Task 2: Push Subscription Schema and Delivery
 
@@ -54,14 +54,14 @@
 **Interfaces:**
 - Produces: `getWebPushConfig()`, `sendPushNotifications(payload)`, `shouldSendNotificationEmail(env)`, and `public.push_subscriptions`.
 
-- [ ] Add failing tests for explicit email disable, configured-by-default email, missing VAPID configuration, successful sends, stale-subscription cleanup, and protected schema grants.
-- [ ] Run the notification and schema tests and confirm RED.
-- [ ] Use `npx supabase migration new professional_verification_hardening` to create the migration, then add the RLS-enabled subscription table, indexes, updated-at trigger, explicit service-role grant, and revoked browser grants to both schema sources.
-- [ ] Install and pin `web-push`, configure VAPID from server environment variables, send safe JSON payloads, and delete 404/410 subscriptions.
-- [ ] Change Brevo notification email semantics so only the exact case-insensitive string `true` disables configured email delivery.
-- [ ] Extend `notifyUser` with independent Web Push delivery results.
-- [ ] Run focused tests, schema tests, and `npm run check:backend`; expect zero failures.
-- [ ] Commit as `feat: add professional push notifications`.
+- [x] Add failing tests for explicit email disable, configured-by-default email, missing VAPID configuration, successful sends, stale-subscription cleanup, and protected schema grants.
+- [x] Run the notification and schema tests and confirm RED.
+- [x] Use `npx supabase migration new professional_verification_hardening` to create the migration, then add the RLS-enabled subscription table, indexes, updated-at trigger, explicit service-role grant, and revoked browser grants to both schema sources.
+- [x] Install and pin `web-push`, configure VAPID from server environment variables, send safe JSON payloads, and delete 404/410 subscriptions.
+- [x] Change Brevo notification email semantics so only the exact case-insensitive string `true` disables configured email delivery.
+- [x] Extend `notifyUser` with independent Web Push delivery results.
+- [x] Run focused and schema tests; all pass, while the live backend check remains unavailable without Supabase environment values.
+- [x] Commit as `feat: add professional push notifications`.
 
 ### Task 3: API and Professional UI
 
@@ -78,14 +78,14 @@
 **Interfaces:**
 - Produces: push config/upsert/delete endpoints, browser subscription helpers, ID expiry upload, identity change requests, and approved identity lock UI.
 
-- [ ] Add failing static contract tests for the three push routes, service-worker opt-in, ID expiry input/payload, approved identity lock, and Request Change/Removal wording.
-- [ ] Run focused tests and confirm RED.
-- [ ] Add authenticated push config, upsert, and delete handlers with structural subscription validation and service-role persistence.
-- [ ] Add explicit push opt-in status/actions to the notification menu and implement same-origin service-worker click navigation.
-- [ ] Add ID expiry controls, pass expiry on identity upload, block ready state without it, and replace approved identity upload controls with Request Change/Removal.
-- [ ] Extend the document-request handler to record reasons on approved identity evidence and notify admins without unlocking the document.
-- [ ] Run focused tests, `npm run lint`, and `npm run build`; expect zero failures.
-- [ ] Commit as `feat: complete professional verification controls`.
+- [x] Add failing static contract tests for the three push routes, service-worker opt-in, ID expiry input/payload, approved identity lock, and Request Change/Removal wording.
+- [x] Run focused tests and confirm RED.
+- [x] Add authenticated push config, upsert, and delete handlers with structural subscription validation and service-role persistence.
+- [x] Add explicit push opt-in status/actions to the notification menu and implement same-origin service-worker click navigation.
+- [x] Add ID expiry controls, pass expiry on identity upload, block ready state without it, and replace approved identity upload controls with Request Change/Removal.
+- [x] Extend the document-request handler to record reasons on approved identity evidence and notify admins without unlocking the document.
+- [x] Run focused tests, `npm run lint`, and `npm run build`; all pass.
+- [x] Commit as `feat: complete professional verification controls`.
 
 ### Task 4: Operations and End-to-End Verification
 
@@ -97,12 +97,12 @@
 **Interfaces:**
 - Documents: `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_SUBJECT`, `NOTIFICATION_EMAILS_DISABLED`, migration deployment, and VAPID generation.
 
-- [ ] Document environment and deployment requirements, daily UTC cron behavior, push opt-in, and admin-only identity change handling.
-- [ ] Run `npm test`, `npm run check:backend`, `npm run lint`, and `npm run build`; expect every command to exit 0.
-- [ ] Run the available Supabase migration-list/advisor checks; if the isolated worktree has no linked project credentials, record that limitation without claiming live verification.
-- [ ] Start the Vite server and verify the Professional Verification Center loads, ID expiry is required, approved documents are locked, View Profile As still works, push opt-in renders safely when unconfigured/configured, and the browser console has no uncaught errors.
-- [ ] Review the final diff for protected digests, subscription secrets, service-role-only grants, cron authorization, notification best-effort boundaries, and all original Professional prompt requirements.
-- [ ] Commit as `docs: document professional verification operations`.
+- [x] Document environment and deployment requirements, daily UTC cron behavior, push opt-in, and admin-only identity change handling.
+- [x] Run `npm test`, `npm run check:backend`, `npm run lint`, and `npm run build`; tests, lint, and build pass, while the live backend check reports missing local Supabase environment values.
+- [x] Run the available Supabase migration-list/advisor discovery; the CLI confirms this isolated worktree is not linked to a Supabase project, so no live migration or advisor result is claimed.
+- [x] Start the Vite server and verify the Professional Verification Center, ID expiry inputs, Verify gating, Profile Settings modal, View Profile As modal, and clean browser console. Approved-lock and configured-push states are covered by automated contracts because authenticated Supabase state is unavailable locally.
+- [x] Review the final diff for protected digests, subscription secrets, service-role-only grants, cron authorization, notification best-effort boundaries, and all original Professional prompt requirements.
+- [x] Commit as `docs: document professional verification operations`.
 
 ## Plan Self-Review
 
