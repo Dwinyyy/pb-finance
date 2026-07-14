@@ -77,7 +77,9 @@ export const sendPushNotifications = async ({
     sent: 0,
   };
 
-  if (!config.configured || !recipientId || !env.SUPABASE_SERVICE_ROLE_KEY && restRequest === supabaseRestRequest) {
+  const missingDefaultServiceRole = restRequest === supabaseRestRequest && !env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!config.configured || !recipientId || missingDefaultServiceRole) {
     return result;
   }
 

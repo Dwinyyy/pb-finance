@@ -2377,6 +2377,56 @@ const getDuplicateRequiredCredentialUploadBlocker = (profile, { documentKey, fil
     : '';
 };
 
+const verifyRequiredCredentialDigests = async (profile, {
+  loadDocument = getSupabaseStorageObject,
+  userId,
+} = {}) => {
+  const workPreferences = cleanWorkPreferences(profile?.work_preferences || profile?.workPreferences);
+  const requiredLabels = getRequiredCredentialLabels(profile);
+  const ownerId = cleanString(userId, 80);
+  const ownerPrefix = `${ownerId}/`;
+  const supportingDocuments = await Promise.all(
+    asList(workPreferences.supportingDocuments).map(async (document) => {
+      const isRequired = requiredLabels.some((label) => documentMatchesCredentialLabel(document, label));
+
+      if (!isRequired) return document;
+
+      if (!ownerId || !document.path?.startsWith(ownerPrefix)) {
+        throw new Error(`Upload ${getCredentialDisplayLabel(document)} again before verification.`);
+      }
+
+      const stored = await loadDocument(document.path, CREDENTIAL_UPLOAD_BUCKET);
+      const bytes = Buffer.isBuffer(stored?.bytes) ? stored.bytes : Buffer.from(stored?.bytes || []);
+
+      if (!bytes.length) {
+        throw new Error(`Unable to verify the stored file for ${getCredentialDisplayLabel(document)}.`);
+      }
+
+      return {
+        ...document,
+        fileSha256: createHash('sha256').update(bytes).digest('hex'),
+      };
+    })
+  );
+  const verifiedWorkPreferences = {
+    ...workPreferences,
+    supportingDocuments,
+  };
+  const duplicateBlocker = getDuplicateRequiredCredentialBlocker({
+    ...profile,
+    pending_profile: {},
+    review_status: null,
+    status: 'draft',
+    work_preferences: verifiedWorkPreferences,
+  });
+
+  if (duplicateBlocker) {
+    throw new Error(duplicateBlocker);
+  }
+
+  return verifiedWorkPreferences;
+};
+
 const validateRegulatedInputValue = (field, value) => {
   const text = cleanString(value, 200);
 
@@ -4880,6 +4930,21 @@ const handlers = {
       return;
     }
 
+    if (submitForReview) {
+      try {
+        workPreferences = await verifyRequiredCredentialDigests({
+          ...(currentProfile || {}),
+          pending_profile: {},
+          status: 'draft',
+          titles,
+          work_preferences: workPreferences,
+        }, { userId: user.id });
+      } catch (error) {
+        sendError(res, 400, error.message || 'Unable to verify required certification uploads.');
+        return;
+      }
+    }
+
     const reflectedCredentialChanges = shouldReflectCredentialDraft
       ? getCredentialDocumentChanges(previousReviewableWorkPreferences, workPreferences)
       : [];
@@ -5808,6 +5873,7 @@ export const __testing = {
   mapTalentProfileForViewer,
   scrubTalentProfileForViewer,
   toClientVisibleWorkPreferences,
+  verifyRequiredCredentialDigests,
 };
 
 export default async function handler(req, res) {

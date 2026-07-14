@@ -193,6 +193,56 @@ test('required certification slots reject identical file digests', () => {
   assert.equal(__testing.getDuplicateRequiredCredentialBlocker(duplicateProfile), '');
 });
 
+test('submission recomputes required certification digests from private storage', async () => {
+  const profile = {
+    titles: ['Certified Public Accountant'],
+    work_preferences: {
+      supportingDocuments: [
+        {
+          expiryDate: '2027-01-01',
+          fileName: 'prc.pdf',
+          fileSha256: 'f'.repeat(64),
+          key: 'certification:PRC License',
+          label: 'PRC License',
+          path: `${professionalId}/prc/prc.pdf`,
+          status: 'pending_review',
+          uploadedAt: '2026-07-03T00:00:00.000Z',
+        },
+        {
+          expiryDate: '2027-01-01',
+          fileName: 'boa.pdf',
+          fileSha256: 'e'.repeat(64),
+          key: 'certification:BOA Accreditation',
+          label: 'BOA Accreditation',
+          path: `${professionalId}/boa/boa.pdf`,
+          status: 'pending_review',
+          uploadedAt: '2026-07-03T00:00:00.000Z',
+        },
+      ],
+    },
+  };
+  const loadSameBytes = async () => ({ bytes: Buffer.from('identical-regulated-document') });
+
+  await assert.rejects(
+    __testing.verifyRequiredCredentialDigests(profile, {
+      loadDocument: loadSameBytes,
+      userId: professionalId,
+    }),
+    /distinct file/i
+  );
+
+  const verified = await __testing.verifyRequiredCredentialDigests(profile, {
+    loadDocument: async (path) => ({ bytes: Buffer.from(path) }),
+    userId: professionalId,
+  });
+
+  assert.notEqual(
+    verified.supportingDocuments[0].fileSha256,
+    verified.supportingDocuments[1].fileSha256
+  );
+  assert.notEqual(verified.supportingDocuments[0].fileSha256, 'f'.repeat(64));
+});
+
 test('owner preview maps professional profile exactly as basic and verified clients see it', () => {
   const basicPreview = __testing.mapTalentProfilePreviewForTier(baseProfile, owner, 'basic');
 
