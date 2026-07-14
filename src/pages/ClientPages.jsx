@@ -13,6 +13,7 @@ import {
   DollarSign, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
+import { ClientVerificationDashboard } from '../components/ClientVerificationDashboard';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
 import { useNotifications } from '../hooks/useNotifications';
@@ -30,7 +31,7 @@ const EMPTY_BILLING = Object.freeze({
 });
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 const TALENT_SKILL_FILTERS = ['All', ...SKILLS_OPTIONS];
-const CLIENT_TABS = ['discover', 'agencies', 'shortlist', 'interviews', 'billing'];
+const CLIENT_TABS = ['discover', 'verification', 'agencies', 'shortlist', 'interviews', 'billing'];
 const CLIENT_TIER_PERMISSIONS = Object.freeze({
   basic: Object.freeze({
     canDiscoverAgencies: false,
@@ -61,6 +62,9 @@ const CLIENT_TIER_PERMISSIONS = Object.freeze({
   }),
 });
 const CLIENT_NOTIFICATION_TAB_FALLBACKS = {
+  client_verification_approved: 'verification',
+  client_verification_rejected: 'verification',
+  client_verification_reset: 'verification',
   interview_accepted: 'interviews',
   interview_cancelled: 'interviews',
   interview_declined: 'interviews',
@@ -551,12 +555,13 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const availableTabs = useMemo(() => (
     [
       { id: 'discover', label: 'Discover Talent' },
+      { id: 'verification', label: 'Verification' },
       ...(clientPermissions.canDiscoverAgencies ? [{ id: 'agencies', label: 'Discover Agencies' }] : []),
       { id: 'shortlist', label: 'My Shortlist' },
-      { id: 'interviews', label: 'Interviews' },
-      { id: 'billing', label: 'Billing & Contracts' },
+      ...(clientPermissions.canScheduleInterviews ? [{ id: 'interviews', label: 'Interviews' }] : []),
+      ...(clientPermissions.canViewFullDocuments ? [{ id: 'billing', label: 'Billing & Contracts' }] : []),
     ]
-  ), [clientPermissions.canDiscoverAgencies]);
+  ), [clientPermissions.canDiscoverAgencies, clientPermissions.canScheduleInterviews, clientPermissions.canViewFullDocuments]);
   const availableTabIds = useMemo(() => availableTabs.map((tab) => tab.id), [availableTabs]);
   const appView = availableTabIds.includes(requestedTab) ? requestedTab : 'discover';
   const setAppView = (tab) => setSearchParams({ tab });
@@ -684,6 +689,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       {/* App Workspace */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative scroll-smooth">
         {appView === 'discover' && <AppDiscoverView user={user} />}
+        {appView === 'verification' && <ClientVerificationDashboard />}
         {appView === 'agencies' && clientPermissions.canDiscoverAgencies && <AppAgenciesView />}
         {appView === 'shortlist' && <AppShortlistView user={user} />}
         {appView === 'interviews' && <AppInterviewsView user={user} />}

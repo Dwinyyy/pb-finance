@@ -626,7 +626,7 @@ function CredentialUploadRow({
                 onClick={() => onRequestChange && onRequestChange({ documentKey, documentLabel, documentType })}
                 className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
               >
-                Request change
+                Request Change/Removal
               </button>
             )
           ) : (
@@ -1615,6 +1615,23 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const identityDocuments = getIdentityDocuments(profile);
+  const identityApproved = (profile?.identityVerificationStatus || profile?.identity_verification_status) === 'approved';
+  const [expiryDates, setExpiryDates] = useState({
+    valid_id_back: identityDocuments.validIdBack?.expiryDate || '',
+    valid_id_front: identityDocuments.validIdFront?.expiryDate || '',
+  });
+  const [changeRequestRow, setChangeRequestRow] = useState(null);
+  const [changeRequestReason, setChangeRequestReason] = useState('');
+  const [changeRequestCustomReason, setChangeRequestCustomReason] = useState('');
+  const [changeRequestBusy, setChangeRequestBusy] = useState(false);
+
+  useEffect(() => {
+    setExpiryDates({
+      valid_id_back: identityDocuments.validIdBack?.expiryDate || '',
+      valid_id_front: identityDocuments.validIdFront?.expiryDate || '',
+    });
+  }, [identityDocuments.validIdBack?.expiryDate, identityDocuments.validIdFront?.expiryDate]);
+
   const rows = [
     {
       accept: DOCUMENT_ACCEPTS.other_document,
@@ -1624,6 +1641,7 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
       kind: 'valid_id_front',
       label: 'Valid ID front',
       required: true,
+      requiresExpiry: true,
       validator: (file) => validateCredentialFile(file, 'other_document'),
     },
     {
@@ -1634,6 +1652,7 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
       kind: 'valid_id_back',
       label: 'Valid ID back',
       required: false,
+      requiresExpiry: true,
       validator: (file) => validateCredentialFile(file, 'other_document'),
     },
     {
@@ -1644,10 +1663,16 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
       kind: 'liveness_selfie',
       label: 'Liveness selfie',
       required: true,
+      requiresExpiry: false,
       validator: (file) => validateImageFile(file, 'Liveness selfie'),
     },
   ];
-  const requiredComplete = rows.filter((row) => row.required).every((row) => hasIdentityArtifact(row.document));
+  const today = new Date().toISOString().slice(0, 10);
+  const isFutureExpiryDate = (value) => Boolean(value && value > today);
+  const requiredComplete = rows.filter((row) => row.required).every((row) => (
+    hasIdentityArtifact(row.document)
+    && (!row.requiresExpiry || isFutureExpiryDate(row.document?.expiryDate || expiryDates[row.kind]))
+  ));
 
   const uploadIdentityFile = async (row, file) => {
     if (!file) return;
@@ -1656,6 +1681,11 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
 
     if (fileError) {
       setError(fileError);
+      return;
+    }
+
+    if (row.requiresExpiry && !isFutureExpiryDate(expiryDates[row.kind])) {
+      setError(`Add a future ${row.label.toLowerCase()} expiration date before uploading.`);
       return;
     }
 
@@ -1670,6 +1700,7 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
         fileData,
         fileName: file.name,
         kind: row.kind,
+        expiryDate: expiryDates[row.kind],
       });
 
       onProfileUpdated(updated);
@@ -1681,8 +1712,44 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
     }
   };
 
+  const closeChangeRequest = () => {
+    setChangeRequestRow(null);
+    setChangeRequestReason('');
+    setChangeRequestCustomReason('');
+  };
+
+  const submitIdentityChangeRequest = async (event) => {
+    event.preventDefault();
+    const reason = changeRequestReason === 'Other'
+      ? changeRequestCustomReason.trim()
+      : changeRequestReason;
+
+    if (!reason || !changeRequestRow?.document) return;
+
+    setChangeRequestBusy(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const updated = await backendApi.talent.requestDocumentChange({
+        documentKey: changeRequestRow.document.key || changeRequestRow.document.id,
+        documentName: changeRequestRow.label,
+        documentType: 'identity',
+        reason,
+      });
+      onProfileUpdated(updated);
+      setMessage('Identity document change/removal request submitted to PB Finance admins.');
+      closeChangeRequest();
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to submit identity document request.');
+    } finally {
+      setChangeRequestBusy(false);
+    }
+  };
+
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <>
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
@@ -1713,11 +1780,12 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-3">
         {rows.map((row) => {
           const Icon = row.icon;
           const uploaded = hasIdentityArtifact(row.document);
           const busy = busyKind === row.kind;
+          const changeRequestPending = row.document?.changeRequestStatus === 'pending';
 
           return (
             <div key={row.kind} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
@@ -1733,36 +1801,111 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
                 </div>
                 <span className={`rounded-lg border px-2 py-1 text-[11px] font-black ${
                   uploaded
-                    ? getCredentialStatusStyle(row.document?.status || 'draft')
+                    ? getCredentialStatusStyle(identityApproved ? 'approved' : (row.document?.status || 'draft'))
                     : 'border-slate-200 bg-white text-slate-400 dark:border-slate-800 dark:bg-slate-900'
                 }`}>
-                  {uploaded ? getCredentialStatusLabel(row.document?.status) : 'Missing'}
+                  {uploaded ? getCredentialStatusLabel(identityApproved ? 'approved' : row.document?.status) : 'Missing'}
                 </span>
               </div>
               <p className="mb-4 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">{row.description}</p>
               {uploaded && (
-                <div className="mb-4 truncate rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                  {row.document.fileName || row.document.label}
+                <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                  <div className="truncate">{row.document.fileName || row.document.label}</div>
+                  {row.requiresExpiry && row.document.expiryDate && (
+                    <div className="text-[11px] text-slate-400">Expires {row.document.expiryDate}</div>
+                  )}
                 </div>
               )}
-              <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-cyan-600">
-                {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                {busy ? 'Uploading...' : uploaded ? 'Replace' : 'Upload'}
-                <input
-                  type="file"
-                  accept={row.accept}
-                  className="hidden"
-                  onChange={async (event) => {
-                    await uploadIdentityFile(row, event.target.files?.[0]);
-                    event.target.value = '';
-                  }}
-                />
-              </label>
+              {row.requiresExpiry && !identityApproved && (
+                <label className="mb-3 block text-xs font-black text-slate-600 dark:text-slate-300">
+                  {row.kind === 'valid_id_front' ? 'Valid ID expiration date' : 'ID back expiration date'}
+                  <input
+                    type="date"
+                    min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                    value={expiryDates[row.kind] || ''}
+                    onChange={(event) => setExpiryDates((current) => ({
+                      ...current,
+                      [row.kind]: event.target.value,
+                    }))}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900"
+                  />
+                </label>
+              )}
+              {identityApproved && uploaded ? (
+                <button
+                  type="button"
+                  disabled={changeRequestPending}
+                  onClick={() => setChangeRequestRow(row)}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-black text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-default disabled:opacity-60 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300"
+                >
+                  {changeRequestPending ? 'Request pending' : 'Request Change/Removal'}
+                </button>
+              ) : (
+                <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-cyan-600">
+                  {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                  {busy ? 'Uploading...' : uploaded ? 'Replace' : 'Upload'}
+                  <input
+                    type="file"
+                    accept={row.accept}
+                    className="hidden"
+                    onChange={async (event) => {
+                      await uploadIdentityFile(row, event.target.files?.[0]);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+              )}
             </div>
           );
         })}
+        </div>
       </div>
-    </div>
+      {changeRequestRow && (
+        <PortalModal title="Request Identity Document Change/Removal" onClose={closeChangeRequest}>
+          <form onSubmit={submitIdentityChangeRequest} className="space-y-4">
+            <p className="text-sm font-medium text-slate-500">
+              <strong className="text-slate-900 dark:text-white">{changeRequestRow.label}</strong> is approved and locked. PB Finance must review your reason before it can be replaced or removed.
+            </p>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+              Reason for change or removal
+              <select
+                value={changeRequestReason}
+                onChange={(event) => setChangeRequestReason(event.target.value)}
+                required
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
+              >
+                <option value="" disabled>Select a reason...</option>
+                <option value="Document expired / needs renewal">Document expired / needs renewal</option>
+                <option value="Incorrect document uploaded">Incorrect document uploaded</option>
+                <option value="Details are outdated">Details are outdated</option>
+                <option value="Remove this document">Remove this document</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            {changeRequestReason === 'Other' && (
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                Please specify
+                <textarea
+                  value={changeRequestCustomReason}
+                  onChange={(event) => setChangeRequestCustomReason(event.target.value)}
+                  required
+                  rows={3}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
+                />
+              </label>
+            )}
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={closeChangeRequest} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                Cancel
+              </button>
+              <button type="submit" disabled={changeRequestBusy || !changeRequestReason || (changeRequestReason === 'Other' && !changeRequestCustomReason.trim())} className="rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-70">
+                {changeRequestBusy ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </form>
+        </PortalModal>
+      )}
+    </>
   );
 }
 
@@ -2738,7 +2881,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       </div>
 
       {changeRequestDocument && (
-        <PortalModal title="Request Document Change" onClose={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }}>
+        <PortalModal title="Request Document Change/Removal" onClose={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }}>
           <form onSubmit={submitChangeRequest} className="space-y-4">
             <p className="text-sm font-medium text-slate-500">
               Your document <strong className="text-slate-900 dark:text-white">{changeRequestDocument.documentLabel}</strong> is currently approved and locked. To replace or remove it, please provide a reason for the admin to review.

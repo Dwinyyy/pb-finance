@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 import FadeIn from '../components/FadeIn';
+import { ClientVerificationReview } from '../components/ClientVerificationReview';
 import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
@@ -47,9 +48,10 @@ const DOCUMENT_REJECTION_MESSAGES = [
   'Document appears expired or incomplete.',
   'Please upload the official certificate, license, or verification page.',
 ];
-const ADMIN_TABS = ['overview', 'talent', 'agencies'];
+const ADMIN_TABS = ['overview', 'client-verifications', 'talent', 'agencies'];
 const ADMIN_NOTIFICATION_TAB_FALLBACKS = {
   agency_submitted: 'agencies',
+  client_verification_submitted: 'client-verifications',
   talent_profile_submitted: 'talent',
 };
 
@@ -620,6 +622,7 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
         <div className="mx-auto flex max-w-[1600px] gap-8 overflow-x-auto px-4 pt-4 sm:px-6 lg:px-8">
           {[
             { icon: ShieldCheck, id: 'overview', label: 'Overview' },
+            { icon: IdCard, id: 'client-verifications', label: 'Client Verification' },
             { icon: Users, id: 'talent', label: 'Talent Review' },
             { icon: Building, id: 'agencies', label: 'Agencies' },
           ].map((tab) => {
@@ -1145,6 +1148,14 @@ function TalentReview() {
                         {uploaded ? (
                           <div className="space-y-2">
                             <div className="truncate text-xs font-semibold text-slate-500">{item.document.fileName || item.document.label}</div>
+                            {item.document.expiryDate && item.documentType !== 'liveness_selfie' && (
+                              <div className="text-[11px] font-bold text-slate-400">Expires {formatDocumentDate(item.document.expiryDate)}</div>
+                            )}
+                            {item.document.changeRequestStatus === 'pending' && (
+                              <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-2.5 py-2 text-[11px] font-semibold leading-relaxed text-cyan-800 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
+                                Identity change request: {item.document.changeRequest?.reason || 'No reason provided.'} Use Set pending below to reopen identity verification.
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={() => openDocument(profile, item.document)}
@@ -1561,7 +1572,7 @@ function AgenciesAdmin() {
 export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'overview';
-  const activeTab = ['overview', 'talent', 'agencies'].includes(requestedTab) ? requestedTab : 'overview';
+  const activeTab = ['overview', 'client-verifications', 'talent', 'agencies'].includes(requestedTab) ? requestedTab : 'overview';
   const setActiveTab = (tab) => setSearchParams({ tab });
 
   return (
@@ -1576,6 +1587,7 @@ export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       />
       <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
         {activeTab === 'overview' && <AdminOverview setActiveTab={setActiveTab} />}
+        {activeTab === 'client-verifications' && <ClientVerificationReview />}
         {activeTab === 'talent' && <TalentReview />}
         {activeTab === 'agencies' && <AgenciesAdmin />}
       </main>

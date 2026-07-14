@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, Loader2 } from 'lucide-react';
+import { Bell, BellRing, CheckCheck, Loader2 } from 'lucide-react';
 
 import { useNotifications } from '../hooks/useNotifications';
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  getPushNotificationState,
+} from '../services/pushNotifications';
 
 const formatTime = (value) => {
   if (!value) return '';
@@ -47,6 +52,34 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
     unreadCount,
   } = notificationState || internalNotificationState;
   const [isOpen, setIsOpen] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState('');
+  const [pushState, setPushState] = useState(null);
+
+  const loadPushState = async () => {
+    try {
+      setPushState(await getPushNotificationState());
+    } catch (pushError) {
+      setPushMessage(pushError.message || 'Unable to check push notification settings.');
+    }
+  };
+
+  const togglePushNotifications = async () => {
+    setPushBusy(true);
+    setPushMessage('');
+
+    try {
+      const nextState = pushState?.enabled
+        ? await disablePushNotifications()
+        : await enablePushNotifications();
+      setPushState(nextState);
+      setPushMessage(nextState.enabled ? 'Push alerts enabled.' : 'Push alerts disabled.');
+    } catch (pushError) {
+      setPushMessage(pushError.message || 'Unable to update push notification settings.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const openNotification = (notification) => {
     markRead(notification);
@@ -74,6 +107,7 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
 
             if (next) {
               loadNotifications();
+              loadPushState();
             }
 
             return next;
@@ -105,6 +139,37 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
               <CheckCheck size={17} />
             </button>
           </div>
+
+          {pushState?.supported && pushState.configured && (
+            <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-200">
+                    <BellRing size={14} />
+                    Browser push alerts
+                  </div>
+                  <div className="mt-1 text-[11px] font-medium text-slate-500">
+                    {pushState.enabled ? 'Enabled on this browser.' : 'Get compliance alerts even when PB Finance is closed.'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={pushBusy || pushState.permission === 'denied'}
+                  onClick={togglePushNotifications}
+                  className="shrink-0 rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[11px] font-black text-cyan-700 transition-colors hover:bg-cyan-50 disabled:cursor-default disabled:opacity-50 dark:border-cyan-900/60 dark:bg-slate-900 dark:text-cyan-300"
+                >
+                  {pushBusy ? 'Saving...' : pushState.enabled ? 'Disable' : 'Enable push alerts'}
+                </button>
+              </div>
+              {(pushMessage || pushState.permission === 'denied') && (
+                <div className="mt-2 text-[11px] font-semibold text-slate-500">
+                  {pushState.permission === 'denied'
+                    ? 'Notifications are blocked in this browser. Update the site permission to enable them.'
+                    : pushMessage}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="max-h-96 overflow-y-auto">
             {isLoading && (
