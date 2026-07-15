@@ -15,7 +15,9 @@ import { FAQ_ITEMS, MATCHING_WORKFLOW, PROCESS_STEPS, SERVICE_CARDS } from '../d
 import { SKILLS_OPTIONS } from '../data/constants';
 import FadeIn from '../components/FadeIn';
 import { motion as Motion } from 'framer-motion';
+import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 
@@ -84,48 +86,53 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
 
   return (
     <>
-      <Motion.nav initial={{y:0}} animate={{y: isNavVisible ? 0 : '-100%'}} transition={{duration: 0.3}} className="bg-white dark:bg-slate-900/90 backdrop-blur-xl fixed w-full top-0 z-50 border-b border-slate-200 dark:border-slate-800/80 transition-colors text-slate-900">
+      <Motion.nav
+        aria-label="Primary navigation"
+        initial={{y:0}}
+        animate={{y: isNavVisible ? 0 : '-100%'}}
+        transition={{duration: 0.3}}
+        className="fixed top-0 z-50 w-full border-b border-border-subtle bg-surface/95 text-text-primary shadow-card backdrop-blur-xl transition-colors"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 md:h-20 items-center">
-            <div className="flex items-center cursor-pointer gap-3" onClick={() => navigateTo('home')}>
-              <div className="w-9 h-9 md:w-10 md:h-10 bg-slate-950 rounded-xl flex items-center justify-center text-white font-bold text-base md:text-lg shadow-lg shadow-primary-500/20">
-                PB
-              </div>
-              <div>
-                <div className="text-lg font-bold text-slate-950 dark:text-white tracking-tight leading-none mb-0.5">PB Finance</div>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => navigateTo('home')}
+              className="inline-flex min-h-11 items-center rounded-control text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
+            >
+              <BrandMark />
+            </button>
 
             <div className="hidden md:flex items-center space-x-1">
               {navItems.map((tab) => (
                 <button 
                   key={tab.id}
                   onClick={() => navigateTo(tab.id)} 
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${activeTab === tab.id ? 'bg-slate-100 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  className={`min-h-11 rounded-control px-4 py-2 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${activeTab === tab.id ? 'bg-action text-white' : 'text-text-muted hover:bg-surface-muted hover:text-text-primary'}`}
                 >
                   {tab.label}
                 </button>
               ))}
               
-              <button onClick={toggleDarkMode} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-2" aria-label="Toggle dark mode">
+              <button onClick={toggleDarkMode} className="ml-2 inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
                 {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
 
-              <div className="flex items-center space-x-4 pl-4 ml-2 border-l border-slate-200 dark:border-slate-800">
-                <button onClick={() => openAuth('login')} className="text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-primary-600 transition-colors">Client Login</button>
+              <div className="ml-2 flex items-center space-x-2 border-l border-border-subtle pl-4">
+                <Button variant="ghost" size="sm" onClick={() => openAuth('login')}>Client Login</Button>
                 {activeTab !== 'home' && (
-                  <button onClick={() => openAuth('register')} className="bg-slate-950 text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-primary-600 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                  <Button variant="primary" size="sm" onClick={() => openAuth('register')}>
                     Start Hiring
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
 
             <div className="md:hidden flex items-center gap-2">
-              <button onClick={toggleDarkMode} className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Toggle dark mode">
+              <button onClick={toggleDarkMode} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
                 {isDarkMode ? <Sun size={21} /> : <Moon size={21} />}
               </button>
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Toggle navigation menu" aria-expanded={mobileMenuOpen}>
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle navigation menu" aria-expanded={mobileMenuOpen}>
                 {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
@@ -133,25 +140,29 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 shadow-xl absolute w-full z-50">
+          <div className="absolute z-50 w-full border-t border-border-subtle bg-surface shadow-card md:hidden" role="navigation" aria-label="Mobile navigation">
             <div className="px-4 pt-4 pb-6 space-y-2">
+              <div className="mb-3 flex items-center justify-between rounded-control bg-surface-muted px-3 py-2 text-xs font-bold uppercase tracking-wider text-text-muted">
+                <BrandMark compact label="PB Finance mobile menu" />
+                Navigation
+              </div>
               {navItems.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => navigateTo(tab.id)}
-                  className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === tab.id ? 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  className={`block min-h-11 w-full rounded-control px-4 py-3 text-left text-sm font-semibold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${activeTab === tab.id ? 'bg-action text-white' : 'text-text-muted hover:bg-surface-muted hover:text-text-primary'}`}
                 >
                   {tab.id === 'agency' ? 'Enterprise Teams' : tab.label}
                 </button>
               ))}
-              <button onClick={toggleDarkMode} className="flex w-full items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+              <button onClick={toggleDarkMode} className="flex min-h-11 w-full items-center justify-between rounded-control px-4 py-3 text-sm font-semibold text-text-muted hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25">
                 <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
                 {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
-              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid gap-2">
-                <button onClick={() => openMobileAuth('login')} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 px-4 py-3 rounded-xl text-sm font-bold">Client Login</button>
+              <div className="mt-4 grid gap-2 border-t border-border-subtle pt-4">
+                <Button variant="outline" size="md" onClick={() => openMobileAuth('login')} className="w-full">Client Login</Button>
                 {activeTab !== 'home' && (
-                  <button onClick={() => openMobileAuth('register')} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl text-sm font-bold">Start Hiring</button>
+                  <Button variant="primary" size="md" onClick={() => openMobileAuth('register')} className="w-full">Start Hiring</Button>
                 )}
               </div>
             </div>
@@ -159,19 +170,19 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
         )}
       </Motion.nav>
 
-      <main className="min-h-screen pt-16 md:pt-20">
+      <main className="min-h-screen bg-canvas pt-16 text-text-primary md:pt-20">
         <Routes>
           <Route path="/" element={<HomeMarketingView navigateTo={navigateTo} openAuth={openAuth} />} />
           <Route path="/talents" element={<PreviewDirectoryView navigateTo={navigateTo} openAuth={openAuth} />} />
           <Route path="/agency" element={<AgencyMarketingView openAuth={openAuth} />} />
           <Route path="/pricing" element={<PricingView openAuth={openAuth} />} />
           <Route path="*" element={
-            <div className="pt-32 pb-20 text-center flex flex-col items-center justify-center min-h-[50vh]">
-              <h1 className="text-4xl font-bold text-slate-950 dark:text-white mb-4">404 - Page Not Found</h1>
-              <p className="text-slate-600 dark:text-slate-400 mb-8 max-w-md">The page you are looking for doesn't exist or has been moved.</p>
-              <button onClick={() => navigateTo('home')} className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3 rounded-full font-bold transition-colors">
+            <div className="flex min-h-[50vh] flex-col items-center justify-center bg-canvas px-4 pb-20 pt-32 text-center">
+              <h1 className="mb-4 text-4xl font-bold text-text-primary">404 - Page Not Found</h1>
+              <p className="mb-8 max-w-md text-text-muted">The page you are looking for doesn't exist or has been moved.</p>
+              <Button variant="primary" size="lg" onClick={() => navigateTo('home')}>
                 Return Home
-              </button>
+              </Button>
             </div>
           } />
         </Routes>
@@ -199,109 +210,112 @@ function ROICalculator() {
   }, [salary, benefits, vendorFee, needManager]);
 
   return (
-    <section className="py-32 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800/50">
+    <section className="border-t border-border-subtle bg-surface-muted py-24 sm:py-32">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid gap-16 lg:grid-cols-[1fr_1.1fr] lg:items-center">
         <div>
           <FadeIn>
-            <div className="inline-flex mb-4 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 shadow-sm uppercase tracking-wider">
+            <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-text-muted shadow-card">
               Savings Calculator
             </div>
-            <h2 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white md:text-5xl mb-6">
+            <h2 className="mb-6 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
               Estimate the cost difference
             </h2>
-            <p className="text-slate-600 dark:text-slate-400 text-xl mb-12 leading-relaxed">
+            <p className="mb-12 text-xl leading-relaxed text-text-muted">
               See the business case in numbers you actually care about: total cost, overlap, and practical staffing flexibility without sacrificing quality.
             </p>
             
-            <div className="grid grid-cols-2 gap-6">
-              <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">2-4 wks</div>
-                <div className="mt-2 text-sm text-slate-500 font-bold">Typical launch timeline</div>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">30-45%</div>
-                <div className="mt-2 text-sm text-slate-500 font-bold">Average cost savings</div>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">5+ hrs</div>
-                <div className="mt-2 text-sm text-slate-500 font-bold">Daily timezone overlap</div>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="text-3xl font-black text-slate-950 dark:text-white">Role-based</div>
-                <div className="mt-2 text-sm text-slate-500 font-bold">Flexible team design</div>
-              </div>
+            <div className="grid grid-cols-1 gap-4 min-[380px]:grid-cols-2 sm:gap-6">
+              <SurfaceCard as="div" className="p-6">
+                <div className="text-3xl font-black text-text-primary">2-4 wks</div>
+                <div className="mt-2 text-sm font-bold text-text-muted">Typical launch timeline</div>
+              </SurfaceCard>
+              <SurfaceCard as="div" className="p-6">
+                <div className="text-3xl font-black text-verified">30-45%</div>
+                <div className="mt-2 text-sm font-bold text-text-muted">Average cost savings</div>
+              </SurfaceCard>
+              <SurfaceCard as="div" className="p-6">
+                <div className="text-3xl font-black text-text-primary">5+ hrs</div>
+                <div className="mt-2 text-sm font-bold text-text-muted">Daily timezone overlap</div>
+              </SurfaceCard>
+              <SurfaceCard as="div" className="p-6">
+                <div className="text-3xl font-black text-text-primary">Role-based</div>
+                <div className="mt-2 text-sm font-bold text-text-muted">Flexible team design</div>
+              </SurfaceCard>
             </div>
           </FadeIn>
         </div>
 
         <FadeIn delay={200} direction="left">
-          <div className="rounded-[32px] border border-white/60 dark:border-slate-700 bg-white dark:bg-slate-900 p-8 md:p-10 shadow-2xl shadow-slate-200/50 dark:shadow-slate-950/50 backdrop-blur-xl">
+          <SurfaceCard as="div" tone="premium" className="p-6 sm:p-8 md:p-10">
             <div className="grid gap-8">
               {/* Sliders */}
               <div>
-                <div className="flex items-center justify-between text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">
+                <div className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
                   <span>Annual local salary</span>
-                  <span className="text-slate-950 dark:text-white text-xl">${salary.toLocaleString()}</span>
+                  <span className="text-xl text-text-primary">${salary.toLocaleString()}</span>
                 </div>
-                <input type="range" min="35000" max="160000" step="5000" value={salary} onChange={(e) => setSalary(Number(e.target.value))} className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-600" />
+                <input type="range" min="35000" max="160000" step="5000" value={salary} onChange={(e) => setSalary(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
               </div>
               <div>
-                <div className="flex items-center justify-between text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">
+                <div className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
                   <span>Benefits and overhead (%)</span>
-                  <span className="text-slate-950 dark:text-white text-xl">{benefits}%</span>
+                  <span className="text-xl text-text-primary">{benefits}%</span>
                 </div>
-                <input type="range" min="5" max="35" step="1" value={benefits} onChange={(e) => setBenefits(Number(e.target.value))} className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-600" />
+                <input type="range" min="5" max="35" step="1" value={benefits} onChange={(e) => setBenefits(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
               </div>
               <div>
-                <div className="flex items-center justify-between text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">
+                <div className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
                   <span>Monthly outsourced cost</span>
-                  <span className="text-slate-950 dark:text-white text-xl">${vendorFee.toLocaleString()}</span>
+                  <span className="text-xl text-text-primary">${vendorFee.toLocaleString()}</span>
                 </div>
-                <input type="range" min="1200" max="9000" step="100" value={vendorFee} onChange={(e) => setVendorFee(Number(e.target.value))} className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-600" />
+                <input type="range" min="1200" max="9000" step="100" value={vendorFee} onChange={(e) => setVendorFee(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
               </div>
 
               {/* Toggle */}
-              <div className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+              <div className="flex items-center justify-between gap-4 rounded-card border border-border-subtle bg-surface-muted px-4 py-5 sm:px-6">
                 <div>
-                  <div className="font-bold text-slate-950 dark:text-white text-sm">Include manager onboarding cost</div>
-                  <div className="text-xs font-medium text-slate-500 mt-1">Useful if local hires need more oversight</div>
+                  <div className="text-sm font-bold text-text-primary">Include manager onboarding cost</div>
+                  <div className="mt-1 text-xs font-medium text-text-muted">Useful if local hires need more oversight</div>
                 </div>
                 <button 
                   type="button" 
+                  role="switch"
+                  aria-checked={needManager}
+                  aria-label="Include manager onboarding cost"
                   onClick={() => setNeedManager(!needManager)}
-                  className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${needManager ? 'bg-primary-600' : 'bg-slate-300'}`}
+                  className={`relative inline-flex h-11 w-14 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${needManager ? 'bg-action' : 'bg-border-control'}`}
                 >
-                  <span className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white dark:bg-slate-900 shadow-sm ring-0 transition duration-300 ease-in-out ${needManager ? 'translate-x-5' : 'translate-x-0'}`} />
+                  <span className={`pointer-events-none inline-block size-6 rounded-full bg-white shadow-card transition-transform duration-300 ease-in-out motion-reduce:transition-none ${needManager ? 'motion-safe:translate-x-6 motion-reduce:ml-6' : 'translate-x-0'}`} />
                 </button>
               </div>
 
               {/* Results */}
-              <div className="grid gap-4 md:grid-cols-3 pt-6 border-t border-slate-100 dark:border-slate-800">
-                <div className="rounded-2xl bg-slate-50 dark:bg-slate-950 p-5 border border-slate-200 dark:border-slate-800">
-                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">In-house Annual</div>
-                  <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">${Math.round(data.inHouse).toLocaleString()}</div>
+              <div className="grid gap-4 border-t border-border-subtle pt-6 md:grid-cols-3">
+                <div className="rounded-card border border-border-subtle bg-surface-muted p-5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">In-house Annual</div>
+                  <div className="mt-2 text-2xl font-black text-text-primary">${Math.round(data.inHouse).toLocaleString()}</div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 dark:bg-slate-950 p-5 border border-slate-200 dark:border-slate-800">
-                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Outsourced Annual</div>
-                  <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">${Math.round(data.outsourced).toLocaleString()}</div>
+                <div className="rounded-card border border-border-subtle bg-surface-muted p-5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Outsourced Annual</div>
+                  <div className="mt-2 text-2xl font-black text-text-primary">${Math.round(data.outsourced).toLocaleString()}</div>
                 </div>
-                <div className="rounded-2xl bg-slate-950 p-5 text-white shadow-xl transform transition-transform hover:scale-105 hover:-translate-y-1 duration-300">
-                  <div className="text-[10px] text-primary-300 font-bold uppercase tracking-wider">Estimated Savings</div>
-                  <div className="mt-2 text-2xl font-black text-white">${Math.round(data.savings).toLocaleString()}</div>
+                <div className="rounded-card border border-verified-border bg-verified-surface p-5 text-verified">
+                  <div className="text-[10px] font-bold uppercase tracking-wider">Estimated Savings</div>
+                  <div className="mt-2 text-2xl font-black">${Math.round(data.savings).toLocaleString()}</div>
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 p-5 border border-emerald-100 flex items-start gap-4">
-                <TrendingDown className="h-6 w-6 text-emerald-600 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-4 rounded-card border border-verified-border bg-verified-surface p-5">
+                <TrendingDown className="mt-0.5 h-6 w-6 flex-shrink-0 text-verified" />
                 <div>
-                  <div className="font-bold text-emerald-800 dark:text-emerald-400 text-sm">Estimated savings rate: {data.percent}%</div>
-                  <p className="text-xs font-medium leading-relaxed text-emerald-700 dark:text-emerald-400 mt-1.5">
+                  <div className="text-sm font-bold text-verified">Estimated savings rate: {data.percent}%</div>
+                  <p className="mt-1.5 text-xs font-medium leading-relaxed text-verified">
                     Directional estimates based on typical US/UK staffing models versus our premium global talent pools.
                   </p>
                 </div>
               </div>
             </div>
-          </div>
+          </SurfaceCard>
         </FadeIn>
       </div>
     </section>
@@ -314,24 +328,25 @@ function FAQAccordion() {
   return (
     <div className="space-y-3">
       {FAQ_ITEMS.map((item, index) => (
-        <div key={index} className="border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 overflow-hidden shadow-sm transition-all hover:border-slate-300">
+        <SurfaceCard as="div" key={index} className="overflow-hidden transition-colors hover:border-border-control">
           <button 
-            className="w-full flex justify-between items-center p-5 text-left focus:outline-none"
+            className="flex min-h-11 w-full items-center justify-between p-5 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-focus/25"
             onClick={() => setOpenIndex(openIndex === index ? -1 : index)}
+            aria-expanded={openIndex === index}
           >
-            <span className="font-bold text-slate-900 dark:text-slate-50 pr-4">{item.q}</span>
+            <span className="pr-4 font-bold text-text-primary">{item.q}</span>
             {openIndex === index ? (
-              <ChevronUp className="w-5 h-5 text-slate-400 flex-shrink-0 transition-transform duration-300" />
+              <ChevronUp className="h-5 w-5 flex-shrink-0 text-action transition-transform duration-300" />
             ) : (
-              <ChevronDown className="w-5 h-5 text-slate-400 flex-shrink-0 transition-transform duration-300" />
+              <ChevronDown className="h-5 w-5 flex-shrink-0 text-text-muted transition-transform duration-300" />
             )}
           </button>
           <div 
-            className={`px-5 text-slate-600 dark:text-slate-400 text-sm font-medium leading-relaxed overflow-hidden transition-all duration-300 ease-in-out ${openIndex === index ? 'max-h-40 pb-5 opacity-100' : 'max-h-0 opacity-0'}`}
+            className={`overflow-hidden px-5 text-sm font-medium leading-relaxed text-text-muted transition-all duration-300 ease-in-out motion-reduce:transition-none ${openIndex === index ? 'max-h-40 pb-5 opacity-100' : 'max-h-0 opacity-0'}`}
           >
             {item.a}
           </div>
-        </div>
+        </SurfaceCard>
       ))}
     </div>
   );
@@ -482,32 +497,32 @@ function HomeMarketingView({ navigateTo, openAuth }) {
   ];
 
   return (
-    <div className="overflow-hidden">
+    <div className="overflow-hidden bg-canvas text-text-primary">
       {/* Hero Section */}
-      <section className="relative pt-10 pb-12 sm:pt-12 sm:pb-14 lg:pt-16 lg:pb-16 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800/50">
+      <section className="relative border-b border-border-subtle bg-canvas pb-12 pt-10 sm:pb-14 sm:pt-12 lg:pb-16 lg:pt-16">
         <div className="absolute inset-0 bg-grid-pattern opacity-50"></div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center flex flex-col items-center">
           <FadeIn delay={100}>
-            <div className="inline-flex items-center mb-5 rounded-full border border-primary-200 bg-white dark:bg-slate-900/60 backdrop-blur px-4 py-2 text-xs sm:text-sm font-semibold text-primary-800 dark:text-primary-300 shadow-sm">
-              <Sparkles className="mr-2 h-4 w-4 text-primary-500" /> Redefining Global Finance Outsourcing
+            <div className="mb-5 inline-flex items-center rounded-full border border-premium-detail/35 bg-surface px-4 py-2 text-xs font-semibold text-premium-detail shadow-card backdrop-blur sm:text-sm">
+              <Sparkles className="mr-2 h-4 w-4" /> Redefining Global Finance Outsourcing
             </div>
           </FadeIn>
           
           <FadeIn delay={200}>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-950 dark:text-white tracking-tight leading-[1.04] mb-5 max-w-5xl">
-              Elite financial talent, seamlessly integrated into your <span className="bg-gradient-to-r from-primary-600 to-cyan-500 bg-clip-text text-transparent">operations.</span>
+            <h1 className="mb-5 max-w-5xl text-4xl font-bold leading-[1.04] tracking-tight text-text-primary sm:text-5xl lg:text-6xl">
+              Elite financial talent, seamlessly integrated into your <span className="bg-gradient-to-r from-action to-processing bg-clip-text text-transparent">operations.</span>
             </h1>
           </FadeIn>
           
           <FadeIn delay={300}>
-            <p className="text-base sm:text-lg md:text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto mb-6 leading-relaxed">
+            <p className="mx-auto mb-6 max-w-3xl text-base leading-relaxed text-text-muted sm:text-lg md:text-xl">
               We connect scaling companies with top-tier, rigorously vetted CPAs and analysts from the Philippines. Scale your capacity without compromising on quality.
             </p>
           </FadeIn>
 
           <FadeIn delay={400} className="w-full max-w-2xl flex justify-center mb-5">
-            <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto shadow-xl shadow-primary-900/10">
+            <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto">
               Start Building Your Team
             </Button>
           </FadeIn>
@@ -515,7 +530,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
         </div>
       </section>
 
-      <section className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <section className="border-b border-border-subtle bg-surface">
         <div className="relative z-20 mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
           <FadeIn delay={100} className="-mt-7 flex w-full gap-3 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible">
             {audiencePaths.map((path) => {
@@ -525,14 +540,14 @@ function HomeMarketingView({ navigateTo, openAuth }) {
                 <button
                   key={path.label}
                   onClick={path.action}
-                  className="flex min-w-[230px] flex-1 items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-center shadow-sm transition-all hover:border-primary-200 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-900/80 dark:hover:bg-slate-900"
+                  className="flex min-h-11 min-w-[230px] flex-1 items-center justify-center gap-3 rounded-card border border-border-subtle bg-surface/90 px-4 py-3 text-center shadow-card transition-[border-color,background-color,box-shadow] hover:border-action/40 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-primary-600">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-action text-white">
                     <Icon size={18} />
                   </span>
                   <span>
-                    <span className="block text-sm font-black text-slate-950 dark:text-white">{path.label}</span>
-                    <span className="block text-xs font-semibold leading-snug text-slate-500 dark:text-slate-400">{path.text}</span>
+                    <span className="block text-sm font-black text-text-primary">{path.label}</span>
+                    <span className="block text-xs font-semibold leading-snug text-text-muted">{path.text}</span>
                   </span>
                 </button>
               );
@@ -540,30 +555,32 @@ function HomeMarketingView({ navigateTo, openAuth }) {
           </FadeIn>
 
           {/* Value Props Bar */}
-          <FadeIn delay={200} hover={true} className="mt-4 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-3 md:p-4 border border-slate-200 dark:border-slate-800 shadow-lg shadow-slate-200/40 dark:shadow-slate-900/40 flex gap-3 overflow-x-auto scrollbar-hide md:grid md:grid-cols-3 md:overflow-visible md:divide-x divide-slate-200 dark:divide-slate-800">
-            <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
-              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 flex-shrink-0"><ShieldCheck size={20}/></div>
-              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-sm">Top 1% Talent</p><p className="text-xs font-medium text-slate-500">Rigorously vetted</p></div>
-            </div>
-            <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
-              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 flex-shrink-0"><Globe2 size={20}/></div>
-              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-sm">US/UK GAAP</p><p className="text-xs font-medium text-slate-500">Fully compliant</p></div>
-            </div>
-            <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
-              <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600 flex-shrink-0"><TrendingDown size={20}/></div>
-              <div className="text-left"><p className="font-bold text-slate-950 dark:text-white text-sm">40%+ Savings</p><p className="text-xs font-medium text-slate-500">Optimized ROI</p></div>
-            </div>
+          <FadeIn delay={200} className="mt-4 w-full">
+            <SurfaceCard as="div" className="flex gap-3 overflow-x-auto p-3 scrollbar-hide md:grid md:grid-cols-3 md:divide-x md:divide-border-subtle md:overflow-visible md:p-4">
+              <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
+                <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-control bg-pb-midnight-soft text-pb-midnight"><ShieldCheck size={20}/></div>
+                <div className="text-left"><p className="text-sm font-bold text-text-primary">Top 1% Talent</p><p className="text-xs font-medium text-text-muted">Rigorously vetted</p></div>
+              </div>
+              <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
+                <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-control bg-pb-midnight-soft text-pb-midnight"><Globe2 size={20}/></div>
+                <div className="text-left"><p className="text-sm font-bold text-text-primary">US/UK GAAP</p><p className="text-xs font-medium text-text-muted">Fully compliant</p></div>
+              </div>
+              <div className="flex min-w-[190px] items-center justify-center gap-3 py-2 md:px-4">
+                <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-control bg-verified-surface text-verified"><TrendingDown size={20}/></div>
+                <div className="text-left"><p className="text-sm font-bold text-verified">40%+ Savings</p><p className="text-xs font-medium text-text-muted">Optimized ROI</p></div>
+              </div>
+            </SurfaceCard>
           </FadeIn>
         </div>
       </section>
 
       {/* Dynamic Scrolling Sections */}
-      <section className="py-24 bg-white dark:bg-slate-900">
+      <section className="bg-surface py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <FadeIn>
             <div className="text-center max-w-3xl mx-auto mb-20">
-              <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-6">Designed for sophisticated financial workflows</h2>
-              <p className="text-xl text-slate-600 dark:text-slate-400">Beyond basic bookkeeping. We provide strategic coverage for your most critical financial operations.</p>
+              <h2 className="mb-6 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">Designed for sophisticated financial workflows</h2>
+              <p className="text-xl text-text-muted">Beyond basic bookkeeping. We provide strategic coverage for your most critical financial operations.</p>
             </div>
           </FadeIn>
 
@@ -572,13 +589,13 @@ function HomeMarketingView({ navigateTo, openAuth }) {
               const Icon = item.icon;
               return (
                 <FadeIn key={idx} delay={idx * 100} direction="up">
-                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-[32px] p-8 md:p-10 hover:bg-white dark:hover:bg-slate-900 hover:shadow-2xl hover:shadow-primary-500/5 hover:-translate-y-2 transition-all duration-500 group">
-                    <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center mb-8 group-hover:bg-primary-600 group-hover:border-primary-600 transition-colors duration-500 shadow-sm">
-                      <Icon className="w-8 h-8 text-slate-700 dark:text-slate-300 group-hover:text-white transition-colors duration-500" />
+                  <SurfaceCard as="div" tone="muted" className="group p-8 transition-[border-color,background-color,box-shadow] duration-300 hover:border-action/30 hover:bg-surface hover:shadow-card md:p-10">
+                    <div className="mb-8 flex size-16 items-center justify-center rounded-card border border-border-subtle bg-surface text-action shadow-card transition-colors duration-300 group-hover:border-action group-hover:bg-action group-hover:text-white">
+                      <Icon className="h-8 w-8" />
                     </div>
-                    <h3 className="text-2xl font-bold text-slate-950 dark:text-white mb-4 tracking-tight">{item.title}</h3>
-                    <p className="text-slate-600 dark:text-slate-400 text-lg leading-relaxed">{item.desc}</p>
-                  </div>
+                    <h3 className="mb-4 text-2xl font-bold tracking-tight text-text-primary">{item.title}</h3>
+                    <p className="text-lg leading-relaxed text-text-muted">{item.desc}</p>
+                  </SurfaceCard>
                 </FadeIn>
               );
             })}
@@ -589,30 +606,30 @@ function HomeMarketingView({ navigateTo, openAuth }) {
       <ROICalculator />
 
       {/* Process & FAQ Section */}
-      <section className="py-32 bg-white dark:bg-slate-900">
+      <section className="bg-surface py-24 sm:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-16">
           <div>
             <FadeIn>
-              <div className="inline-flex mb-4 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+              <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface-muted px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-action">
                 Process
               </div>
-              <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-10">
+              <h2 className="mb-10 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
                 Built for structured onboarding
               </h2>
               
               <div className="space-y-4">
                 {PROCESS_STEPS.map((step, index) => (
-                  <div key={step.title} className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 p-6 rounded-[24px] hover:shadow-lg transition-all duration-300">
+                  <SurfaceCard as="div" tone="muted" key={step.title} className="p-6 transition-colors hover:border-action/30">
                     <div className="flex gap-5">
-                      <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm font-black text-primary-700 dark:text-primary-300 shrink-0">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-control border border-border-subtle bg-surface text-sm font-black text-action">
                         {index + 1}
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-slate-950 dark:text-white mb-2">{step.title}</h3>
-                        <p className="text-sm font-medium text-slate-600 dark:text-slate-400 leading-relaxed">{step.text}</p>
+                        <h3 className="mb-2 text-lg font-bold text-text-primary">{step.title}</h3>
+                        <p className="text-sm font-medium leading-relaxed text-text-muted">{step.text}</p>
                       </div>
                     </div>
-                  </div>
+                  </SurfaceCard>
                 ))}
               </div>
             </FadeIn>
@@ -620,65 +637,65 @@ function HomeMarketingView({ navigateTo, openAuth }) {
           
           <div>
             <FadeIn delay={200}>
-              <div className="inline-flex mb-4 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 md:hidden uppercase tracking-wider">
+              <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface-muted px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-action md:hidden">
                 FAQ
               </div>
-              <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-10 hidden md:block">
+              <h2 className="mb-10 hidden text-3xl font-bold tracking-tight text-text-primary md:block md:text-5xl">
                 Frequently asked questions
               </h2>
               <FAQAccordion />
               
-              <div className="mt-12 bg-gradient-to-br from-primary-50 to-cyan-50 dark:from-slate-800 dark:to-slate-800 border border-primary-100 dark:border-slate-700 rounded-[32px] p-10 text-center shadow-sm">
-                <h3 className="text-2xl font-bold text-slate-950 dark:text-white mb-4">Still have questions?</h3>
-                <p className="text-slate-600 dark:text-slate-400 text-lg mb-8 max-w-sm mx-auto">Schedule a brief call to see how we can map a solution to your exact workflow.</p>
-                <button onClick={() => navigateTo('pricing')} className="bg-slate-950 text-white px-10 py-4 rounded-full text-base font-bold hover:bg-primary-600 transition-transform transform hover:-translate-y-1 shadow-xl shadow-slate-900/10">
+              <SurfaceCard as="div" tone="trust" className="mt-12 p-8 text-center sm:p-10">
+                <h3 className="mb-4 text-2xl font-bold text-text-primary">Still have questions?</h3>
+                <p className="mx-auto mb-8 max-w-sm text-lg text-text-muted">Schedule a brief call to see how we can map a solution to your exact workflow.</p>
+                <Button variant="primary" size="lg" onClick={() => navigateTo('pricing')}>
                   View Pricing
-                </button>
-              </div>
+                </Button>
+              </SurfaceCard>
             </FadeIn>
           </div>
         </div>
       </section>
 
-      <section className="py-32 bg-slate-950 text-white overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary-600/20 blur-[120px] rounded-full pointer-events-none"></div>
+      <section className="relative overflow-hidden bg-pb-midnight py-24 text-white sm:py-32">
+        <div className="pointer-events-none absolute right-0 top-0 h-[600px] w-[600px] rounded-full bg-action/20 blur-[120px]"></div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
               <FadeIn>
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 leading-tight">Ready to scale your finance team?</h2>
-                <p className="text-xl text-slate-400 mb-10 leading-relaxed">Join industry leaders who rely on PB Finance for seamless, secure, and highly skilled outsourcing.</p>
+                <p className="mb-10 text-xl leading-relaxed text-white/70">Join industry leaders who rely on PB Finance for seamless, secure, and highly skilled outsourcing.</p>
                 <ul className="space-y-5 mb-10">
                   {["Rigorously tested accounting fundamentals", "Communication and culture-fit screening", "Bank-level data security protocols"].map((point, i) =>(
-                    <li key={i} className="flex items-center text-slate-300 font-medium">
-                      <CheckCircle className="w-6 h-6 text-cyan-400 mr-4 flex-shrink-0" /> {point}
+                    <li key={i} className="flex items-center font-medium text-white/80">
+                      <span className="mr-4 flex size-9 flex-shrink-0 items-center justify-center rounded-full bg-processing-surface text-processing"><CheckCircle className="h-5 w-5" /></span> {point}
                     </li>
                   ))}
                 </ul>
-                <button onClick={() => navigateTo('talents')} className="bg-white text-slate-950 px-8 py-4 rounded-full font-bold text-lg hover:bg-cyan-50 transition-all shadow-lg flex items-center">
+                <Button variant="primary" size="lg" onClick={() => navigateTo('talents')}>
                   Preview Directory <ArrowRight size={20} className="ml-2" />
-                </button>
+                </Button>
               </FadeIn>
             </div>
             <div className="relative">
                <FadeIn delay={200} direction="left">
-                 <div className="bg-slate-900 border border-slate-800 p-8 rounded-[32px] shadow-2xl">
-                    <h3 className="text-2xl font-bold text-white mb-8 border-b border-slate-800 pb-4">Secure Matching Workflow</h3>
+                 <div className="rounded-card border border-white/10 bg-pb-midnight-strong p-5 shadow-modal sm:p-8">
+                    <h3 className="mb-8 border-b border-white/10 pb-4 text-2xl font-bold text-white">Secure Matching Workflow</h3>
                     <div className="space-y-6">
                       {MATCHING_WORKFLOW.map((item) => (
-                        <div key={item.title} className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 hover:bg-slate-800 transition-colors">
+                        <div key={item.title} className="flex flex-col gap-4 rounded-card border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10 min-[380px]:flex-row min-[380px]:items-center min-[380px]:justify-between">
                           <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-slate-300">
+                            <div className="flex size-12 items-center justify-center rounded-full bg-processing-surface text-processing">
                               <User size={20} />
                             </div>
                             <div>
                               <div className="font-bold text-white">{item.title}</div>
-                              <div className="text-sm text-cyan-400">Structured and review-ready</div>
+                              <div className="mt-1 inline-flex rounded-full bg-processing-surface px-2.5 py-1 text-xs font-bold text-processing">Structured and review-ready</div>
                             </div>
                           </div>
-                          <div className="text-right">
-                             <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Status</div>
-                             <div className="font-bold text-emerald-400">{item.label}</div>
+                          <div className="text-left min-[380px]:text-right">
+                             <div className="mb-1 text-xs uppercase tracking-wider text-white/60">Status</div>
+                             <div className="inline-flex rounded-full bg-verified-surface px-2.5 py-1 text-sm font-bold text-verified">{item.label}</div>
                           </div>
                         </div>
                       ))}
@@ -1097,36 +1114,33 @@ function AgencyMarketingView({ openAuth }) {
 
 function PublicFooter({ navigateTo, openAuth }) {
   return (
-    <footer className="bg-slate-950 text-white pt-20 pb-10">
+    <footer className="bg-pb-midnight pb-10 pt-20 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16 border-b border-slate-800 pb-16">
+        <div className="mb-16 grid grid-cols-1 gap-12 border-b border-white/10 pb-16 md:grid-cols-4">
           <div className="col-span-1 md:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">PB</div>
-              <div className="font-bold text-xl tracking-tight">PB Finance</div>
-            </div>
-            <p className="max-w-md text-slate-400 text-lg leading-relaxed">
+            <BrandMark className="mb-6 [&>span:first-child]:bg-action [&>span:last-child]:text-white" />
+            <p className="max-w-md text-lg leading-relaxed text-white/70">
               Elevating global finance outsourcing. Rigorously vetted CPAs and analysts from the Philippines, integrated seamlessly into your operations.
             </p>
           </div>
           <div>
             <h4 className="text-white font-bold mb-6 uppercase tracking-wider text-sm">Platform</h4>
-            <ul className="space-y-4 text-slate-400 font-medium">
-              <li><button onClick={() => navigateTo('home')} className="hover:text-white transition-colors">Overview</button></li>
-              <li><button onClick={() => navigateTo('talents')} className="hover:text-white transition-colors">Talent Directory</button></li>
-              <li><button onClick={() => navigateTo('agency')} className="hover:text-white transition-colors">Enterprise Pods</button></li>
+            <ul className="space-y-1 font-medium text-white/70">
+              <li><button onClick={() => navigateTo('home')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Overview</button></li>
+              <li><button onClick={() => navigateTo('talents')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Talent Directory</button></li>
+              <li><button onClick={() => navigateTo('agency')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Enterprise Pods</button></li>
             </ul>
           </div>
           <div>
             <h4 className="text-white font-bold mb-6 uppercase tracking-wider text-sm">Connect</h4>
-            <ul className="space-y-4 text-slate-400 font-medium">
-              <li><button onClick={() => openAuth('register')} className="hover:text-white transition-colors">Book Discovery</button></li>
-              <li><button onClick={() => openAuth('login')} className="hover:text-white transition-colors">Client Login</button></li>
-              <li><button onClick={() => openAuth('register_pro')} className="hover:text-white transition-colors">Apply as Talent</button></li>
+            <ul className="space-y-1 font-medium text-white/70">
+              <li><button onClick={() => openAuth('register')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Book Discovery</button></li>
+              <li><button onClick={() => openAuth('login')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Client Login</button></li>
+              <li><button onClick={() => openAuth('register_pro')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Apply as Talent</button></li>
             </ul>
           </div>
         </div>
-        <div className="text-slate-500 font-medium text-sm flex flex-col md:flex-row justify-between items-center">
+        <div className="flex flex-col items-center justify-between text-sm font-medium text-white/50 md:flex-row">
           <p>&copy; {new Date().getFullYear()} PB Finance Global. All rights reserved.</p>
         </div>
       </div>
