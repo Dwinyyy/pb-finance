@@ -105,6 +105,7 @@ test('secondary public routes use governed signature semantics', () => {
     /(?:bg|text|border|from|via|to|shadow|ring|accent)-(?:slate|gray|zinc|violet|blue|cyan|emerald|primary)-/,
   );
   assert.doesNotMatch(publicPage, /#[\da-f]{3,8}\b/i);
+  assert.doesNotMatch(app, /#(?:0B1F3A|2563EB|047857|0E7490|A67C38|F7F9FC|0A1628|B45309|B42318)\b/i);
 });
 
 test('secondary public routes preserve filters, locked previews, pricing copy, images, and CTAs', () => {

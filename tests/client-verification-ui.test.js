@@ -119,6 +119,7 @@ test('client dashboard requires all four evidence categories and regulated busin
     'Valid government ID',
     'Liveness selfie',
     'Profile picture',
+    'Proof of business',
     'US EIN Letter (CP575)',
     'State Business Registration',
     'EU VAT Certificate',
@@ -135,6 +136,11 @@ test('client dashboard requires all four evidence categories and regulated busin
   assert.match(clientDashboard, /verifiedBusinessName/);
   assert.match(clientDashboard, /proper attire/i);
   assert.match(clientDashboard, /exact Legal Business Name/i);
+  assert.match(clientDashboard, /\{ label: 'US EIN Letter \(CP575\)', value: 'cp575_ein_letter' \}/);
+  assert.match(clientDashboard, /\{ label: 'State Business Registration', value: 'state_business_registration' \}/);
+  assert.match(clientDashboard, /\{ label: 'EU VAT Certificate', value: 'eu_vat_certificate' \}/);
+  assert.match(clientDashboard, /You cannot edit that protected value/);
+  assert.doesNotMatch(clientDashboard, /value=\{verification\.verifiedBusinessName\}|onChange=.*verifiedBusinessName/);
 });
 
 test('admin console exposes the client verification review queue', () => {

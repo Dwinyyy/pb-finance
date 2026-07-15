@@ -7,6 +7,11 @@ const agents = readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const favicon = readFileSync(new URL('../public/favicon.svg', import.meta.url), 'utf8');
 const guide = readFileSync(new URL('../docs/design-system/pb-signature-colors.md', import.meta.url), 'utf8');
+const publicPage = readFileSync(new URL('../src/pages/PublicPages.jsx', import.meta.url), 'utf8');
+const clientPage = readFileSync(new URL('../src/pages/ClientPages.jsx', import.meta.url), 'utf8');
+const clientDashboard = readFileSync(new URL('../src/components/ClientVerificationDashboard.jsx', import.meta.url), 'utf8');
+const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
+const documentPreview = readFileSync(new URL('../src/components/DocumentPreviewModal.jsx', import.meta.url), 'utf8');
 
 test('signature primitives and semantic aliases are canonical', () => {
   for (const [token, value] of Object.entries({
@@ -39,4 +44,67 @@ test('brand governance and browser chrome use PB Finance identity', () => {
   assert.doesNotMatch(favicon, /#863bff|#7e14ff/i);
   assert.match(favicon, /PB Finance/i);
   assert.equal(existsSync(new URL('../src/App.css', import.meta.url)), false);
+});
+
+test('target React files do not contain raw signature hex values', () => {
+  for (const [label, source] of [
+    ['public pages', publicPage],
+    ['client pages', clientPage],
+    ['client verification dashboard', clientDashboard],
+    ['professional pages', professionalPage],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /#(?:0B1F3A|2563EB|047857|0E7490|A67C38|F7F9FC|0A1628|B45309|B42318)\b/i,
+      `${label} must consume governed signature tokens`,
+    );
+  }
+});
+
+test('document preview uses semantic presentation without weakening read-only fallbacks', () => {
+  for (const semanticClass of [
+    'bg-surface',
+    'bg-surface-muted',
+    'border-border-subtle',
+    'text-text-primary',
+    'text-text-muted',
+    'bg-processing-surface',
+    'border-processing-border',
+    'text-processing',
+    'bg-danger-surface',
+    'border-danger-border',
+    'text-danger',
+  ]) {
+    assert.match(documentPreview, new RegExp(semanticClass));
+  }
+
+  assert.doesNotMatch(
+    documentPreview,
+    /(?:bg|text|border)-(?:slate|gray|zinc|red|blue|cyan|emerald|amber|violet|primary)-/,
+  );
+
+  for (const protection of [
+    /onContextMenu=\{\(event\) => event\.preventDefault\(\)\}/,
+    /onCopy=\{preventPreviewInteraction\}/,
+    /onCut=\{preventPreviewInteraction\}/,
+    /onDragStart=\{preventPreviewInteraction\}/,
+    /onPaste=\{preventPreviewInteraction\}/,
+    /onSelectStart=\{preventPreviewInteraction\}/,
+    /document-preview-locked/,
+    /event\.target === event\.currentTarget/,
+  ]) {
+    assert.match(documentPreview, protection);
+  }
+
+  for (const fallback of [
+    /previewDocument\.previewUrl/,
+    /previewDocument\.urlPromise/,
+    /previewDocument\.blobPromise/,
+    /previewDocument\.blobLoader/,
+    /retryImageWithBlob/,
+    /retryPdfWithBlob/,
+    /previewDocument\.cacheKey/,
+  ]) {
+    assert.match(documentPreview, fallback);
+  }
 });

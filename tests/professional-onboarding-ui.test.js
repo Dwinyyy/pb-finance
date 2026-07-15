@@ -76,6 +76,10 @@ test('professional identity and every credential class use the shared drop zone 
   assert.match(credentialSection, /visibleCertificationRequirements\.map/);
   assert.match(credentialSection, /otherDocuments\.map/);
   assert.match(credentialSection, /uploadOtherDocumentRow\(row, file\)/);
+  assert.match(credentialSection, /visibleCertificationRequirements\.map\(\(requirement\) =>/);
+  assert.match(credentialSection, /documentKey=\{requirement\.upload\?\.key \|\| `certification:\$\{requirement\.label\}`\}/);
+  assert.match(credentialSection, /documentType="certification"/);
+  assert.doesNotMatch(credentialSection, /PRC\s+or\s+BOA|BOA\s+or\s+Tax|PRC\s*\/\s*BOA\s*\/\s*Tax/i);
   assert.match(professionalPage, /MAX_CREDENTIAL_UPLOAD_BYTES = 3 \* 1024 \* 1024/);
   assert.match(professionalPage, /validateCredentialFile/);
 });

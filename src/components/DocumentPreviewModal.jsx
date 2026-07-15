@@ -162,7 +162,7 @@ function PdfCanvasPreview({ blob, onSourceError, sourceUrl }) {
         canvas.height = Math.ceil(viewport.height * pixelRatio);
         canvas.style.width = `${Math.ceil(viewport.width)}px`;
         canvas.style.height = `${Math.ceil(viewport.height)}px`;
-        canvas.className = 'mx-auto rounded-lg bg-white shadow-sm';
+        canvas.className = 'mx-auto rounded-lg bg-white shadow-card';
 
         pageShell.className = 'mb-5';
         pageShell.appendChild(canvas);
@@ -203,15 +203,15 @@ function PdfCanvasPreview({ blob, onSourceError, sourceUrl }) {
   }, [blob, onSourceError, sourceUrl]);
 
   return (
-    <div className="relative h-full w-full overflow-y-auto bg-slate-200 px-4 py-5 dark:bg-slate-900">
+    <div className="relative h-full w-full overflow-y-auto bg-surface-muted px-4 py-5">
       {state.isLoading && (
-        <div className="sticky top-0 z-10 mx-auto mb-4 flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+        <div className="sticky top-0 z-10 mx-auto mb-4 flex w-fit items-center gap-2 rounded-control border border-processing-border bg-processing-surface px-4 py-3 text-sm font-bold text-processing shadow-card">
           <Loader2 size={16} className="animate-spin" />
           Rendering PDF
         </div>
       )}
       {state.error && (
-        <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center text-sm font-semibold text-red-700">
+        <div className="mx-auto max-w-md rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-center text-sm font-semibold text-danger">
           {state.error}
         </div>
       )}
@@ -461,7 +461,7 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-pb-midnight/75 p-4 backdrop-blur-sm"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -490,30 +490,30 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
           }
         `}
       </style>
-      <div className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+      <div className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-modal border border-border-subtle bg-surface text-text-primary shadow-modal">
+        <div className="flex items-center justify-between gap-4 border-b border-border-subtle bg-surface px-4 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-black text-slate-950 dark:text-white">{title}</div>
-            <div className="text-xs font-semibold text-slate-400">Read-only preview</div>
+            <div className="truncate text-sm font-black text-text-primary">{title}</div>
+            <div className="text-xs font-semibold text-text-muted">Read-only preview</div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border-subtle text-text-muted transition-colors hover:border-border-control hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
             title="Close preview"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="document-preview-locked flex min-h-0 flex-1 items-center justify-center bg-slate-100 dark:bg-slate-900">
+        <div className="document-preview-locked flex min-h-0 flex-1 items-center justify-center bg-surface-muted">
           {preview.isLoading ? (
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+            <div className="flex items-center gap-2 rounded-control border border-processing-border bg-processing-surface px-4 py-3 text-sm font-bold text-processing shadow-card">
               <Loader2 size={16} className="animate-spin" />
               Loading preview
             </div>
           ) : preview.error ? (
-            <div className="mx-4 max-w-md rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center text-sm font-semibold text-red-700">
+            <div className="mx-4 max-w-md rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-center text-sm font-semibold text-danger">
               {preview.error}
             </div>
           ) : preview.kind === 'pdf' ? (
@@ -531,8 +531,8 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
               className="max-h-full max-w-full select-none object-contain"
             />
           ) : (
-            <div className="mx-4 max-w-md rounded-2xl border border-slate-200 bg-white px-5 py-5 text-center text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-              <FileText className="mx-auto mb-3 text-slate-400" size={28} />
+            <div className="mx-4 max-w-md rounded-control border border-border-subtle bg-surface px-5 py-5 text-center text-sm font-semibold text-text-muted shadow-card">
+              <FileText className="mx-auto mb-3 text-text-muted" size={28} />
               This document format cannot be rendered in the browser preview.
             </div>
           )}
