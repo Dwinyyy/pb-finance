@@ -28,6 +28,11 @@ test('client dashboard requires all four evidence categories and regulated busin
 
   assert.match(clientDashboard, /backendApi\.client\.uploadVerificationDocument/);
   assert.match(clientDashboard, /backendApi\.client\.submitVerification/);
+  assert.match(clientDashboard, /FileDropzone/);
+  assert.match(clientDashboard, /handleUpload\(config\.kind, file\)/);
+  assert.match(clientDashboard, /role="status"|aria-live="polite"/);
+  assert.match(clientDashboard, /<div[^>]*role="status"[^>]*>[\s\S]*Loading verification requirements/);
+  assert.match(clientDashboard, /verifiedBusinessName/);
   assert.match(clientDashboard, /proper attire/i);
   assert.match(clientDashboard, /exact Legal Business Name/i);
 });
