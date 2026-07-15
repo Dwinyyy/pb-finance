@@ -24,7 +24,7 @@ export function Toggle({ checked = false, disabled = false, isBusy = false, labe
       >
         <span
           aria-hidden="true"
-          className={`absolute left-0.5 top-0.5 size-4.5 rounded-full bg-surface shadow-sm transition-transform motion-reduce:transition-none motion-reduce:transform-none ${checked ? 'translate-x-5 motion-reduce:left-5' : 'translate-x-0'}`}
+          className={`absolute left-0.5 top-0.5 size-4.5 rounded-full bg-surface shadow-sm transition-transform motion-reduce:transition-none motion-reduce:transform-none ${checked ? 'motion-safe:translate-x-5 motion-reduce:left-5' : ''}`}
         />
       </button>
       <span id={labelId} className="text-sm font-semibold text-text-primary">

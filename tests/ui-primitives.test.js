@@ -4,6 +4,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { compile } from 'tailwindcss';
 import { createServer } from 'vite';
 import { toneForStatus, toneForTier } from '../src/components/ui/statusTone.js';
 
@@ -50,6 +51,31 @@ test('Button removes hover and tap transforms when reduced motion is requested',
   assert.match(button, /const isMotionDisabled = shouldReduceMotion \|\| disabled \|\| isLoading;/);
   assert.match(button, /whileHover=\{isMotionDisabled \? undefined : \{ y: -1 \}\}/);
   assert.match(button, /whileTap=\{isMotionDisabled \? undefined : \{ y: 1, scale: 0\.98 \}\}/);
+});
+
+test('Tailwind translation motion is opt-in through motion-safe', async () => {
+  const button = read('../src/components/ui/Button.jsx');
+  const toggle = read('../src/components/ui/Toggle.jsx');
+
+  assert.match(button, /motion-safe:hover:-translate-y-px/);
+  assert.match(button, /motion-safe:active:translate-y-px/);
+  assert.doesNotMatch(button, /(?:^|[\s"])hover:-translate-y-px(?=[\s"])/m);
+  assert.doesNotMatch(button, /(?:^|[\s"])active:translate-y-px(?=[\s"])/m);
+  assert.match(toggle, /\$\{checked \? 'motion-safe:translate-x-5 motion-reduce:left-5' : ''\}/);
+  assert.doesNotMatch(toggle, /\$\{checked \? 'translate-x-5/);
+
+  const tailwind = await compile('@theme { --spacing: 0.25rem; } @tailwind utilities;');
+  const generatedCss = tailwind.build([
+    'translate-x-5',
+    'transform-none',
+    'motion-safe:translate-x-5',
+    'motion-reduce:left-5',
+  ]);
+
+  assert.match(generatedCss, /\.translate-x-5\s*\{[\s\S]*?translate:/);
+  assert.match(generatedCss, /\.transform-none\s*\{\s*transform: none;/);
+  assert.match(generatedCss, /\.motion-safe\\:translate-x-5\s*\{\s*@media \(prefers-reduced-motion: no-preference\)/);
+  assert.match(generatedCss, /\.motion-reduce\\:left-5\s*\{\s*@media \(prefers-reduced-motion: reduce\)/);
 });
 
 test('segmented navigation helper wraps arrow movement', async () => {
