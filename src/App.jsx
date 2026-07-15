@@ -191,7 +191,7 @@ const createLocalSessionUser = (formData, role) => {
   };
 };
 
-function AuthModalContent({
+export function AuthModalContent({
   view,
   authError,
   authNotice,
@@ -371,16 +371,18 @@ function AuthModalContent({
                         className={`${className} pr-12`}
                         placeholder="********"
                       />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
-                      </Button>
+                      <div className="absolute inset-y-0 right-0 flex items-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="size-11 !p-0 text-text-muted"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </FormField>
@@ -450,16 +452,18 @@ function AuthModalContent({
                         className={`${className} pr-12`}
                         placeholder="********"
                       />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
-                      </Button>
+                      <div className="absolute inset-y-0 right-0 flex items-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="size-11 !p-0 text-text-muted"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </FormField>
@@ -478,16 +482,18 @@ function AuthModalContent({
                         className={`${className} pr-12`}
                         placeholder="********"
                       />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
-                        aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
-                      >
-                        {showConfirmPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
-                      </Button>
+                      <div className="absolute inset-y-0 right-0 flex items-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="size-11 !p-0 text-text-muted"
+                          aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                        >
+                          {showConfirmPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </FormField>
@@ -610,16 +616,18 @@ function AuthModalContent({
                           className={`${className} pr-12`}
                           placeholder="********"
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
-                          aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        >
-                          {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
-                        </Button>
+                        <div className="absolute inset-y-0 right-0 flex items-center">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="size-11 !p-0 text-text-muted"
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </FormField>
@@ -642,16 +650,18 @@ function AuthModalContent({
                             className={`${className} pr-12`}
                             placeholder="********"
                           />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
-                            aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
-                          >
-                            {showConfirmPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
-                          </Button>
+                          <div className="absolute inset-y-0 right-0 flex items-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="size-11 !p-0 text-text-muted"
+                              aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                            >
+                              {showConfirmPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </FormField>
@@ -670,18 +680,18 @@ function AuthModalContent({
                 {view === 'login' ? (
                   <p>
                     Don't have an account?{' '}
-                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('register')} className="!px-1 !py-0 text-action hover:underline">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('register')} className="min-h-11 !px-1 text-action hover:underline align-middle">
                       Sign up as Client
                     </Button>{' '}
                     or{' '}
-                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('register_pro')} className="!px-1 !py-0 text-action hover:underline">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('register_pro')} className="min-h-11 !px-1 text-action hover:underline align-middle">
                       Apply as Talent
                     </Button>
                   </p>
                 ) : (
                   <p>
                     Already have an account?{' '}
-                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('login')} className="!px-1 !py-0 text-action hover:underline">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('login')} className="min-h-11 !px-1 text-action hover:underline align-middle">
                       Log in
                     </Button>
                   </p>

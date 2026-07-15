@@ -172,6 +172,96 @@ test('public auth entry uses shared accessible primitives and semantic feedback'
   );
 });
 
+test('public auth controls keep shared Button motion inside stable geometry', () => {
+  assert.equal(
+    [...authModal.matchAll(/<div className="absolute inset-y-0 right-0 flex items-center">/g)].length,
+    5,
+    'each password control needs a stable positioning wrapper',
+  );
+  assert.equal(
+    [...authModal.matchAll(/className="size-11 !p-0 text-text-muted"/g)].length,
+    5,
+    'each password control needs a normal-positioned 44px target',
+  );
+  assert.doesNotMatch(
+    authModal,
+    /<Button[\s\S]{0,300}className="[^"]*(?:top-1\/2|-translate-y-1\/2)/,
+  );
+  assert.equal(
+    [...authModal.matchAll(/className="min-h-11 !px-1 text-action hover:underline align-middle"/g)].length,
+    3,
+    'inline auth navigation must retain a 44px target',
+  );
+  assert.doesNotMatch(authModal, /!py-0/);
+});
+
+test('public auth controls server-render stable toggle and inline-navigation geometry', async () => {
+  const vite = await createServer({
+    root: projectRoot,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+
+  try {
+    const { AuthModalContent } = await vite.ssrLoadModule('/src/App.jsx');
+    assert.equal(typeof AuthModalContent, 'function');
+
+    const noop = () => {};
+    const baseProps = {
+      view: 'login',
+      authError: '',
+      authNotice: '',
+      authStep: 'form',
+      fieldErrors: {},
+      pendingAccountLink: null,
+      isAuthLoading: false,
+      handleAccountLinkOtpSubmit: noop,
+      handleAccountLinkSubmit: noop,
+      handleAuthSubmit: noop,
+      handleGoogleCompanySubmit: noop,
+      handleGoogleAuth: noop,
+      handleOtpSubmit: noop,
+      handlePasswordSetupGoogleConfirm: noop,
+      handlePasswordSetupSubmit: noop,
+      switchAuthView: noop,
+    };
+    const renderAuth = (overrides) => renderToStaticMarkup(createElement(AuthModalContent, {
+      ...baseProps,
+      ...overrides,
+    }));
+    const stateMarkups = [
+      [renderAuth({ view: 'login' }), 1],
+      [renderAuth({ view: 'register' }), 2],
+      [renderAuth({ authStep: 'google_link_password' }), 1],
+      [renderAuth({ authStep: 'password_setup', pendingAccountLink: { email: 'client@example.com' } }), 2],
+    ];
+
+    for (const [html, expectedToggleCount] of stateMarkups) {
+      assert.equal(
+        [...html.matchAll(/class="absolute inset-y-0 right-0 flex items-center"/g)].length,
+        expectedToggleCount,
+      );
+      const toggleTags = [...html.matchAll(/<button[^>]*aria-label="Show password(?: confirmation)?"[^>]*>/g)]
+        .map((match) => match[0]);
+      assert.equal(toggleTags.length, expectedToggleCount);
+      for (const tag of toggleTags) {
+        assert.match(tag, /class="[^"]*size-11[^"]*!p-0/);
+        assert.doesNotMatch(tag, /absolute|top-1\/2|-translate-y-1\/2/);
+      }
+    }
+
+    const inlineNavigation = `${stateMarkups[0][0]}\n${stateMarkups[1][0]}`;
+    for (const label of ['Sign up as Client', 'Apply as Talent', 'Log in']) {
+      const tag = inlineNavigation.match(new RegExp(`<button([^>]*)>${label}</button>`))?.[1] || '';
+      assert.match(tag, /class="[^"]*min-h-11/);
+      assert.doesNotMatch(tag, /!py-0/);
+    }
+  } finally {
+    await vite.close();
+  }
+});
+
 test('public auth migration preserves views, fields, validation, handlers, API calls, and password branches', () => {
   for (const step of [
     'google_link_password',
