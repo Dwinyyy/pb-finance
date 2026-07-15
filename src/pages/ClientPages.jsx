@@ -16,7 +16,12 @@ import { ClientWorkflowOnboardingModal } from '../components/ClientWorkflowOnboa
 import { ClientVerificationDashboard } from '../components/ClientVerificationDashboard';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
+import { BrandMark } from '../components/ui/BrandMark';
+import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { toneForTier } from '../components/ui/statusTone';
 import { useNotifications } from '../hooks/useNotifications';
 import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
@@ -147,7 +152,7 @@ const shouldShowClientWorkflowOnboarding = (storageKey) => {
 function DocumentPreviewer({ url, type }) {
   const isImage = type?.includes('image') || url?.match(/\.(jpeg|jpg|gif|png)$/i);
   return (
-    <div className="relative w-full h-[600px] bg-slate-100 dark:bg-slate-800 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 flex items-center justify-center select-none">
+    <div className="relative flex h-[600px] w-full select-none items-center justify-center overflow-hidden rounded-card border border-border-subtle bg-surface-muted">
       <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden flex items-center justify-center">
         <div className="verified-document-watermark">PB Finance - Verified Preview</div>
       </div>
@@ -210,50 +215,51 @@ function ProfileQualificationsSection({ profile }) {
   if (!canViewFullDocuments) {
     return (
       <div>
-        <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+        <h4 className="mb-3 text-sm font-bold text-text-primary">Verified Qualifications & Resume</h4>
+        <SurfaceCard as="div" tone="muted" className="p-4 text-sm font-semibold text-text-muted shadow-none">
           Resume and required documents are hidden for Basic clients.
-        </div>
+        </SurfaceCard>
       </div>
     );
   }
 
   return (
     <div>
-      <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Verified Qualifications & Resume</h4>
+      <h4 className="mb-3 text-sm font-bold text-text-primary">Verified Qualifications & Resume</h4>
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+        <div role="alert" className="mb-4 rounded-control border border-danger-border bg-danger-surface px-4 py-3 text-sm font-semibold text-danger">
           {error}
         </div>
       )}
 
       <div className="space-y-4">
         {resume ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+          <SurfaceCard as="div" tone="muted" className="p-4 shadow-none">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-black text-slate-950 dark:text-white">{resume.label || resume.fileName || 'Verified resume'}</div>
-                <div className="text-xs font-semibold text-slate-500">{resume.fileName || 'Approved resume document'}</div>
+                <div className="text-sm font-black text-text-primary">{resume.label || resume.fileName || 'Verified resume'}</div>
+                <div className="text-xs font-semibold text-text-muted">{resume.fileName || 'Approved resume document'}</div>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => loadDocumentPreview(resume, 'resume')}
                 disabled={busyKey === `resume:${getDocumentKey(resume)}`}
-                className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-600 disabled:opacity-70"
+                size="sm"
+                className="min-h-11"
               >
                 {busyKey === `resume:${getDocumentKey(resume)}` ? 'Opening...' : 'Preview Resume'}
-              </button>
+              </Button>
             </div>
-          </div>
+          </SurfaceCard>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+          <SurfaceCard as="div" tone="muted" className="p-4 text-sm font-semibold text-text-muted shadow-none">
             No approved resume is available for this profile.
-          </div>
+          </SurfaceCard>
         )}
 
         {supportingDocuments.length > 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-3 text-xs font-black uppercase tracking-wider text-slate-400">Certificates & Required Documents</div>
+          <SurfaceCard as="div" className="p-4 shadow-none">
+            <div className="mb-3 text-xs font-black uppercase tracking-wider text-verified">Certificates & Required Documents</div>
             <div className="space-y-2">
               {supportingDocuments.map((document) => {
                 const documentKey = getDocumentKey(document);
@@ -261,29 +267,31 @@ function ProfileQualificationsSection({ profile }) {
                 const busy = busyKey === `${documentType}:${documentKey}`;
 
                 return (
-                  <div key={`${documentType}:${documentKey}`} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={`${documentType}:${documentKey}`} className="flex flex-col gap-2 rounded-control border border-verified-border bg-verified-surface px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{document.label || document.fileName || 'Verified document'}</div>
-                      <div className="text-xs font-semibold text-slate-500">{document.fileName || document.kind || 'Approved credential'}</div>
+                      <div className="text-sm font-bold text-text-primary">{document.label || document.fileName || 'Verified document'}</div>
+                      <div className="text-xs font-semibold text-text-muted">{document.fileName || document.kind || 'Approved credential'}</div>
                     </div>
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => loadDocumentPreview(document, documentType)}
                       disabled={busy}
-                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-primary-200 hover:text-primary-700 disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                      className="min-h-11"
                     >
                       {busy ? 'Opening...' : 'View'}
-                    </button>
+                    </Button>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </SurfaceCard>
         )}
 
         {preview?.url && (
           <div className="space-y-2">
-            <div className="text-xs font-black uppercase tracking-wider text-slate-400">{preview.fileName || 'Document preview'}</div>
+            <div className="text-xs font-black uppercase tracking-wider text-text-muted">{preview.fileName || 'Document preview'}</div>
             <DocumentPreviewer url={preview.url} type={preview.contentType || 'pdf'} />
           </div>
         )}
@@ -328,19 +336,19 @@ function InterviewDateTimePicker({ value, onChange }) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+      <SurfaceCard as="div" tone="muted" className="min-w-0 p-3 shadow-none">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" onClick={() => shiftMonth(-1)} className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-950 dark:hover:bg-slate-900 dark:hover:text-white" title="Previous month">
-            <ChevronLeft size={17} />
-          </button>
-          <div className="text-sm font-black text-slate-950 dark:text-white">{monthLabel}</div>
-          <button type="button" onClick={() => shiftMonth(1)} className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-950 dark:hover:bg-slate-900 dark:hover:text-white" title="Next month">
-            <ChevronRight size={17} />
-          </button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(-1)} className="size-11 !p-0 text-text-muted" title="Previous month" aria-label="Previous month">
+            <ChevronLeft size={17} aria-hidden="true" />
+          </Button>
+          <div className="text-sm font-black text-text-primary" aria-live="polite">{monthLabel}</div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(1)} className="size-11 !p-0 text-text-muted" title="Next month" aria-label="Next month">
+            <ChevronRight size={17} aria-hidden="true" />
+          </Button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center">
+        <div className="grid grid-cols-7 gap-1 overflow-x-auto pb-1 text-center">
           {weekdayLabels.map((day) => (
-            <div key={day} className="py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">{day}</div>
+            <div key={day} className="min-w-11 py-1 text-[10px] font-black uppercase tracking-wider text-text-muted">{day}</div>
           ))}
           {calendarDays.map((day, index) => {
             const dayDate = day ? formatLocalDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), day)) : '';
@@ -351,28 +359,31 @@ function InterviewDateTimePicker({ value, onChange }) {
                 key={dayDate}
                 type="button"
                 onClick={() => selectDay(day)}
-                className={`aspect-square rounded-xl text-sm font-bold transition-colors ${
+                aria-label={`${monthLabel} ${day}`}
+                aria-pressed={isSelected}
+                className={`size-11 rounded-control text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${
                   isSelected
-                    ? 'bg-slate-950 text-white shadow-md dark:bg-primary-500'
-                    : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                    ? 'bg-action text-white shadow-card'
+                    : 'text-text-muted hover:bg-surface hover:text-text-primary'
                 }`}
               >
                 {day}
               </button>
             ) : (
-              <div key={`blank-${index}`} />
+              <div key={`blank-${index}`} className="size-11" aria-hidden="true" />
             );
           })}
         </div>
-      </div>
+      </SurfaceCard>
 
       <div className="space-y-3">
-        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+        <label htmlFor="client-interview-time" className="block text-sm font-bold text-text-primary">
           Preferred time
           <select
+            id="client-interview-time"
             value={scheduleTimeOptions.includes(value.time) ? value.time : ''}
             onChange={(event) => onChange({ ...value, time: event.target.value })}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-primary-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+            className="mt-2 min-h-11 w-full rounded-control border border-border-control bg-surface px-4 py-3 text-sm font-semibold text-text-primary outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
           >
             <option value="" disabled>Choose a time</option>
             {scheduleTimeOptions.map((time) => (
@@ -380,8 +391,10 @@ function InterviewDateTimePicker({ value, onChange }) {
             ))}
           </select>
         </label>
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-          {value.date && value.time ? `${value.date} at ${value.time}` : 'Select a date and time'}
+        <div aria-live="polite">
+          <SurfaceCard as="div" className="px-4 py-3 text-sm font-semibold text-text-muted shadow-none">
+            {value.date && value.time ? `${value.date} at ${value.time}` : 'Select a date and time'}
+          </SurfaceCard>
         </div>
       </div>
     </div>
@@ -443,7 +456,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans relative">
+    <div className="relative flex min-h-screen flex-col bg-canvas font-sans text-text-primary">
       <AnimatePresence>
         {showWorkflowOnboarding && (
           <ClientWorkflowOnboardingModal
@@ -455,69 +468,106 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       </AnimatePresence>
 
       {/* App Header */}
-      <header className="bg-slate-950 text-white sticky top-0 z-40 shadow-md">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* App Logo */}
-            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center font-bold text-sm shadow-inner">
-                PB
-              </div>
-              <span className="font-bold tracking-tight">Client Portal</span>
+      <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 shadow-card backdrop-blur-xl">
+        <div className="mx-auto max-w-[1600px] px-3 sm:px-6 lg:px-8">
+          <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 py-2">
+            <div className="order-1 flex min-w-0 items-center gap-3">
+              <BrandMark compact className="shrink-0" />
+              <span className="hidden text-sm font-bold tracking-tight text-text-primary sm:inline">Client Portal</span>
             </div>
 
-            {/* App User Nav */}
-            <div className="flex items-center gap-6">
-              <button
-                onClick={() => setShowWorkflowOnboarding(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-black text-slate-300 transition-colors hover:border-primary-500 hover:text-white"
-                title="Open client workflow guide"
-              >
-                <Sparkles size={14} className="text-primary-400" />
-                <span className="hidden sm:inline">Guide</span>
-              </button>
-              {clientPermissions.canUseMatchmaker && (
-                <button onClick={() => setMatchmakerVisible(!matchmakerVisible)} className={`relative transition-colors ${matchmakerVisible ? 'text-primary-400' : 'text-slate-400 hover:text-white'}`} title={`${clientPermissions.label} AI Matchmaker`}>
-                  <Bot size={20} />
-                </button>
-              )}
-              <button onClick={toggleDarkMode} className="text-slate-400 hover:text-white transition-colors" title="Toggle Dark Mode">
-                {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-              <NotificationBell notificationState={notificationState} unreadClassName="bg-primary-500" userId={user.id} />
-
-              <div className="flex items-center gap-3 pl-6 border-l border-slate-800">
-                <div className="text-right hidden md:block">
-                  <div className="text-sm font-bold text-white leading-tight">{user.name}</div>
-                  <div className="text-xs text-slate-400 font-medium">{user.company}</div>
-                </div>
-                <div className="w-9 h-9 bg-gradient-to-tr from-primary-500 to-cyan-400 rounded-full flex items-center justify-center font-bold text-white shadow-md cursor-pointer border-2 border-slate-800">
-                  {user.name.charAt(0)}
-                </div>
-                <button onClick={onLogout} className="ml-2 text-slate-500 hover:text-red-400 transition-colors">
-                  <LogOut size={18} />
-                </button>
+            <SurfaceCard
+              as="div"
+              tone="muted"
+              className="order-2 ml-auto flex min-w-0 items-center gap-2 px-2.5 py-1.5 shadow-none lg:order-3"
+            >
+              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-pb-midnight text-sm font-black text-white" aria-hidden="true">
+                {user.name.charAt(0)}
               </div>
+              <div className="min-w-0 text-right">
+                <div className="max-w-20 truncate text-xs font-bold leading-tight text-text-primary sm:max-w-40 sm:text-sm">{user.name}</div>
+                <div className="hidden max-w-40 truncate text-xs font-medium text-text-muted md:block">{user.company}</div>
+              </div>
+              <StatusBadge label={clientPermissions.label} tone={toneForTier(clientPermissions.tier)} />
+              {clientPermissions.tier === 'vip' && (
+                <Sparkles size={14} className="shrink-0 text-premium-detail" aria-hidden="true" />
+              )}
+            </SurfaceCard>
+
+            <div className="order-3 flex w-full items-center justify-end gap-1 border-t border-border-subtle pt-2 lg:order-2 lg:ml-auto lg:w-auto lg:border-0 lg:pt-0" aria-label="Client account controls">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowWorkflowOnboarding(true)}
+                className="min-h-11 min-w-11 !p-2 text-text-muted"
+                title="Open client workflow guide"
+                aria-label="Open client workflow guide"
+              >
+                <Sparkles size={18} className="text-action" aria-hidden="true" />
+                <span className="ml-2 hidden sm:inline">Guide</span>
+              </Button>
+              {clientPermissions.canUseMatchmaker && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMatchmakerVisible(!matchmakerVisible)}
+                  className={`min-h-11 min-w-11 !p-2 ${matchmakerVisible ? 'text-action' : 'text-text-muted'}`}
+                  title={`${clientPermissions.label} AI Matchmaker`}
+                  aria-label={`${clientPermissions.label} AI Matchmaker`}
+                  aria-pressed={matchmakerVisible}
+                >
+                  <Bot size={20} aria-hidden="true" />
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleDarkMode}
+                className="min-h-11 min-w-11 !p-2 text-text-muted"
+                title="Toggle Dark Mode"
+                aria-label="Toggle dark mode"
+              >
+                {isDarkMode ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
+              </Button>
+              <div className="[&>div]:h-11 [&>div]:w-11 [&>div>button]:min-h-11 [&>div>button]:min-w-11 [&>div>button]:rounded-control [&>div>button]:text-text-muted [&>div>button]:focus-visible:outline-none [&>div>button]:focus-visible:ring-4 [&>div>button]:focus-visible:ring-focus/25 [&>div>div]:top-12">
+                <NotificationBell notificationState={notificationState} unreadClassName="bg-action" userId={user.id} />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onLogout}
+                className="min-h-11 min-w-11 !p-2 text-danger"
+                aria-label="Log out"
+                title="Log out"
+              >
+                <LogOut size={18} aria-hidden="true" />
+              </Button>
             </div>
           </div>
         </div>
 
         {/* App Sub-Navigation */}
-        <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex space-x-8 pt-4 overflow-x-auto scrollbar-hide">
+        <nav className="border-t border-border-subtle bg-surface" aria-label="Client workspace navigation">
+          <div className="mx-auto max-w-[1600px] px-3 sm:px-6 lg:px-8">
+            <div className="flex gap-2 overflow-x-auto py-2 scrollbar-hide">
               {availableTabs.map(tab => {
                 const unreadCount = tabUnreadCounts[tab.id] || 0;
 
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setAppView(tab.id)}
-                    className={`relative pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${appView === tab.id ? 'border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200 hover:border-slate-300'}`}
+                    aria-current={appView === tab.id ? 'page' : undefined}
+                    className={`relative inline-flex min-h-11 shrink-0 items-center rounded-control px-4 py-2 text-sm font-bold transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${appView === tab.id ? 'bg-action text-white shadow-card' : 'text-text-muted hover:bg-surface-muted hover:text-text-primary'}`}
                   >
                     {tab.label}
                     {unreadCount > 0 && (
-                      <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[11px] font-black leading-none text-white shadow-sm shadow-primary-500/20">
+                      <span className={`ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-black leading-none ${appView === tab.id ? 'bg-white text-action' : 'bg-action text-white'}`}>
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
@@ -526,18 +576,20 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
               })}
             </div>
           </div>
-        </div>
+        </nav>
       </header>
 
       {/* App Workspace */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative scroll-smooth">
-        {appView === 'discover' && <AppDiscoverView user={user} />}
-        {appView === 'verification' && <ClientVerificationDashboard />}
-        {appView === 'agencies' && clientPermissions.canDiscoverAgencies && <AppAgenciesView />}
-        {appView === 'shortlist' && <AppShortlistView user={user} />}
-        {appView === 'interviews' && <AppInterviewsView user={user} />}
-        {appView === 'billing' && <AppBillingView />}
-      </div>
+      <main className="flex-1 bg-canvas">
+        <div className="relative mx-auto w-full max-w-[1600px] scroll-smooth px-3 py-6 sm:px-6 sm:py-8 lg:px-8">
+          {appView === 'discover' && <AppDiscoverView user={user} />}
+          {appView === 'verification' && <ClientVerificationDashboard />}
+          {appView === 'agencies' && clientPermissions.canDiscoverAgencies && <AppAgenciesView />}
+          {appView === 'shortlist' && <AppShortlistView user={user} />}
+          {appView === 'interviews' && <AppInterviewsView user={user} />}
+          {appView === 'billing' && <AppBillingView />}
+        </div>
+      </main>
 
       {/* AI Matchmaker Feature */}
       {clientPermissions.canUseMatchmaker && matchmakerVisible && <AITalentMatchmaker clientPermissions={clientPermissions} />}
@@ -1075,46 +1127,52 @@ function AppDiscoverView({ user }) {
       </div>
 
       {previewProfile && (
-        <Modal open={Boolean(previewProfile)} title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
+        <Modal
+          open={Boolean(previewProfile)}
+          title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`}
+          description="Review experience, availability, skills, and the verified documents available to your client tier."
+          onClose={() => setPreviewProfile(null)}
+          size="wide"
+        >
           <div className="space-y-6">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-2xl border border-slate-200 dark:border-slate-800">
+            <SurfaceCard as="div" tone="muted" className="flex items-center gap-4 p-4 shadow-none">
+              <div className="grid size-16 shrink-0 place-items-center rounded-full border border-border-subtle bg-surface text-2xl font-bold text-text-muted" aria-hidden="true">
                 {(previewProfile.name || previewProfile.fullName || '?').charAt(0)}
               </div>
-              <div>
-                <h3 className="font-bold text-xl text-slate-950 dark:text-white leading-tight mb-1">{previewProfile.name || previewProfile.fullName || 'Unnamed profile'}</h3>
-                <p className="text-sm font-semibold text-slate-500">{previewProfile.role || previewProfile.title || 'Role pending'}</p>
+              <div className="min-w-0">
+                <h3 className="mb-1 text-xl font-bold leading-tight text-text-primary">{previewProfile.name || previewProfile.fullName || 'Unnamed profile'}</h3>
+                <p className="text-sm font-semibold text-text-muted">{previewProfile.role || previewProfile.title || 'Role pending'}</p>
               </div>
-            </div>
+            </SurfaceCard>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Experience</div>
-                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Briefcase size={16} className="mr-2 text-slate-400"/> {previewProfile.exp || previewProfile.experience || 'Pending'}</div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Availability</div>
-                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Calendar size={16} className="mr-2 text-slate-400"/> {previewProfile.available || previewProfile.availability || 'Pending'}</div>
-              </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SurfaceCard as="div" tone="muted" className="p-4 shadow-none">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted">Experience</div>
+                <div className="flex items-center text-base font-bold text-text-primary"><Briefcase size={16} className="mr-2 text-text-muted" aria-hidden="true" /> {previewProfile.exp || previewProfile.experience || 'Pending'}</div>
+              </SurfaceCard>
+              <SurfaceCard as="div" tone="muted" className="p-4 shadow-none">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted">Availability</div>
+                <div className="flex items-center text-base font-bold text-text-primary"><Calendar size={16} className="mr-2 text-text-muted" aria-hidden="true" /> {previewProfile.available || previewProfile.availability || 'Pending'}</div>
+              </SurfaceCard>
             </div>
 
-            <div>
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Skills & Tools</h4>
+            <SurfaceCard as="section" className="p-4 shadow-none">
+              <h4 className="mb-3 text-sm font-bold text-text-primary">Skills & Tools</h4>
               <div className="flex flex-wrap gap-2">
                 {[...new Set([...asList(previewProfile.skills), ...asList(previewProfile.tools)])].map(tool => (
-                  <span key={tool} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-sm px-3 py-1.5 rounded-lg font-bold shadow-sm">
+                  <span key={tool} className="rounded-control border border-border-subtle bg-surface-muted px-3 py-1.5 text-sm font-bold text-text-muted">
                     {tool}
                   </span>
                 ))}
               </div>
-            </div>
+            </SurfaceCard>
 
             <ProfileQualificationsSection profile={previewProfile} />
             
-            <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
-              <button onClick={() => setPreviewProfile(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+            <div className="mt-4 flex justify-end border-t border-border-subtle pt-4">
+              <Button type="button" variant="outline" onClick={() => setPreviewProfile(null)} className="min-h-11">
                 Close
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
@@ -1446,74 +1504,86 @@ function AppShortlistView({ user }) {
       )}
 
       {previewProfile && (
-        <Modal open={Boolean(previewProfile)} title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
+        <Modal
+          open={Boolean(previewProfile)}
+          title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`}
+          description="Review experience, availability, skills, and the verified documents available to your client tier."
+          onClose={() => setPreviewProfile(null)}
+          size="wide"
+        >
           <div className="space-y-6">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-2xl border border-slate-200 dark:border-slate-800">
+            <SurfaceCard as="div" tone="muted" className="flex items-center gap-4 p-4 shadow-none">
+              <div className="grid size-16 shrink-0 place-items-center rounded-full border border-border-subtle bg-surface text-2xl font-bold text-text-muted" aria-hidden="true">
                 {(previewProfile.name || previewProfile.fullName || '?').charAt(0)}
               </div>
-              <div>
-                <h3 className="font-bold text-xl text-slate-950 dark:text-white leading-tight mb-1">{previewProfile.name || previewProfile.fullName || 'Unnamed profile'}</h3>
-                <p className="text-sm font-semibold text-slate-500">{previewProfile.role || previewProfile.title || 'Role pending'}</p>
+              <div className="min-w-0">
+                <h3 className="mb-1 text-xl font-bold leading-tight text-text-primary">{previewProfile.name || previewProfile.fullName || 'Unnamed profile'}</h3>
+                <p className="text-sm font-semibold text-text-muted">{previewProfile.role || previewProfile.title || 'Role pending'}</p>
               </div>
-            </div>
+            </SurfaceCard>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Experience</div>
-                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Briefcase size={16} className="mr-2 text-slate-400"/> {previewProfile.exp || previewProfile.experience || 'Pending'}</div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                 <div className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Availability</div>
-                 <div className="font-bold text-base text-slate-800 dark:text-slate-200 flex items-center"><Calendar size={16} className="mr-2 text-slate-400"/> {previewProfile.available || previewProfile.availability || 'Pending'}</div>
-              </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SurfaceCard as="div" tone="muted" className="p-4 shadow-none">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted">Experience</div>
+                <div className="flex items-center text-base font-bold text-text-primary"><Briefcase size={16} className="mr-2 text-text-muted" aria-hidden="true" /> {previewProfile.exp || previewProfile.experience || 'Pending'}</div>
+              </SurfaceCard>
+              <SurfaceCard as="div" tone="muted" className="p-4 shadow-none">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted">Availability</div>
+                <div className="flex items-center text-base font-bold text-text-primary"><Calendar size={16} className="mr-2 text-text-muted" aria-hidden="true" /> {previewProfile.available || previewProfile.availability || 'Pending'}</div>
+              </SurfaceCard>
             </div>
 
-            <div>
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white mb-3">Skills & Tools</h4>
+            <SurfaceCard as="section" className="p-4 shadow-none">
+              <h4 className="mb-3 text-sm font-bold text-text-primary">Skills & Tools</h4>
               <div className="flex flex-wrap gap-2">
                 {[...new Set([...asList(previewProfile.skills), ...asList(previewProfile.tools)])].map(tool => (
-                  <span key={tool} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-sm px-3 py-1.5 rounded-lg font-bold shadow-sm">
+                  <span key={tool} className="rounded-control border border-border-subtle bg-surface-muted px-3 py-1.5 text-sm font-bold text-text-muted">
                     {tool}
                   </span>
                 ))}
               </div>
-            </div>
+            </SurfaceCard>
 
             <ProfileQualificationsSection profile={previewProfile} />
             
-            <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
-              <button onClick={() => setPreviewProfile(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+            <div className="mt-4 flex justify-end border-t border-border-subtle pt-4">
+              <Button type="button" variant="outline" onClick={() => setPreviewProfile(null)} className="min-h-11">
                 Close
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
       )}
 
       {scheduleTarget && (
-        <Modal open={Boolean(scheduleTarget)} title="Request Interview" onClose={closeScheduleModal} size="wide">
+        <Modal
+          open={Boolean(scheduleTarget)}
+          title="Request Interview"
+          description="Choose one preferred date and time. The professional must accept before the interview is scheduled."
+          onClose={closeScheduleModal}
+          size="wide"
+        >
           <form onSubmit={submitSchedule} className="space-y-5">
             <div>
-              <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-300">Preferred date and time</div>
+              <div className="mb-2 text-sm font-bold text-text-primary">Preferred date and time</div>
               <InterviewDateTimePicker value={scheduleForm} onChange={(nextSchedule) => { setScheduleForm(nextSchedule); setScheduleFormError(''); }} />
-              <p className="mt-2 text-xs font-medium text-slate-500">Pick a date from the calendar and choose one preferred time.</p>
+              <p className="mt-2 text-xs font-medium text-text-muted">Pick a date from the calendar and choose one preferred time.</p>
             </div>
             {scheduleFormError && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+              <div role="alert" className="rounded-control border border-danger-border bg-danger-surface px-4 py-3 text-sm font-semibold text-danger">
                 {scheduleFormError}
               </div>
             )}
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+            <SurfaceCard as="div" tone="muted" className="border-border-subtle p-4 text-sm font-semibold text-text-muted shadow-none">
               {scheduleTarget.name || scheduleTarget.fullName || 'Candidate'} will receive this as a request first. It becomes scheduled after they accept.
-            </div>
+            </SurfaceCard>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button type="button" onClick={closeScheduleModal} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+              <Button type="button" variant="outline" onClick={closeScheduleModal} className="min-h-11 w-full sm:w-auto">
                 Cancel
-              </button>
-              <button type="submit" disabled={busyAction === `schedule:${scheduleTarget.id}`} className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-primary-600 disabled:opacity-70">
+              </Button>
+              <Button type="submit" disabled={busyAction === `schedule:${scheduleTarget.id}`} className="min-h-11 w-full sm:w-auto">
                 {busyAction === `schedule:${scheduleTarget.id}` ? 'Sending...' : 'Send Request'}
-              </button>
+              </Button>
             </div>
           </form>
         </Modal>
@@ -1720,32 +1790,38 @@ function AppInterviewsView({ user }) {
       )}
 
       {cancelTarget && (
-        <Modal open={Boolean(cancelTarget)} title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
+        <Modal
+          open={Boolean(cancelTarget)}
+          title="Cancel Interview"
+          description="Share a clear reason before notifying the professional and marking this interview cancelled."
+          onClose={() => { setCancelFormError(''); setCancelTarget(null); }}
+        >
           <form onSubmit={submitCancelInterview} className="space-y-5">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+            <SurfaceCard as="div" tone="muted" className="border-border-subtle p-4 text-sm font-semibold text-text-muted shadow-none">
               This will notify {cancelTarget.name || cancelTarget.candidateName || 'the professional'} and keep the reason visible on the cancelled interview.
-            </div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+            </SurfaceCard>
+            <label htmlFor="client-cancellation-reason" className="block text-sm font-bold text-text-primary">
               Cancellation reason
               <textarea
+                id="client-cancellation-reason"
                 value={cancelReason}
                 onChange={(event) => { setCancelReason(event.target.value); setCancelFormError(''); }}
                 rows={4}
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-red-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                className="mt-2 w-full rounded-control border border-border-control bg-surface px-4 py-3 text-sm font-semibold text-text-primary outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
               />
             </label>
             {cancelFormError && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+              <div role="alert" className="rounded-control border border-danger-border bg-danger-surface px-4 py-3 text-sm font-semibold text-danger">
                 {cancelFormError}
               </div>
             )}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => { setCancelFormError(''); setCancelTarget(null); }} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
+              <Button type="button" variant="outline" onClick={() => { setCancelFormError(''); setCancelTarget(null); }} className="min-h-11 w-full sm:w-auto">
                 Keep Interview
-              </button>
-              <button type="submit" disabled={busyAction === `cancel:${cancelTarget.id}`} className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-70">
+              </Button>
+              <Button type="submit" variant="danger" disabled={busyAction === `cancel:${cancelTarget.id}`} className="min-h-11 w-full sm:w-auto">
                 {busyAction === `cancel:${cancelTarget.id}` ? 'Cancelling...' : 'Cancel Interview'}
-              </button>
+              </Button>
             </div>
           </form>
         </Modal>
