@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { createPortal } from 'react-dom';
 import { 
   Search, MapPin, Building, Star, Filter, 
   CheckCircle, ArrowRight, User, Briefcase, 
@@ -18,6 +17,7 @@ import FadeIn from '../components/FadeIn';
 import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
+import { Modal } from '../components/ui/Modal';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { useNotifications } from '../hooks/useNotifications';
 import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
@@ -390,27 +390,6 @@ const buildProfileSavePayload = (profile, overrides = {}) => {
 };
 
 
-
-function PortalModal({ children, onClose, size = 'default', title }) {
-  const widthClass = size === 'wide' ? 'max-w-3xl' : 'max-w-lg';
-
-  return createPortal(
-    <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/65 px-4 py-6 backdrop-blur-sm sm:py-10">
-      <div className="flex min-h-full items-start justify-center">
-        <div className={`w-full ${widthClass} rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900`}>
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
-            <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
-              <X size={18} />
-            </button>
-          </div>
-          {children}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 function MultiSelectPicker({ disabled = false, getRemoveDisabledReason, value, onChange, optionsList, placeholder }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -1246,19 +1225,18 @@ function AppTalentProfileView({ user }) {
         </FadeIn>
       </div>
       </div>
-      {isEditing && (
-        <ProfileSettingsModal
-          activeSection={editingSection}
-          form={profileForm}
-          getTitleRemoveDisabledReason={getTitleRemoveDisabledReason}
-          isSaving={isSaving}
-          onChange={handleProfileChange}
-          onClose={() => setIsEditing(false)}
-          onPhotoUpload={handleProfilePhotoUpload}
-          onSectionChange={setEditingSection}
-          onSubmit={handleProfileSubmit}
-        />
-      )}
+      <ProfileSettingsModal
+        activeSection={editingSection}
+        form={profileForm}
+        getTitleRemoveDisabledReason={getTitleRemoveDisabledReason}
+        isSaving={isSaving}
+        onChange={handleProfileChange}
+        onClose={() => setIsEditing(false)}
+        onPhotoUpload={handleProfilePhotoUpload}
+        onSectionChange={setEditingSection}
+        onSubmit={handleProfileSubmit}
+        open={isEditing}
+      />
       {previewTier && (
         <ProfessionalProfilePreviewModal
           error={previewError}
@@ -1286,6 +1264,7 @@ function ProfileSettingsModal({
   onPhotoUpload,
   onSectionChange,
   onSubmit,
+  open,
 }) {
   const [photoError, setPhotoError] = useState('');
   const [isPhotoUploading, setIsPhotoUploading] = useState(false);
@@ -1311,7 +1290,7 @@ function ProfileSettingsModal({
   };
 
   return (
-    <PortalModal title="Profile Settings" size="wide" onClose={onClose}>
+    <Modal open={open} title="Profile Settings" size="wide" onClose={onClose}>
       <form onSubmit={onSubmit} className="space-y-6">
         <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
@@ -1444,7 +1423,7 @@ function ProfileSettingsModal({
           </button>
         </div>
       </form>
-    </PortalModal>
+    </Modal>
   );
 }
 
@@ -1502,7 +1481,7 @@ function ProfessionalProfilePreviewModal({ error, isLoading, onClose, profile, t
           onClose={() => setPreviewDocument(null)}
         />
       )}
-      <PortalModal title={`View Profile As ${tierLabel}`} size="wide" onClose={onClose}>
+      <Modal open={Boolean(tier)} title={`View Profile As ${tierLabel}`} size="wide" onClose={onClose}>
         {isLoading ? (
           <div className="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950">
             <Loader2 size={18} className="animate-spin" />
@@ -1605,7 +1584,7 @@ function ProfessionalProfilePreviewModal({ error, isLoading, onClose, profile, t
             </div>
           </div>
         ) : null}
-      </PortalModal>
+      </Modal>
     </>
   );
 }
@@ -1860,8 +1839,8 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
         })}
         </div>
       </div>
-      {changeRequestRow && (
-        <PortalModal title="Request Identity Document Change/Removal" onClose={closeChangeRequest}>
+      <Modal open={Boolean(changeRequestRow)} title="Request Identity Document Change/Removal" onClose={closeChangeRequest}>
+        {changeRequestRow && (
           <form onSubmit={submitIdentityChangeRequest} className="space-y-4">
             <p className="text-sm font-medium text-slate-500">
               <strong className="text-slate-900 dark:text-white">{changeRequestRow.label}</strong> is approved and locked. PB Finance must review your reason before it can be replaced or removed.
@@ -1903,8 +1882,8 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
               </button>
             </div>
           </form>
-        </PortalModal>
-      )}
+        )}
+      </Modal>
     </>
   );
 }
@@ -2880,8 +2859,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         )}
       </div>
 
-      {changeRequestDocument && (
-        <PortalModal title="Request Document Change/Removal" onClose={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }}>
+      <Modal open={Boolean(changeRequestDocument)} title="Request Document Change/Removal" onClose={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }}>
+        {changeRequestDocument && (
           <form onSubmit={submitChangeRequest} className="space-y-4">
             <p className="text-sm font-medium text-slate-500">
               Your document <strong className="text-slate-900 dark:text-white">{changeRequestDocument.documentLabel}</strong> is currently approved and locked. To replace or remove it, please provide a reason for the admin to review.
@@ -2922,8 +2901,8 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
               </button>
             </div>
           </form>
-        </PortalModal>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }
@@ -3152,7 +3131,7 @@ function AppTalentOpportunitiesView() {
       )}
 
       {cancelTarget && (
-        <PortalModal title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
+        <Modal open={Boolean(cancelTarget)} title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
           <form onSubmit={submitCancelInterview} className="space-y-5">
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
               This will notify {cancelTarget.company || cancelTarget.clientName || 'the client'} and keep the reason visible on the cancelled request.
@@ -3180,7 +3159,7 @@ function AppTalentOpportunitiesView() {
               </button>
             </div>
           </form>
-        </PortalModal>
+        </Modal>
       )}
     </div>
   );

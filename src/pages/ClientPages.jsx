@@ -16,6 +16,7 @@ import FadeIn from '../components/FadeIn';
 import { ClientVerificationDashboard } from '../components/ClientVerificationDashboard';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
+import { Modal } from '../components/ui/Modal';
 import { useNotifications } from '../hooks/useNotifications';
 import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
@@ -121,27 +122,6 @@ const combineScheduleDateTime = ({ date, time }) => {
 };
 
 
-
-function PortalModal({ children, onClose, size = 'default', title }) {
-  const widthClass = size === 'wide' ? 'max-w-2xl' : 'max-w-lg';
-
-  return createPortal(
-    <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/65 px-4 py-6 backdrop-blur-sm sm:py-10">
-      <div className="flex min-h-full items-start justify-center">
-        <div className={`w-full ${widthClass} rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900`}>
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <h3 className="text-lg font-black text-slate-950 dark:text-white">{title}</h3>
-            <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">
-              <X size={18} />
-            </button>
-          </div>
-          {children}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const scheduleTimeOptions = Array.from({ length: 23 }, (_, index) => {
@@ -1232,7 +1212,7 @@ function AppDiscoverView({ user }) {
       </div>
 
       {previewProfile && (
-        <PortalModal title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
+        <Modal open={Boolean(previewProfile)} title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
           <div className="space-y-6">
             <div className="flex items-center gap-4 mb-4">
               <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-2xl border border-slate-200 dark:border-slate-800">
@@ -1274,7 +1254,7 @@ function AppDiscoverView({ user }) {
               </button>
             </div>
           </div>
-        </PortalModal>
+        </Modal>
       )}
     </div>
   );
@@ -1603,7 +1583,7 @@ function AppShortlistView({ user }) {
       )}
 
       {previewProfile && (
-        <PortalModal title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
+        <Modal open={Boolean(previewProfile)} title={`${previewProfile.name || previewProfile.fullName || 'Candidate'}'s Profile & Qualifications`} onClose={() => setPreviewProfile(null)} size="wide">
           <div className="space-y-6">
             <div className="flex items-center gap-4 mb-4">
               <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 text-2xl border border-slate-200 dark:border-slate-800">
@@ -1645,11 +1625,11 @@ function AppShortlistView({ user }) {
               </button>
             </div>
           </div>
-        </PortalModal>
+        </Modal>
       )}
 
       {scheduleTarget && (
-        <PortalModal title="Request Interview" onClose={closeScheduleModal} size="wide">
+        <Modal open={Boolean(scheduleTarget)} title="Request Interview" onClose={closeScheduleModal} size="wide">
           <form onSubmit={submitSchedule} className="space-y-5">
             <div>
               <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-300">Preferred date and time</div>
@@ -1673,7 +1653,7 @@ function AppShortlistView({ user }) {
               </button>
             </div>
           </form>
-        </PortalModal>
+        </Modal>
       )}
     </div>
   );
@@ -1877,7 +1857,7 @@ function AppInterviewsView({ user }) {
       )}
 
       {cancelTarget && (
-        <PortalModal title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
+        <Modal open={Boolean(cancelTarget)} title="Cancel Interview" onClose={() => { setCancelFormError(''); setCancelTarget(null); }}>
           <form onSubmit={submitCancelInterview} className="space-y-5">
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
               This will notify {cancelTarget.name || cancelTarget.candidateName || 'the professional'} and keep the reason visible on the cancelled interview.
@@ -1905,7 +1885,7 @@ function AppInterviewsView({ user }) {
               </button>
             </div>
           </form>
-        </PortalModal>
+        </Modal>
       )}
     </div>
   );
