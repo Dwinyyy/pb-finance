@@ -2,22 +2,132 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Outfit", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  
-  --color-primary-50: #f0f4fc;
-  --color-primary-100: #e2ebf9;
-  --color-primary-200: #c9daf3;
-  --color-primary-300: #a2c2eb;
-  --color-primary-400: #75a4e0;
-  --color-primary-500: #5185d5;
-  --color-primary-600: #3b6ac6;
-  --color-primary-700: #3155aa;
-  --color-primary-800: #2b468b;
-  --color-primary-900: #263c70;
-  --color-primary-950: #192546;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --color-pb-midnight: #0B1F3A;
+  --color-pb-midnight-soft: #E8EEF5;
+  --color-pb-midnight-strong: #071426;
+  --color-pb-cobalt-50: #EFF6FF;
+  --color-pb-cobalt-100: #DBEAFE;
+  --color-pb-cobalt-200: #BFDBFE;
+  --color-pb-cobalt-300: #93C5FD;
+  --color-pb-cobalt-400: #60A5FA;
+  --color-pb-cobalt-500: #3B82F6;
+  --color-pb-cobalt-600: #2563EB;
+  --color-pb-cobalt-700: #1D4ED8;
+  --color-pb-cobalt-800: #1E40AF;
+  --color-pb-cobalt-900: #1E3A8A;
+  --color-pb-cobalt-950: #172554;
+  --color-primary-50: #EFF6FF;
+  --color-primary-100: #DBEAFE;
+  --color-primary-200: #BFDBFE;
+  --color-primary-300: #93C5FD;
+  --color-primary-400: #60A5FA;
+  --color-primary-500: #3B82F6;
+  --color-primary-600: #2563EB;
+  --color-primary-700: #1D4ED8;
+  --color-primary-800: #1E40AF;
+  --color-primary-900: #1E3A8A;
+  --color-primary-950: #172554;
+  --color-pb-emerald: #047857;
+  --color-pb-signal: #0E7490;
+  --color-pb-champagne: #A67C38;
+  --color-pb-pearl: #F7F9FC;
+  --color-pb-ink: #0A1628;
+  --color-attention: #B45309;
+  --color-danger: #B42318;
+  --radius-control: 0.875rem;
+  --radius-card: 1.25rem;
+  --radius-modal: 1.5rem;
+  --shadow-card: 0 12px 32px -22px rgb(11 31 58 / 0.34);
+  --shadow-modal: 0 28px 80px -24px rgb(5 11 20 / 0.55);
+  --ease-pb-fluid: cubic-bezier(0.16, 1, 0.3, 1);
 
   --color-slate-900: #0f172a;
   --color-slate-950: #020617;
+}
+
+:root {
+  --pb-canvas: #F7F9FC;
+  --pb-surface: #FFFFFF;
+  --pb-surface-muted: #EEF3F8;
+  --pb-text-primary: #0A1628;
+  --pb-text-muted: #526175;
+  --pb-border-subtle: #D9E2EC;
+  --pb-border-control: #7C8FA5;
+  --pb-action: #2563EB;
+  --pb-focus: #2563EB;
+  --pb-info: #1D4ED8;
+  --pb-info-surface: #EFF6FF;
+  --pb-info-border: #93C5FD;
+  --pb-verified: #047857;
+  --pb-verified-surface: #D1FAE5;
+  --pb-verified-border: #6EE7B7;
+  --pb-processing: #0E7490;
+  --pb-processing-surface: #CFFAFE;
+  --pb-processing-border: #67E8F9;
+  --pb-warning: #92400E;
+  --pb-warning-surface: #FEF3C7;
+  --pb-warning-border: #F59E0B;
+  --pb-danger: #912018;
+  --pb-danger-surface: #FEE4E2;
+  --pb-danger-border: #F97066;
+  --pb-premium-detail: #A67C38;
+}
+
+.dark {
+  --pb-canvas: #07111F;
+  --pb-surface: #0D1B2A;
+  --pb-surface-muted: #13263A;
+  --pb-text-primary: #F8FAFC;
+  --pb-text-muted: #A8B4C4;
+  --pb-border-subtle: #21364D;
+  --pb-border-control: #526B86;
+  --pb-action: #2563EB;
+  --pb-focus: #60A5FA;
+  --pb-info: #93C5FD;
+  --pb-info-surface: #10284F;
+  --pb-info-border: #2563EB;
+  --pb-verified: #34D399;
+  --pb-verified-surface: #0B2B22;
+  --pb-verified-border: #047857;
+  --pb-processing: #22D3EE;
+  --pb-processing-surface: #082A33;
+  --pb-processing-border: #0E7490;
+  --pb-warning: #FCD34D;
+  --pb-warning-surface: #2B1D08;
+  --pb-warning-border: #B45309;
+  --pb-danger: #FDA29B;
+  --pb-danger-surface: #2A1214;
+  --pb-danger-border: #B42318;
+  --pb-premium-detail: #D9BC78;
+}
+
+@theme inline {
+  --color-canvas: var(--pb-canvas);
+  --color-surface: var(--pb-surface);
+  --color-surface-muted: var(--pb-surface-muted);
+  --color-text-primary: var(--pb-text-primary);
+  --color-text-muted: var(--pb-text-muted);
+  --color-border-subtle: var(--pb-border-subtle);
+  --color-border-control: var(--pb-border-control);
+  --color-action: var(--pb-action);
+  --color-focus: var(--pb-focus);
+  --color-info: var(--pb-info);
+  --color-info-surface: var(--pb-info-surface);
+  --color-info-border: var(--pb-info-border);
+  --color-verified: var(--pb-verified);
+  --color-verified-surface: var(--pb-verified-surface);
+  --color-verified-border: var(--pb-verified-border);
+  --color-processing: var(--pb-processing);
+  --color-processing-surface: var(--pb-processing-surface);
+  --color-processing-border: var(--pb-processing-border);
+  --color-warning: var(--pb-warning);
+  --color-warning-surface: var(--pb-warning-surface);
+  --color-warning-border: var(--pb-warning-border);
+  --color-danger: var(--pb-danger);
+  --color-danger-surface: var(--pb-danger-surface);
+  --color-danger-border: var(--pb-danger-border);
+  --color-premium-detail: var(--pb-premium-detail);
 }
 
 @utility ai-gradient-text {

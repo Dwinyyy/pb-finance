@@ -18,3 +18,7 @@ Do not ask the user to choose tools unless credentials, destructive changes, pai
 MagicPath has been authenticated on this machine. `npx -y magicpath-ai whoami -o json` verified a logged-in MagicPath user for `aldwin.gotingco475@gmail.com`.
 
 Do not ask the user to authenticate MagicPath again unless a MagicPath command reports an authentication failure.
+
+## PB Finance Signature Design System
+
+For all future UI and UX work, use the canonical tokens and usage rules in `docs/design-system/pb-signature-colors.md`. Do not introduce raw brand hex values or page-owned status colors when a semantic token or shared UI primitive exists.
