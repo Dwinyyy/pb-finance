@@ -21,6 +21,7 @@ The redesign will introduce a restrained institutional-fintech system: deep navy
 5. Make client and professional tier state visible and consistent without creating a redundant tier-management screen.
 6. Improve responsive behavior, keyboard access, error feedback, dark mode, and reduced-motion behavior.
 7. Preserve all existing verification rules, document requirements, locking behavior, tier permissions, backend calls, and protected business-name handling.
+8. Integrate five brand feelings—Trust & Security, Wealth & Growth, Innovation & Tech, Action & Highlights, and Clarity & Luxury—through intentional color placement rather than decorative color repetition.
 
 ## Non-goals
 
@@ -33,7 +34,7 @@ The redesign will introduce a restrained institutional-fintech system: deep navy
 
 ## Chosen approach
 
-The implementation will use semantic CSS-first tokens in `src/index.css`, small reusable React primitives under `src/components/ui`, and focused composition components for the client and professional workflows. Existing pages will consume these primitives while retaining their current state and API integration.
+The implementation will use semantic CSS-first tokens in `src/index.css`, small reusable React primitives under `src/components/ui`, and focused composition components for the client and professional workflows. Existing pages will consume these primitives while retaining their current state and API integration. The palette will be layered: premium neutral surfaces provide clarity, navy and blue establish trust, and tightly controlled growth, innovation, and action accents reinforce only the sections whose meaning they match.
 
 This is preferable to a page-by-page restyle because the current inconsistency comes from duplicated visual decisions. It is also preferable to adopting a third-party UI kit because PB Finance already has the necessary dependencies and needs a compact, product-specific system rather than another abstraction layer.
 
@@ -41,18 +42,36 @@ This is preferable to a page-by-page restyle because the current inconsistency c
 
 ### Color
 
-The palette will use semantic roles rather than page-specific color literals:
+The palette will use semantic roles rather than page-specific color literals. Its hierarchy follows a roughly 70/20/10 balance: premium neutral surfaces dominate, trust colors provide structure, and expressive accents remain scarce enough to feel meaningful.
 
-- `brand`: primary PB Finance action and selected states; a confident mid-to-deep blue.
-- `accent`: sparingly used cyan for emphasis, focus detail, and verified highlights.
-- `canvas`: application background with a subtle cool neutral tint.
-- `surface`: primary card and modal background.
-- `surface-muted`: secondary regions, inset sections, and disabled controls.
-- `ink`, `ink-muted`, and `ink-subtle`: content hierarchy.
-- `border` and `border-strong`: default and emphasized dividers.
-- `success`, `warning`, `danger`, and `info`: semantic workflow states with matching soft backgrounds and borders.
+| Feeling | Core color direction | Intended use |
+| --- | --- | --- |
+| Trust & Security | Deep navy `#0B1F3A`, security blue `#1D4ED8` | App chrome, verification headers, identity sections, lock states, protected-data callouts, and focus structure |
+| Wealth & Growth | Refined emerald `#047857` with soft mint surfaces | Approved and completed states, positive progress, verified business identity, readiness, and successful outcomes |
+| Innovation & Tech | Cyan `#0E7490` with a restrained indigo companion `#4F46E5` | Liveness, drag-active and processing states, preview technology, automation cues, and technical helper details |
+| Action & Highlights | Action cobalt `#2563EB` plus amber `#B7791F` for attention | Primary calls to action, selected navigation, active controls, upload initiation, deadlines, and review-needed highlights |
+| Clarity & Luxury | Pearl `#F7F9FC`, white `#FFFFFF`, ink `#0A1628`, and champagne `#A67C38` used only as a fine accent | Canvas, cards, modals, typography hierarchy, premium separators, restrained eyebrow details, and generous negative space |
 
-Dark mode will preserve the same semantic relationships instead of mechanically inverting colors. Cards will be slightly lighter than the canvas, borders will remain visible without glowing, and status colors will retain sufficient contrast.
+These values are anchors, not a license to use raw hex codes in page components. `@theme` and semantic custom properties will expose roles such as `canvas`, `surface`, `ink`, `trust`, `growth`, `innovation`, `action`, `premium`, `border`, and their soft/strong variants.
+
+Semantic safety takes precedence over brand expression:
+
+- Emerald represents verified, approved, completed, or healthy progress. It will not decorate incomplete steps.
+- Amber represents attention, upcoming expiration, pending review, or a consequential choice. It will not imply success.
+- Red remains exclusive to rejection, invalid input, destructive action, or expired failure states.
+- Cyan and indigo communicate technology, activity, or preview behavior; they will not replace green approval states.
+- Champagne communicates premium restraint through thin details and small highlights. It will never become a low-contrast body-text color or imply a paid tier that does not exist.
+- Amber and champagne anchors will use dark ink when they appear on filled surfaces; they will not be paired with white body text at insufficient contrast.
+
+Dark mode will preserve the same semantic relationships instead of mechanically inverting colors. The canvas will use a deep blue-black, cards will be slightly lighter, borders will remain visible without glowing, and expressive colors will be desaturated enough to avoid neon visual noise. Text and control combinations must meet WCAG AA contrast.
+
+### Color choreography by workflow
+
+- **Client Verification:** Trust navy anchors the page and identity requirements; innovation cyan marks liveness and active upload processing; growth emerald appears only as evidence becomes complete or approved; action cobalt owns the final submit action; pearl surfaces and restrained champagne details keep the experience clear and premium.
+- **Professional Onboarding:** Trust colors frame identity and regulated credentials; innovation colors distinguish liveness, automation, and file-processing moments; growth colors show completion and verified standing; amber draws attention to missing or expiring evidence; premium neutrals keep dense document sections calm.
+- **Tier presentation:** Basic and unverified tiers use clear neutral styling, verified tiers use growth emerald supported by a subtle trust-blue edge, and preview controls use action/innovation colors without suggesting that preview mode changes the account tier.
+- **Profile Settings:** Clarity and luxury dominate through pearl surfaces, ink typography, spacious grouping, and a fine champagne divider. Cobalt appears only on Save; growth appears only after a successful save.
+- **Document Change/Removal:** Trust navy explains that the approved file remains protected, amber identifies the request as consequential and pending admin review, cobalt submits the request, and red appears only when validation or submission fails.
 
 ### Typography
 
@@ -74,7 +93,7 @@ The system will define one fluid easing curve and consistent short/medium durati
 
 ### Button
 
-The existing `Button` component will become the canonical action primitive. It will support primary, secondary, outline, ghost, and danger variants; small, medium, and large sizes; leading icons; loading state; disabled state; and full-width layout. Keyboard focus will use `focus-visible`, not a permanent focus ring. Hover and active effects will be subtle and disabled while busy.
+The existing `Button` component will become the canonical action primitive. It will support primary, secondary, outline, ghost, and danger variants; small, medium, and large sizes; leading icons; loading state; disabled state; and full-width layout. Primary actions use action cobalt, protected or secondary actions use trust navy or neutral styling, successful completion is communicated outside the button with growth feedback, and danger remains red. Keyboard focus will use `focus-visible`, not a permanent focus ring. Hover and active effects will be subtle and disabled while busy.
 
 ### Form controls
 
@@ -92,11 +111,13 @@ One accessible drop-zone component will power client and professional document u
 - Remain fully usable on touch devices where drag and drop is unavailable.
 - Use an indeterminate spinner and “Uploading securely” copy instead of fabricated progress.
 
+The drop zone uses a neutral resting state, innovation cyan while dragging or processing, growth emerald only after a valid upload completes, trust navy when a document is approved and locked, amber for pending change or expiration attention, and red for rejection or validation failure.
+
 Each document remains a separate file input. The professional PRC, BOA, tax, identity, liveness, resume, and other document rules will not be collapsed into “OR” logic.
 
 ### SurfaceCard, StatusBadge, ProgressSummary, and FeedbackBanner
 
-These small presentation primitives will establish consistent card structure, tier/document status display, completion summaries, and success/error notices. Status components will map existing backend values to semantic labels and styles in one place while preserving the underlying value.
+These small presentation primitives will establish consistent card structure, tier/document status display, completion summaries, and success/error notices. Status components will map existing backend values to semantic labels and styles in one place while preserving the underlying value. Centralizing the mapping prevents visually attractive accent colors from overriding the meaning of backend statuses.
 
 ### SegmentedControl
 
@@ -121,7 +142,7 @@ There is no standalone User Tiers page. Tier information is currently expressed 
 
 - Client tiers will display the backend-provided Basic or Verified label consistently in the client shell and relevant verification/status areas.
 - Professional tiers will display the backend-provided Unverified, Basic, or Verified label where available. No frontend-only tier will be invented.
-- Tier badges will use the shared status system rather than custom per-page pills.
+- Tier badges will use the shared status system rather than custom per-page pills: neutral for Basic/Unverified and growth emerald with a restrained trust-blue detail for Verified.
 - Locked navigation or actions will continue to be driven by current permission checks.
 - “View Profile As” becomes a segmented Basic Client / Verified Client control with a concise explanation of what each audience can see.
 - Preview content continues to come from `backendApi.talent.getProfilePreview`; the frontend must not infer document visibility.
@@ -132,7 +153,7 @@ The client shell will gain a calmer responsive workspace, consistent horizontal 
 
 Client Verification will be organized as follows:
 
-1. A page header containing the trust-center label, title, short explanation, status badge, and “N of 4 ready” progress summary.
+1. A trust-led page header containing the trust-center label, title, short explanation, status badge, and “N of 4 ready” progress summary. Trust navy provides structure while the progress indicator earns growth color only as requirements become complete.
 2. A compact status panel for draft, pending review, rejected, or approved state. Admin notes and `verifiedBusinessName` remain prominent and read-only.
 3. A responsive two-column requirement grid for Valid ID, Liveness Selfie, Profile Picture, and Proof of Business.
 4. Each requirement card uses the shared drop zone and clearly shows document guidance, current status, rejection reason, file metadata, and available action.
@@ -145,7 +166,7 @@ Errors that apply to one upload appear inside that requirement card; page/networ
 
 The professional shell will use the same canvas, navigation, gutters, tier status, and content-width rules as the client shell while retaining professional-specific navigation and permissions.
 
-The dashboard header will group account status, approval requirements, completion progress, tier-preview control, and the primary next action. Profile content will use generous card spacing and clearer separation between personal profile, availability/rates, skills/tools, identity, and regulated credentials.
+The dashboard header will group account status, approval requirements, completion progress, tier-preview control, and the primary next action. Profile content will use generous card spacing and clearer separation between personal profile, availability/rates, skills/tools, identity, and regulated credentials. Wealth/growth color supports positive completion and verified standing, while innovation color is reserved for liveness, processing, preview, and automated-expiration cues.
 
 Professional Onboarding will keep the existing data and behavior but improve information architecture:
 
@@ -168,6 +189,7 @@ Profile Settings will use the shared wide modal and a structured layout:
 - The photo zone includes the existing guidance for proper attire, neutral background, and professional pose.
 - Bio, rates, titles, skills, tools, work preferences, availability, experience, and location use the shared field system.
 - Related fields are grouped under short section headings rather than presented as one uninterrupted list.
+- Pearl and white surfaces, ink hierarchy, and a fine champagne accent create the premium tone; fields remain neutral so the cobalt Save action is unmistakable.
 - The footer remains visible while scrolling and contains Cancel and Save Profile actions.
 - Save errors appear in an `aria-live` summary and next to the affected field where the frontend can identify it.
 - The modal never expands inline inside the dashboard.
@@ -177,6 +199,7 @@ Profile Settings will use the shared wide modal and a structured layout:
 Identity and credential change requests will share one presentation pattern while preserving their existing submit handlers and payloads.
 
 - The header identifies the locked document and uses a warning status, not a destructive red treatment.
+- Trust navy communicates continued document protection while amber communicates that the requested change requires admin attention.
 - A select provides the existing predefined reasons.
 - The custom explanation field appears when the chosen reason requires it and remains available as supporting context where currently permitted.
 - The modal explains that the document stays approved and locked until an admin reviews the request.
@@ -249,6 +272,8 @@ The exact implementation plan may refine names, but the intended boundaries are:
 ## Acceptance criteria
 
 - The target client and professional surfaces visibly share one design language in both themes.
+- The five requested feelings are visible in the sections mapped to them: trust/security in identity and protection, wealth/growth in verified progress, innovation/tech in liveness and processing, action/highlights in primary interactions and attention states, and clarity/luxury in the neutral foundation and finishing details.
+- Color use remains semantically consistent: green never decorates incomplete work, amber never signals approval, red remains reserved for failure/destructive states, and champagne never reduces text contrast or invents a paid-tier meaning.
 - No target workflow uses a bespoke modal, upload button, form-control style, tier toggle, or status badge when the shared primitive applies.
 - All required client and professional documents remain distinct and obey their current rules.
 - Drag-and-drop and click/keyboard upload paths produce the same validation and upload behavior.
