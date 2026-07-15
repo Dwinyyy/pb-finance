@@ -62,7 +62,7 @@ test('client shell migration preserves permission, onboarding, notification, and
 
 test('Discover layout shrinks without exposing closed matchmaker controls', () => {
   assert.match(discoverView, /className="flex min-w-0 flex-col items-start gap-8 lg:flex-row portal-fade-in"/);
-  assert.match(discoverView, /className="min-w-0 flex-1"/);
+  assert.match(discoverView, /className="w-full min-w-0 flex-1 lg:w-auto"/);
   assert.doesNotMatch(discoverView, /className="flex-1 w-full"/);
   assert.match(discoverView, /overflow-x-auto scrollbar-hide/);
   assert.match(matchmaker, /inert=\{!isOpen\}/);

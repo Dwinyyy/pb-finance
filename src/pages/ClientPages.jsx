@@ -1016,7 +1016,7 @@ function AppDiscoverView({ user }) {
       </div>
 
       {/* Main Grid */}
-      <div className="min-w-0 flex-1">
+      <div className="w-full min-w-0 flex-1 lg:w-auto">
         <div className="mb-6 flex min-w-0 items-center justify-between">
           <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-hide pb-2">
             {TALENT_SKILL_FILTERS.map((filter) => (

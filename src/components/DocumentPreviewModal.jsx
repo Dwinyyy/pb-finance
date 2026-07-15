@@ -224,6 +224,16 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
   const [preview, setPreview] = useState(() => getInitialPreviewState(previewDocument));
   const [imageFallbackKey, setImageFallbackKey] = useState('');
   const [pdfFallbackKey, setPdfFallbackKey] = useState('');
+  const protectedContentRef = useRef(null);
+
+  useEffect(() => {
+    const protectedContent = protectedContentRef.current;
+
+    if (!protectedContent) return undefined;
+
+    protectedContent.addEventListener('selectstart', preventPreviewInteraction);
+    return () => protectedContent.removeEventListener('selectstart', preventPreviewInteraction);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -470,13 +480,13 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
       bodyClassName="!overflow-hidden !p-0"
     >
     <div
+      ref={protectedContentRef}
       className="document-preview-locked flex h-full min-h-0 flex-1 items-center justify-center bg-surface-muted text-text-primary"
       onContextMenu={(event) => event.preventDefault()}
       onCopy={preventPreviewInteraction}
       onCut={preventPreviewInteraction}
       onDragStart={preventPreviewInteraction}
       onPaste={preventPreviewInteraction}
-      onSelectStart={preventPreviewInteraction}
     >
       <style>
         {`

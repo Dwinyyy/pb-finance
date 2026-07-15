@@ -1539,7 +1539,7 @@ function ProfessionalProfilePreviewModal({ error, isLoading, onClose, profile, t
       )}
       <Modal
         description="This audience preview is read-only and never changes your professional account tier or visibility."
-        open={Boolean(tier)}
+        open={Boolean(tier) && !previewDocument}
         title={`View Profile As ${tierLabel}`}
         size="wide"
         onClose={onClose}

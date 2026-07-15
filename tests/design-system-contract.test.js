@@ -13,6 +13,7 @@ const clientDashboard = readFileSync(new URL('../src/components/ClientVerificati
 const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
 const documentPreview = readFileSync(new URL('../src/components/DocumentPreviewModal.jsx', import.meta.url), 'utf8');
 const fadeIn = readFileSync(new URL('../src/components/FadeIn.jsx', import.meta.url), 'utf8');
+const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
 
 test('signature primitives and semantic aliases are canonical', () => {
   for (const [token, value] of Object.entries({
@@ -90,11 +91,13 @@ test('document preview uses semantic presentation without weakening read-only fa
     /onCut=\{preventPreviewInteraction\}/,
     /onDragStart=\{preventPreviewInteraction\}/,
     /onPaste=\{preventPreviewInteraction\}/,
-    /onSelectStart=\{preventPreviewInteraction\}/,
+    /addEventListener\('selectstart', preventPreviewInteraction\)/,
+    /removeEventListener\('selectstart', preventPreviewInteraction\)/,
     /document-preview-locked/,
   ]) {
     assert.match(documentPreview, protection);
   }
+  assert.doesNotMatch(documentPreview, /onSelectStart=/);
 
   for (const fallback of [
     /previewDocument\.previewUrl/,
@@ -113,6 +116,8 @@ test('document preview uses semantic presentation without weakening read-only fa
 });
 
 test('global and reveal motion honor the reduced-motion preference', () => {
+  assert.match(main, /import \{ MotionConfig \} from 'framer-motion'/);
+  assert.match(main, /<MotionConfig reducedMotion="user">[\s\S]*<BrowserRouter>/);
   assert.match(fadeIn, /useReducedMotion/);
   assert.match(fadeIn, /prefersReducedMotion/);
   assert.match(fadeIn, /whileHover=\{hover && !prefersReducedMotion/);

@@ -58,9 +58,11 @@ test('document preview delegates dialog mechanics while retaining protected fall
     /onCut=\{preventPreviewInteraction\}/,
     /onDragStart=\{preventPreviewInteraction\}/,
     /onPaste=\{preventPreviewInteraction\}/,
-    /onSelectStart=\{preventPreviewInteraction\}/,
+    /addEventListener\('selectstart', preventPreviewInteraction\)/,
+    /removeEventListener\('selectstart', preventPreviewInteraction\)/,
     /document-preview-locked/,
   ]) assert.match(documentPreview, protection);
+  assert.doesNotMatch(documentPreview, /onSelectStart=/);
 
   for (const fallback of [
     /previewDocument\.previewUrl/,
@@ -72,6 +74,10 @@ test('document preview delegates dialog mechanics while retaining protected fall
     /previewDocument\.cacheKey/,
     /canvas\.className = 'mx-auto rounded-lg bg-white/,
   ]) assert.match(documentPreview, fallback);
+});
+
+test('professional document preview suspends its parent audience dialog', () => {
+  assert.match(professional, /open=\{Boolean\(tier\) && !previewDocument\}/);
 });
 
 test('profile settings resets transient upload state across close and reopen', () => {

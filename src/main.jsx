@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
 import { BrowserRouter } from 'react-router-dom'
+import { MotionConfig } from 'framer-motion'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
 if (import.meta.env.VITE_SENTRY_DSN) {
@@ -28,7 +29,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
-      <BrowserRouter><App /></BrowserRouter>
+      <MotionConfig reducedMotion="user">
+        <BrowserRouter><App /></BrowserRouter>
+      </MotionConfig>
     </ErrorBoundary>
   </StrictMode>,
 )
