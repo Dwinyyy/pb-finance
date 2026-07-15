@@ -32,8 +32,7 @@ export const Button = React.forwardRef(({
   return (
     <Motion.button
       ref={ref}
-      whileHover={isMotionDisabled ? undefined : { y: -1 }}
-      whileTap={isMotionDisabled ? undefined : { y: 1, scale: 0.98 }}
+      whileTap={isMotionDisabled ? undefined : { scale: 0.98 }}
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
       disabled={disabled || isLoading}
       aria-busy={isLoading || undefined}

@@ -43,14 +43,15 @@ test('shared primitives expose accessible semantic interfaces', () => {
   assert.match(read('../src/components/ui/Button.jsx'), /focus-visible:ring-focus/);
 });
 
-test('Button removes hover and tap transforms when reduced motion is requested', () => {
+test('Button uses one positional mechanism and gates tap scale for reduced motion', () => {
   const button = read('../src/components/ui/Button.jsx');
 
   assert.match(button, /import \{ motion as Motion, useReducedMotion \} from 'framer-motion';/);
   assert.match(button, /const shouldReduceMotion = useReducedMotion\(\);/);
   assert.match(button, /const isMotionDisabled = shouldReduceMotion \|\| disabled \|\| isLoading;/);
-  assert.match(button, /whileHover=\{isMotionDisabled \? undefined : \{ y: -1 \}\}/);
-  assert.match(button, /whileTap=\{isMotionDisabled \? undefined : \{ y: 1, scale: 0\.98 \}\}/);
+  assert.doesNotMatch(button, /whileHover=/);
+  assert.match(button, /whileTap=\{isMotionDisabled \? undefined : \{ scale: 0\.98 \}\}/);
+  assert.doesNotMatch(button, /while(?:Hover|Tap)=\{[^\n]*\by\s*:/);
 });
 
 test('Tailwind translation motion is opt-in through motion-safe', async () => {
