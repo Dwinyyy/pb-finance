@@ -8,8 +8,8 @@ import {
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Camera, Eye, EyeOff, IdCard,
-  Bookmark, MessageSquare, SlidersHorizontal,
-  ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
+  Bookmark, SlidersHorizontal,
+  ChevronRight, FileText, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2, Plus,
   Upload, Link2, ExternalLink
 } from 'lucide-react';
@@ -19,6 +19,7 @@ import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
 import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
+import { FileDropzone } from '../components/ui/FileDropzone';
 import { FormField, formControlClassName } from '../components/ui/FormField';
 import { Modal } from '../components/ui/Modal';
 import { SegmentedControl } from '../components/ui/SegmentedControl';
@@ -196,12 +197,6 @@ const formatFileSize = (value) => {
 const getCredentialStatusLabel = (status) => (
   status === 'draft' ? 'saved' : String(status || 'saved').replace(/_/g, ' ')
 );
-const getCredentialStatusStyle = (status) => ({
-  approved: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300',
-  pending_review: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300',
-  rejected: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300',
-  draft: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300',
-}[status || 'draft'] || 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400');
 const getCredentialStatusHint = (credential, missingText) => {
   if (!credential) return missingText;
   if (credential.status === 'approved') return 'Approved by admin';
@@ -536,145 +531,104 @@ function CredentialUploadRow({
   const canRemoveUpload = upload && (!isApproved || isRejected || canRemoveApprovedChange);
   const isLockedApproved = isApproved && !canRemoveApprovedChange;
   const removeBusy = busyUpload === `remove:${documentKey}`;
-  const statusText = isUnderRequest ? 'Under request' : getCredentialStatusLabel(upload?.status);
-  const statusStyle = isUnderRequest
-    ? 'border-cyan-100 bg-cyan-50 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300'
-    : getCredentialStatusStyle(upload?.status);
   const noExpiryRequired = Boolean(upload?.noExpiryRequired);
   const isExpiryMissing = isRequired && requiredCredentialMissingExpiry(upload);
   const isExpiryLocked = isLockedApproved;
+  const safeDocumentKey = String(documentKey || documentLabel).replace(/[^a-z0-9_-]+/gi, '-').toLowerCase();
+  const dropzoneStatus = isUnderRequest ? 'pending_change' : (upload?.status || '');
+  const fileMeta = [formatFileSize(upload?.fileSize), detail].filter(Boolean).join(' · ');
 
   return (
-    <div className={`rounded-2xl border p-4 ${
-      isRejected
-        ? 'border-red-200 bg-red-50/30 dark:border-red-900/40 dark:bg-red-950/10'
-        : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950'
-    }`}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-sm font-black text-slate-950 dark:text-white">{documentLabel}</div>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black uppercase tracking-wider ${
-              isRequired
-                ? 'border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
-                : 'border-cyan-100 bg-cyan-50 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300'
-            }`}>
-              {isRequired ? 'Required' : 'Optional'}
-            </span>
-          </div>
-          <div className="mt-1 text-xs font-bold text-slate-400">
-            {upload
-              ? `${upload.fileName} ${formatFileSize(upload.fileSize) ? `- ${formatFileSize(upload.fileSize)}` : ''}`
-              : detail}
-          </div>
-          
-          {upload && (
-            <div className="mt-3 flex flex-col gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-              <div className="flex flex-wrap items-center gap-2">
-                <Calendar size={14} />
-                <span>Expires:</span>
-                <input
-                  type="date"
-                  value={upload.expiryDate || ''}
-                  disabled={isExpiryLocked || noExpiryRequired}
-                  required={isRequired && !noExpiryRequired}
-                  onChange={(e) => onChangeExpiry && onChangeExpiry(upload.id, e.target.value)}
-                  className={`rounded border bg-transparent px-2 py-0.5 text-xs outline-none disabled:opacity-50 dark:border-slate-800 ${
-                    isExpiryMissing
-                      ? 'border-amber-300 focus:border-amber-500 dark:border-amber-900/60'
-                      : 'border-slate-200 focus:border-cyan-500'
-                  }`}
-                />
-              </div>
-              <label className="inline-flex w-fit items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                <input
-                  type="checkbox"
-                  checked={noExpiryRequired}
-                  disabled={isExpiryLocked}
-                  onChange={(event) => onChangeNoExpiryRequired?.(upload.id, event.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 disabled:opacity-50"
-                />
-                No expiration date
-              </label>
-              {isLockedApproved && (
-                <div className="text-xs font-semibold text-slate-400">
-                  Request change to update expiration details.
-                </div>
-              )}
-              {isExpiryMissing && (
-                <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                  Required for verification unless this document does not expire.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {upload && (
-            <span className={`rounded-full border px-2.5 py-1 text-xs font-black capitalize ${statusStyle}`}>
-              {statusText}
-            </span>
-          )}
-          {upload && (
-            <button
-              type="button"
-              onClick={() => onView?.(upload)}
-              onFocus={() => onPreviewWarmup?.(upload)}
-              onMouseEnter={() => onPreviewWarmup?.(upload)}
-              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-            >
-              <ExternalLink size={14} />
-              View
-            </button>
-          )}
-          {isLockedApproved ? (
-            !isUnderRequest && (
-              <button
-                onClick={() => onRequestChange && onRequestChange({ documentKey, documentLabel, documentType })}
-                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
-              >
-                Request Change/Removal
-              </button>
-            )
-          ) : (
-            <>
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {upload ? 'Replace' : 'Upload'}
-                <input
-                  type="file"
-                  accept={DOCUMENT_ACCEPTS[documentType] || DOCUMENT_ACCEPTS.other_document}
-                  className="hidden"
-                  onChange={(event) => {
-                    onUpload({
-                      documentKey,
-                      documentType,
-                      file: event.target.files?.[0],
-                      label: documentLabel,
-                    });
-                    event.target.value = '';
-                  }}
-                />
-              </label>
-              {canRemoveUpload && onRemove && (
-                <button
-                  onClick={() => onRemove({ documentKey, documentType, label: documentLabel })}
-                  disabled={removeBusy || Boolean(busyUpload)}
-                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 transition-colors hover:bg-red-50 disabled:cursor-default disabled:opacity-60 dark:border-red-900/40 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/20"
-                >
-                  {removeBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  Remove
-                </button>
-              )}
-            </>
-          )}
-        </div>
+    <div className="min-w-0 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <StatusBadge label={isRequired ? 'Required' : 'Optional'} tone={isRequired ? 'warning' : 'neutral'} />
+        {isUnderRequest && <StatusBadge label="Change request pending" status="pending_review" />}
       </div>
-      {getCredentialReviewMessage(upload) && (
-        <div className="mt-3 flex gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
-          <MessageSquare size={14} className="mt-0.5 shrink-0" />
-          <span>{getCredentialReviewMessage(upload)}</span>
-        </div>
+
+      <div
+        onFocusCapture={() => onPreviewWarmup?.(upload)}
+        onMouseEnter={() => onPreviewWarmup?.(upload)}
+      >
+        <FileDropzone
+          accept={DOCUMENT_ACCEPTS[documentType] || DOCUMENT_ACCEPTS.other_document}
+          error={getCredentialReviewMessage(upload)}
+          fileMeta={fileMeta}
+          fileName={upload?.fileName || ''}
+          helpText={`${detail || 'PDF, JPG, or PNG'}. Maximum file size: 3 MB.`}
+          id={`credential-upload-${safeDocumentKey}`}
+          isBusy={isBusy}
+          isLocked={isLockedApproved}
+          label={documentLabel}
+          onFile={(file) => onUpload({
+            documentKey,
+            documentType,
+            file,
+            label: documentLabel,
+          })}
+          onOpen={upload ? () => onView?.(upload) : undefined}
+          status={dropzoneStatus}
+        />
+      </div>
+
+      {isLockedApproved && !isUnderRequest && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="border-warning-border bg-warning-surface text-warning hover:bg-warning-surface/80"
+          onClick={() => onRequestChange?.({ documentKey, documentLabel, documentType })}
+        >
+          Request Change/Removal
+        </Button>
+      )}
+
+      {upload && (
+        <SurfaceCard as="div" tone="muted" className="space-y-3 p-4">
+          <FormField
+            id={`credential-expiry-${safeDocumentKey}`}
+            label="Expiration date"
+            required={isRequired && !noExpiryRequired}
+            error={isExpiryMissing ? 'Required for verification unless this document does not expire.' : ''}
+            hint={isLockedApproved ? 'Use Request Change/Removal to update expiration details.' : 'Keep this date current to avoid a verification downgrade.'}
+          >
+            {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+              <input
+                id={`credential-expiry-${safeDocumentKey}`}
+                type="date"
+                required={required}
+                aria-describedby={ariaDescribedBy}
+                aria-invalid={ariaInvalid || undefined}
+                value={upload.expiryDate || ''}
+                disabled={isExpiryLocked || noExpiryRequired}
+                onChange={(event) => onChangeExpiry?.(upload.id, event.target.value)}
+                className={className}
+              />
+            )}
+          </FormField>
+          <label className="inline-flex min-h-11 items-center gap-3 text-sm font-semibold text-text-primary">
+            <input
+              type="checkbox"
+              checked={noExpiryRequired}
+              disabled={isExpiryLocked}
+              onChange={(event) => onChangeNoExpiryRequired?.(upload.id, event.target.checked)}
+              className="h-5 w-5 rounded border-border-control text-action focus-visible:ring-4 focus-visible:ring-focus/25 disabled:opacity-50"
+            />
+            No expiration date
+          </label>
+        </SurfaceCard>
+      )}
+
+      {canRemoveUpload && onRemove && (
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          onClick={() => onRemove({ documentKey, documentType, label: documentLabel })}
+          disabled={removeBusy || Boolean(busyUpload)}
+        >
+          {removeBusy ? <Loader2 size={14} className="mr-2 animate-spin" aria-hidden="true" /> : <Trash2 size={14} className="mr-2" aria-hidden="true" />}
+          Remove file
+        </Button>
       )}
     </div>
   );
@@ -1726,7 +1680,6 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
       accept: DOCUMENT_ACCEPTS.other_document,
       description: 'Government-issued ID, front side. PDF, JPG, or PNG.',
       document: identityDocuments.validIdFront,
-      icon: IdCard,
       kind: 'valid_id_front',
       label: 'Valid ID front',
       required: true,
@@ -1737,7 +1690,6 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
       accept: DOCUMENT_ACCEPTS.other_document,
       description: 'Back side if your ID has separate rear details.',
       document: identityDocuments.validIdBack,
-      icon: IdCard,
       kind: 'valid_id_back',
       label: 'Valid ID back',
       required: false,
@@ -1746,9 +1698,9 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
     },
     {
       accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
+      capture: 'user',
       description: 'A fresh selfie facing the camera for liveness review.',
       document: identityDocuments.livenessSelfie,
-      icon: Camera,
       kind: 'liveness_selfie',
       label: 'Liveness selfie',
       required: true,
@@ -1807,6 +1759,13 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
     setChangeRequestCustomReason('');
   };
 
+  const openChangeRequest = (row) => {
+    if (row.document?.changeRequestStatus === 'pending') return;
+    setError('');
+    setMessage('');
+    setChangeRequestRow(row);
+  };
+
   const submitIdentityChangeRequest = async (event) => {
     event.preventDefault();
     const reason = changeRequestReason === 'Other'
@@ -1838,159 +1797,169 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
 
   return (
     <>
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-            <IdCard size={14} />
-            Professional onboarding
+      <SurfaceCard tone="trust" className="p-5 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-processing">
+              <IdCard size={14} aria-hidden="true" />
+              Professional onboarding
+            </div>
+            <h3 className="text-xl font-bold text-text-primary">Valid ID &amp; Liveness Check</h3>
+            <p className="mt-1 max-w-3xl text-sm font-medium text-text-muted">Dashboard access stays locked until PB Finance manually approves your identity and required documents.</p>
           </div>
-          <h3 className="text-xl font-bold text-slate-950 dark:text-white">Valid ID & Liveness Check</h3>
-          <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard access stays locked until PB Finance manually approves your identity and required documents.</p>
+          <StatusBadge
+            label={requiredComplete ? 'Ready for review' : 'Required'}
+            status={requiredComplete ? 'complete' : 'pending'}
+          />
         </div>
-        <span className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black ${
-          requiredComplete
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
-            : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
-        }`}>
-          {requiredComplete ? <CheckCircle size={14} /> : <Clock3 size={14} />}
-          {requiredComplete ? 'Ready for review' : 'Required'}
-        </span>
-      </div>
 
-      {error && (
-        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
-          {message}
-        </div>
-      )}
+        {error && (
+          <div role="alert" className="mb-5 rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-sm font-semibold text-danger">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div role="status" aria-live="polite" className="mb-5 rounded-control border border-verified-border bg-verified-surface px-5 py-4 text-sm font-semibold text-verified">
+            {message}
+          </div>
+        )}
 
-        <div className="grid gap-3 md:grid-cols-3">
-        {rows.map((row) => {
-          const Icon = row.icon;
-          const uploaded = hasIdentityArtifact(row.document);
-          const busy = busyKind === row.kind;
-          const changeRequestPending = row.document?.changeRequestStatus === 'pending';
+        <div className="grid min-w-0 gap-4 md:grid-cols-3">
+          {rows.map((row) => {
+            const uploaded = hasIdentityArtifact(row.document);
+            const busy = busyKind === row.kind;
+            const changeRequestPending = row.document?.changeRequestStatus === 'pending';
+            const status = changeRequestPending
+              ? 'pending_change'
+              : identityApproved && uploaded
+                ? 'approved'
+                : (row.document?.status || '');
+            const fileMeta = [
+              row.required ? 'Required' : 'Optional',
+              row.requiresExpiry && row.document?.expiryDate ? `Expires ${row.document.expiryDate}` : '',
+            ].filter(Boolean).join(' · ');
 
-          return (
-            <div key={row.kind} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-cyan-700 dark:bg-slate-900 dark:text-cyan-300">
-                    <Icon size={20} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-black text-slate-950 dark:text-white">{row.label}</div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{row.required ? 'Required' : 'Optional'}</div>
-                  </div>
-                </div>
-                <span className={`rounded-lg border px-2 py-1 text-[11px] font-black ${
-                  uploaded
-                    ? getCredentialStatusStyle(identityApproved ? 'approved' : (row.document?.status || 'draft'))
-                    : 'border-slate-200 bg-white text-slate-400 dark:border-slate-800 dark:bg-slate-900'
-                }`}>
-                  {uploaded ? getCredentialStatusLabel(identityApproved ? 'approved' : row.document?.status) : 'Missing'}
-                </span>
-              </div>
-              <p className="mb-4 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">{row.description}</p>
-              {uploaded && (
-                <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                  <div className="truncate">{row.document.fileName || row.document.label}</div>
-                  {row.requiresExpiry && row.document.expiryDate && (
-                    <div className="text-[11px] text-slate-400">Expires {row.document.expiryDate}</div>
-                  )}
-                </div>
-              )}
-              {row.requiresExpiry && !identityApproved && (
-                <label className="mb-3 block text-xs font-black text-slate-600 dark:text-slate-300">
-                  {row.kind === 'valid_id_front' ? 'Valid ID expiration date' : 'ID back expiration date'}
-                  <input
-                    type="date"
-                    min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
-                    value={expiryDates[row.kind] || ''}
-                    onChange={(event) => setExpiryDates((current) => ({
-                      ...current,
-                      [row.kind]: event.target.value,
-                    }))}
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900"
-                  />
-                </label>
-              )}
-              {identityApproved && uploaded ? (
-                <button
-                  type="button"
+            return (
+              <div key={row.kind} className="min-w-0 space-y-3">
+                {changeRequestPending && <StatusBadge label="Change request pending" status="pending_review" />}
+                {row.requiresExpiry && !identityApproved && (
+                  <FormField
+                    id={`identity-expiry-${row.kind}`}
+                    label={row.kind === 'valid_id_front' ? 'Valid ID expiration date' : 'ID back expiration date'}
+                    required={row.required}
+                    hint="Use a future expiration date before uploading this ID image."
+                  >
+                    {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                      <input
+                        id={`identity-expiry-${row.kind}`}
+                        type="date"
+                        required={required}
+                        aria-describedby={ariaDescribedBy}
+                        aria-invalid={ariaInvalid || undefined}
+                        min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                        value={expiryDates[row.kind] || ''}
+                        onChange={(event) => setExpiryDates((current) => ({
+                          ...current,
+                          [row.kind]: event.target.value,
+                        }))}
+                        className={className}
+                      />
+                    )}
+                  </FormField>
+                )}
+                <FileDropzone
+                  accept={row.accept}
+                  capture={row.capture}
                   disabled={changeRequestPending}
-                  onClick={() => setChangeRequestRow(row)}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-black text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-default disabled:opacity-60 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300"
-                >
-                  {changeRequestPending ? 'Request pending' : 'Request Change/Removal'}
-                </button>
-              ) : (
-                <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-cyan-600">
-                  {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                  {busy ? 'Uploading...' : uploaded ? 'Replace' : 'Upload'}
-                  <input
-                    type="file"
-                    accept={row.accept}
-                    className="hidden"
-                    onChange={async (event) => {
-                      await uploadIdentityFile(row, event.target.files?.[0]);
-                      event.target.value = '';
-                    }}
-                  />
-                </label>
-              )}
-            </div>
-          );
-        })}
-        </div>
-      </div>
-      <Modal open={Boolean(changeRequestRow)} title="Request Identity Document Change/Removal" onClose={closeChangeRequest}>
-        {changeRequestRow && (
-          <form onSubmit={submitIdentityChangeRequest} className="space-y-4">
-            <p className="text-sm font-medium text-slate-500">
-              <strong className="text-slate-900 dark:text-white">{changeRequestRow.label}</strong> is approved and locked. PB Finance must review your reason before it can be replaced or removed.
-            </p>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-              Reason for change or removal
-              <select
-                value={changeRequestReason}
-                onChange={(event) => setChangeRequestReason(event.target.value)}
-                required
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
-              >
-                <option value="" disabled>Select a reason...</option>
-                <option value="Document expired / needs renewal">Document expired / needs renewal</option>
-                <option value="Incorrect document uploaded">Incorrect document uploaded</option>
-                <option value="Details are outdated">Details are outdated</option>
-                <option value="Remove this document">Remove this document</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            {changeRequestReason === 'Other' && (
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                Please specify
-                <textarea
-                  value={changeRequestCustomReason}
-                  onChange={(event) => setChangeRequestCustomReason(event.target.value)}
-                  required
-                  rows={3}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
+                  error={getCredentialReviewMessage(row.document)}
+                  fileMeta={fileMeta}
+                  fileName={row.document?.fileName || row.document?.label || ''}
+                  helpText={`${row.description} Maximum file size: 3 MB.`}
+                  id={`identity-upload-${row.kind}`}
+                  isBusy={busy}
+                  isLocked={identityApproved && uploaded}
+                  label={row.label}
+                  onFile={(file) => uploadIdentityFile(row, file)}
+                  status={status}
                 />
-              </label>
-            )}
-            <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={closeChangeRequest} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 dark:border-slate-800 dark:text-slate-300">
-                Cancel
-              </button>
-              <button type="submit" disabled={changeRequestBusy || !changeRequestReason || (changeRequestReason === 'Other' && !changeRequestCustomReason.trim())} className="rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-70">
-                {changeRequestBusy ? 'Submitting...' : 'Submit Request'}
-              </button>
+                {identityApproved && uploaded && !changeRequestPending && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="w-full border-warning-border bg-warning-surface text-warning hover:bg-warning-surface/80"
+                    onClick={() => openChangeRequest(row)}
+                  >
+                    Request Change/Removal
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </SurfaceCard>
+
+      <Modal
+        open={Boolean(changeRequestRow)}
+        title="Request Identity Document Change/Removal"
+        description="Approved identity evidence stays protected while PB Finance admins review your request."
+        onClose={closeChangeRequest}
+        footer={changeRequestRow ? (
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeChangeRequest}>Cancel</Button>
+            <Button
+              type="submit"
+              form="identity-change-request-form"
+              isLoading={changeRequestBusy}
+              disabled={!changeRequestReason || (changeRequestReason === 'Other' && !changeRequestCustomReason.trim())}
+            >
+              Submit Request
+            </Button>
+          </div>
+        ) : null}
+      >
+        {changeRequestRow && (
+          <form id="identity-change-request-form" onSubmit={submitIdentityChangeRequest} className="space-y-5">
+            <div className="rounded-control border border-warning-border bg-warning-surface px-4 py-3 text-sm font-medium leading-relaxed text-warning">
+              <strong>{changeRequestRow.label}</strong> is approved and locked. The current document remains protected until an admin approves replacement or removal.
             </div>
+            {error && <div role="alert" className="rounded-control border border-danger-border bg-danger-surface px-4 py-3 text-sm font-semibold text-danger">{error}</div>}
+            <FormField id="identity-change-reason" label="Reason for change or removal" required>
+              {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                <select
+                  id="identity-change-reason"
+                  required={required}
+                  aria-describedby={ariaDescribedBy}
+                  aria-invalid={ariaInvalid || undefined}
+                  value={changeRequestReason}
+                  onChange={(event) => setChangeRequestReason(event.target.value)}
+                  className={className}
+                >
+                  <option value="" disabled>Select a reason...</option>
+                  <option value="Document expired / needs renewal">Document expired / needs renewal</option>
+                  <option value="Incorrect document uploaded">Incorrect document uploaded</option>
+                  <option value="Details are outdated">Details are outdated</option>
+                  <option value="Remove this document">Remove this document</option>
+                  <option value="Other">Other</option>
+                </select>
+              )}
+            </FormField>
+            {changeRequestReason === 'Other' && (
+              <FormField id="identity-change-custom-reason" label="Please specify" required>
+                {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                  <textarea
+                    id="identity-change-custom-reason"
+                    required={required}
+                    aria-describedby={ariaDescribedBy}
+                    aria-invalid={ariaInvalid || undefined}
+                    value={changeRequestCustomReason}
+                    onChange={(event) => setChangeRequestCustomReason(event.target.value)}
+                    rows={3}
+                    className={className}
+                  />
+                )}
+              </FormField>
+            )}
           </form>
         )}
       </Modal>
@@ -2495,6 +2464,19 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
     });
   };
 
+  const closeCredentialChangeRequest = () => {
+    setChangeRequestDocument('');
+    setChangeRequestReason('');
+    setChangeRequestCustomReason('');
+  };
+
+  const openCredentialChangeRequest = (document) => {
+    if (!document || document.changeRequestStatus === 'pending') return;
+    setCredentialError('');
+    setCredentialMessage('');
+    setChangeRequestDocument(document);
+  };
+
   const submitChangeRequest = async (e) => {
     e.preventDefault();
     setIsSubmittingChange(true);
@@ -2517,9 +2499,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       });
       onProfileUpdated(updated);
       setCredentialMessage('Change request submitted to admin. You will be notified once it is reviewed.');
-      setChangeRequestDocument('');
-      setChangeRequestReason('');
-      setChangeRequestCustomReason('');
+      closeCredentialChangeRequest();
     } catch (err) {
       setCredentialError(err.message || 'Unable to submit change request.');
     } finally {
@@ -2561,7 +2541,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+    <SurfaceCard className="p-5 sm:p-8">
       {previewDocument && (
         <DocumentPreviewModal
           key={previewDocument.cacheKey || previewDocument.fileName || 'document-preview'}
@@ -2571,48 +2551,48 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       )}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-            <ShieldCheck size={14} />
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-processing">
+            <ShieldCheck size={14} aria-hidden="true" />
             Verification
           </div>
-          <h3 className="text-xl font-bold text-slate-950 dark:text-white">Credential Review</h3>
-          <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
+          <h3 className="text-xl font-bold text-text-primary">Credential Review</h3>
+          <p className="mt-1 text-sm font-medium text-text-muted">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
         </div>
         {shouldShowVerify && (
-          <button
+          <Button
             type="button"
             data-credential-action="verify"
             onClick={() => saveCredentialForm(credentialForm, { submitForReview: true })}
             disabled={!canVerify}
+            isLoading={savingAction === 'verify'}
             title={verifyBlockers[0] || 'Submit credentials for admin verification'}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {savingAction === 'verify' ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-            {savingAction === 'verify' ? 'Verifying...' : 'Verify'}
-          </button>
+            {savingAction !== 'verify' && <ShieldCheck size={16} aria-hidden="true" />}
+            Verify
+          </Button>
         )}
       </div>
 
       {credentialError && (
-        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+        <div role="alert" className="mb-5 rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-sm font-semibold text-danger">
           {credentialError}
         </div>
       )}
       {credentialMessage && (
-        <div className="success-message mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+        <div role="status" aria-live="polite" className="success-message mb-5 rounded-control border border-verified-border bg-verified-surface px-5 py-4 text-sm font-semibold text-verified">
           {credentialMessage}
         </div>
       )}
       {shouldShowVerify && verifyBlockers.length > 0 && (
-        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+        <div className="mb-5 rounded-control border border-warning-border bg-warning-surface px-5 py-4 text-sm font-semibold text-warning">
           Verify unlocks after: {verifyBlockers.slice(0, 3).join(' ')}{verifyBlockers.length > 3 ? ` +${verifyBlockers.length - 3} more.` : ''}
         </div>
       )}
 
-      <div className="mb-6 flex gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 px-5 py-4 text-sm font-semibold leading-relaxed text-cyan-900 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-200">
-        <ShieldCheck size={18} className="mt-0.5 shrink-0 text-cyan-600 dark:text-cyan-300" />
+      <div className="mb-6 flex gap-3 rounded-control border border-pb-midnight/25 bg-pb-midnight-soft px-5 py-4 text-sm font-semibold leading-relaxed text-pb-midnight dark:border-pb-midnight-soft/25 dark:bg-pb-midnight dark:text-white">
+        <ShieldCheck size={18} className="mt-0.5 shrink-0 text-processing dark:text-processing" aria-hidden="true" />
         <div>
-          <div className="mb-1 font-black text-cyan-950 dark:text-cyan-100">Approval requirement</div>
+          <div className="mb-1 font-black">Approval requirement</div>
           <p>{approvalRequirementText}</p>
         </div>
       </div>
@@ -2683,7 +2663,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
             onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
             onView={openUploadedDocument}
             onPreviewWarmup={preloadUploadedDocument}
-            onRequestChange={setChangeRequestDocument}
+            onRequestChange={openCredentialChangeRequest}
             upload={resume}
           />
         </section>
@@ -2691,16 +2671,16 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h4 className="text-sm font-black text-slate-950 dark:text-white">Professional Links</h4>
-              <p className="text-xs font-semibold text-slate-400">LinkedIn, portfolio, and public profiles.</p>
-            </div>
-            <Link2 size={18} className="text-cyan-600" />
+                <h4 className="text-sm font-black text-text-primary">Professional Links</h4>
+                <p className="text-xs font-semibold text-text-muted">LinkedIn, portfolio, and public profiles.</p>
+              </div>
+            <Link2 size={18} className="text-processing" aria-hidden="true" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {credentialForm.externalLinks.map((link) => (
-              <label key={link.id} className="block text-xs font-black text-slate-500 dark:text-slate-400">
+              <label key={link.id} className="block text-xs font-black text-text-muted">
                 {link.label}
-                <div className="mt-2 flex rounded-xl border border-slate-200 bg-slate-50 focus-within:border-cyan-500 dark:border-slate-800 dark:bg-slate-950">
+                <div className="mt-2 flex rounded-control border border-border-control bg-surface focus-within:border-focus focus-within:ring-4 focus-within:ring-focus/15">
                   <input
                     value={link.url}
                     onChange={(event) => updateLink(link.id, event.target.value)}
@@ -2708,10 +2688,10 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                       save: event.relatedTarget?.dataset?.credentialAction !== 'verify',
                     })}
                     placeholder={link.placeholder}
-                    className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-3 text-sm font-medium text-slate-900 outline-none dark:text-white"
+                    className="min-h-11 min-w-0 flex-1 rounded-control bg-transparent px-4 py-3 text-sm font-medium text-text-primary outline-none"
                   />
                   {normalizeCredentialUrl(link.url) && (
-                    <a href={normalizeCredentialUrl(link.url)} target="_blank" rel="noreferrer" className="flex items-center px-3 text-slate-400 transition-colors hover:text-cyan-600" title={`Open ${link.label}`}>
+                    <a href={normalizeCredentialUrl(link.url)} target="_blank" rel="noreferrer" className="flex min-h-11 items-center px-3 text-text-muted transition-colors hover:text-action" title={`Open ${link.label}`}>
                       <ExternalLink size={15} />
                     </a>
                   )}
@@ -2722,13 +2702,13 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         </section>
       </div>
 
-      <div className="mt-7 border-t border-slate-100 pt-6 dark:border-slate-800">
+      <div className="mt-7 border-t border-border-subtle pt-6">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h4 className="text-sm font-black text-slate-950 dark:text-white">Professional Documents</h4>
-            <p className="mt-1 text-xs font-semibold text-slate-400">Certifications are hard requirements. Other Documents are optional supporting proof.</p>
+            <h4 className="text-sm font-black text-text-primary">Professional Documents</h4>
+            <p className="mt-1 text-xs font-semibold text-text-muted">Certifications are hard requirements. Other Documents are optional supporting proof.</p>
           </div>
-          <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
+          <div className="inline-flex rounded-control border border-border-subtle bg-surface-muted p-1">
             {[
               { id: 'certifications', icon: BadgeCheck, label: 'Certifications' },
               { id: 'other', icon: Plus, label: 'Other Documents' },
@@ -2741,10 +2721,10 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   key={tab.id}
                   type="button"
                   onClick={() => setDocumentTab(tab.id)}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition-colors ${
-                    isActive
-                      ? 'bg-white text-cyan-700 shadow-sm dark:bg-slate-900 dark:text-cyan-300'
-                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-3 py-2 text-xs font-black transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/20 ${
+                      isActive
+                      ? 'bg-surface text-action shadow-card'
+                      : 'text-text-muted hover:bg-surface hover:text-text-primary'
                   }`}
                 >
                   <TabIcon size={14} />
@@ -2759,20 +2739,17 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           <section>
             <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h4 className="text-sm font-black text-slate-950 dark:text-white">Certifications</h4>
-                <p className="text-xs font-semibold text-slate-400">{certificationHelperText}</p>
+                <h4 className="text-sm font-black text-text-primary">Certifications</h4>
+                <p className="text-xs font-semibold text-text-muted">{certificationHelperText}</p>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
-                <ShieldCheck size={13} />
-                Required
-              </span>
+              <StatusBadge label="Required" tone="warning" />
             </div>
-            <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-              Upload every item listed here. These are the hard credential requirements admin must approve before your profile can be visible to clients.
+            <div className="mb-3 rounded-control border border-warning-border bg-warning-surface px-4 py-3 text-xs font-semibold leading-relaxed text-warning">
+              Upload every item listed here. Each mapped PRC, BOA, Tax, or other certification stays in its own required upload row for separate admin approval.
             </div>
             <div className="grid gap-3">
               {visibleCertificationRequirements.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <div className="rounded-card border border-dashed border-border-control bg-surface-muted px-4 py-5 text-sm font-semibold text-text-muted">
                   Choose a mapped professional title to see the required certification documents.
                 </div>
               )}
@@ -2792,29 +2769,26 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
                   onView={openUploadedDocument}
                   onPreviewWarmup={preloadUploadedDocument}
-                  onRequestChange={setChangeRequestDocument}
+                  onRequestChange={openCredentialChangeRequest}
                   upload={requirement.upload}
                 />
               ))}
             </div>
             {activeRegulatedInputs.length > 0 && (
-              <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-800">
+              <div className="mt-6 border-t border-border-subtle pt-6">
                 <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h4 className="text-sm font-black text-slate-950 dark:text-white">{hasRequiredRegulatedInputs ? 'Required Regulatory Inputs' : 'Regulatory Inputs'}</h4>
+                    <h4 className="text-sm font-black text-text-primary">{hasRequiredRegulatedInputs ? 'Required Regulatory Inputs' : 'Regulatory Inputs'}</h4>
                     {hasRequiredRegulatedInputs && (
-                      <p className="text-xs font-semibold text-slate-400">Required license identifiers must pass format checks before verification.</p>
+                      <p className="text-xs font-semibold text-text-muted">Required license identifiers must pass format checks before verification.</p>
                     )}
                   </div>
                   {hasRequiredRegulatedInputs && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
-                      <ShieldCheck size={13} />
-                      Required
-                    </span>
+                    <StatusBadge label="Required" tone="warning" />
                   )}
                 </div>
                 {hasRequiredRegulatedInputs && (
-                  <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                  <div className="mb-3 rounded-control border border-warning-border bg-warning-surface px-4 py-3 text-xs font-semibold leading-relaxed text-warning">
                     Complete required regulatory inputs for selected titles. Optional inputs are checked only when filled.
                   </div>
                 )}
@@ -2825,33 +2799,31 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                     const isValid = validateRegulatedInput(inputField, inputValue);
 
                     return (
-                    <label key={inputField.id} className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                      {inputField.label} {inputField.required ? '*' : ''}
-                      <input
-                        type={inputField.type}
-                        required={inputField.required}
-                        value={inputValue}
-                        onChange={(e) => handleRegulatedInputChange(inputField.id, e.target.value)}
-                        onBlur={(e) => handleRegulatedInputChange(inputField.id, e.target.value, {
-                          save: e.relatedTarget?.dataset?.credentialAction !== 'verify',
-                        })}
-                        className={`mt-2 w-full rounded-xl border bg-slate-50 px-4 py-3 text-sm font-medium outline-none dark:bg-slate-950 ${
-                          hasValue && isValid
-                            ? 'border-emerald-300 focus:border-emerald-500 dark:border-emerald-900/60'
-                            : hasValue || inputField.required
-                              ? 'border-amber-300 focus:border-amber-500 dark:border-amber-900/60'
-                              : 'border-slate-200 focus:border-cyan-500 dark:border-slate-800'
-                        }`}
-                        placeholder={`e.g. for ${inputField.title}`}
-                      />
-                      <div className={`mt-1 text-xs font-semibold ${
-                        hasValue && isValid
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-amber-600 dark:text-amber-400'
-                      }`}>
-                        {hasValue && isValid ? 'Format looks right.' : inputField.hint || 'This field is required for verification.'}
-                      </div>
-                    </label>
+                    <FormField
+                      key={inputField.id}
+                      id={`regulated-${inputField.id}`}
+                      label={inputField.label}
+                      required={inputField.required}
+                      error={hasValue && !isValid ? (inputField.hint || 'Use the required format.') : ''}
+                      hint={hasValue && isValid ? 'Format looks right.' : (inputField.hint || 'This field is required for verification.')}
+                    >
+                      {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                        <input
+                          id={`regulated-${inputField.id}`}
+                          type={inputField.type}
+                          required={required}
+                          aria-describedby={ariaDescribedBy}
+                          aria-invalid={ariaInvalid || undefined}
+                          value={inputValue}
+                          onChange={(event) => handleRegulatedInputChange(inputField.id, event.target.value)}
+                          onBlur={(event) => handleRegulatedInputChange(inputField.id, event.target.value, {
+                            save: event.relatedTarget?.dataset?.credentialAction !== 'verify',
+                          })}
+                          className={className}
+                          placeholder={`e.g. for ${inputField.title}`}
+                        />
+                      )}
+                    </FormField>
                     );
                   })}
                 </div>
@@ -2862,20 +2834,21 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
           <section>
             <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h4 className="text-sm font-black text-slate-950 dark:text-white">Other Documents</h4>
-                <p className="text-xs font-semibold text-slate-400">{otherDocumentHelperText}</p>
+                <h4 className="text-sm font-black text-text-primary">Other Documents</h4>
+                <p className="text-xs font-semibold text-text-muted">{otherDocumentHelperText}</p>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => setOtherDocumentRows((current) => [...current, createOtherDocumentRow()])}
                 disabled={!canAddOtherDocumentRow}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-700 transition-colors hover:border-cyan-200 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300"
               >
-                <Plus size={14} />
+                <Plus size={14} className="mr-2" aria-hidden="true" />
                 Add Document
-              </button>
+              </Button>
             </div>
-            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold leading-relaxed text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            <div className="mb-3 rounded-control border border-border-subtle bg-surface-muted px-4 py-3 text-xs font-semibold leading-relaxed text-text-muted">
               Optional uploads can strengthen the profile and give admin more proof, but they are not required for approval and do not duplicate certification requirements.
             </div>
 
@@ -2895,13 +2868,13 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                   onChangeNoExpiryRequired={updateUploadNoExpiryRequired}
                   onView={openUploadedDocument}
                   onPreviewWarmup={preloadUploadedDocument}
-                  onRequestChange={setChangeRequestDocument}
+                  onRequestChange={openCredentialChangeRequest}
                   upload={document}
                 />
               ))}
 
               {otherDocumentOptions.length === 0 && otherDocuments.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <div className="rounded-card border border-dashed border-border-control bg-surface-muted px-4 py-5 text-sm font-semibold text-text-muted">
                   Choose a mapped professional title to see optional supporting document choices.
                 </div>
               )}
@@ -2911,57 +2884,55 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
                 const selectedOption = otherDocumentOptions.find((option) => option.label === row.label);
 
                 return (
-                  <div key={row.id} className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
-                      <label className="block text-xs font-black text-slate-500 dark:text-slate-400">
-                        Document type
-                        <select
-                          value={row.label}
-                          onChange={(event) => updateOtherDocumentRow(row.id, event.target.value)}
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                        >
-                          <option value="">Select supporting document</option>
-                          {selectedOption && !rowOptions.some((option) => option.label === selectedOption.label) && (
-                            <option value={selectedOption.label}>{selectedOption.label}</option>
-                          )}
-                          {rowOptions.map((option) => (
-                            <option key={option.label} value={option.label}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-black transition-colors ${
-                        row.label
-                          ? 'cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
-                          : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-600'
-                      }`}>
-                        {busyUpload === `other:${row.label}` ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                        Upload
-                        <input
-                          type="file"
-                          disabled={!row.label}
-                          accept={DOCUMENT_ACCEPTS.other_document}
-                          className="hidden"
-                          onChange={async (event) => {
-                            await uploadOtherDocumentRow(row, event.target.files?.[0]);
-                            event.target.value = '';
-                          }}
-                        />
-                      </label>
-                      <button
+                  <SurfaceCard key={row.id} as="div" tone="muted" className="space-y-4 p-4">
+                    <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                      <FormField id={`other-document-type-${row.id}`} label="Document type">
+                        {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                          <select
+                            id={`other-document-type-${row.id}`}
+                            required={required}
+                            aria-describedby={ariaDescribedBy}
+                            aria-invalid={ariaInvalid || undefined}
+                            value={row.label}
+                            onChange={(event) => updateOtherDocumentRow(row.id, event.target.value)}
+                            className={className}
+                          >
+                            <option value="">Select supporting document</option>
+                            {selectedOption && !rowOptions.some((option) => option.label === selectedOption.label) && (
+                              <option value={selectedOption.label}>{selectedOption.label}</option>
+                            )}
+                            {rowOptions.map((option) => (
+                              <option key={option.label} value={option.label}>{option.label}</option>
+                            ))}
+                          </select>
+                        )}
+                      </FormField>
+                      <Button
                         type="button"
+                        variant="danger"
+                        size="sm"
                         onClick={() => removeOtherDocumentRow(row.id)}
-                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-3 text-slate-400 transition-colors hover:text-red-600 dark:border-slate-800 dark:bg-slate-900"
-                        title="Remove row"
+                        aria-label="Remove optional document row"
                       >
-                        <X size={16} />
-                      </button>
+                        <X size={16} className="mr-2" aria-hidden="true" />
+                        Remove row
+                      </Button>
                     </div>
+                    <FileDropzone
+                      accept={DOCUMENT_ACCEPTS.other_document}
+                      disabled={!row.label}
+                      helpText="Optional supporting evidence. PDF, JPG, or PNG, up to 3 MB."
+                      id={`other-document-upload-${row.id}`}
+                      isBusy={busyUpload === `other:${row.label}`}
+                      label={row.label || 'Choose a document type first'}
+                      onFile={(file) => uploadOtherDocumentRow(row, file)}
+                    />
                     {selectedOption && (
-                      <div className="mt-3 text-xs font-semibold text-slate-400">
+                      <div className="text-xs font-semibold text-text-muted">
                         Supports: {selectedOption.titles.join(' / ')}
                       </div>
                     )}
-                  </div>
+                  </SurfaceCard>
                 );
               })}
             </div>
@@ -2969,51 +2940,70 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
         )}
       </div>
 
-      <Modal open={Boolean(changeRequestDocument)} title="Request Document Change/Removal" onClose={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }}>
+      <Modal
+        open={Boolean(changeRequestDocument)}
+        title="Request Document Change/Removal"
+        description="Approved credentials remain protected while PB Finance admins review your request."
+        onClose={closeCredentialChangeRequest}
+        footer={changeRequestDocument ? (
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeCredentialChangeRequest}>Cancel</Button>
+            <Button
+              type="submit"
+              form="credential-change-request-form"
+              isLoading={isSubmittingChange}
+              disabled={!changeRequestReason || (changeRequestReason === 'Other' && !changeRequestCustomReason.trim())}
+            >
+              Submit Request
+            </Button>
+          </div>
+        ) : null}
+      >
         {changeRequestDocument && (
-          <form onSubmit={submitChangeRequest} className="space-y-4">
-            <p className="text-sm font-medium text-slate-500">
-              Your document <strong className="text-slate-900 dark:text-white">{changeRequestDocument.documentLabel}</strong> is currently approved and locked. To replace or remove it, please provide a reason for the admin to review.
-            </p>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-              Reason for change
-              <select
-                value={changeRequestReason}
-                onChange={(e) => setChangeRequestReason(e.target.value)}
-                required
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
-              >
-                <option value="" disabled>Select a reason...</option>
-                <option value="Document expired / needs renewal">Document expired / needs renewal</option>
-                <option value="Incorrect document uploaded">Incorrect document uploaded</option>
-                <option value="Details are outdated">Details are outdated</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            {changeRequestReason === 'Other' && (
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                Please specify
-                <textarea
-                  value={changeRequestCustomReason}
-                  onChange={(e) => setChangeRequestCustomReason(e.target.value)}
-                  required
-                  rows={3}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none dark:border-slate-800 dark:bg-slate-900"
-                />
-              </label>
-            )}
-            <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => { setChangeRequestDocument(''); setChangeRequestReason(''); setChangeRequestCustomReason(''); }} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:text-white">
-                Cancel
-              </button>
-              <button type="submit" disabled={isSubmittingChange || !changeRequestReason || (changeRequestReason === 'Other' && !changeRequestCustomReason.trim())} className="rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-700 disabled:opacity-70">
-                {isSubmittingChange ? 'Submitting...' : 'Submit Request'}
-              </button>
+          <form id="credential-change-request-form" onSubmit={submitChangeRequest} className="space-y-5">
+            <div className="rounded-control border border-warning-border bg-warning-surface px-4 py-3 text-sm font-medium leading-relaxed text-warning">
+              <strong>{changeRequestDocument.documentLabel}</strong> is approved and locked. The current document stays protected until an admin approves replacement or removal.
             </div>
+            {credentialError && <div role="alert" className="rounded-control border border-danger-border bg-danger-surface px-4 py-3 text-sm font-semibold text-danger">{credentialError}</div>}
+            <FormField id="credential-change-reason" label="Reason for change" required>
+              {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                <select
+                  id="credential-change-reason"
+                  required={required}
+                  aria-describedby={ariaDescribedBy}
+                  aria-invalid={ariaInvalid || undefined}
+                  value={changeRequestReason}
+                  onChange={(event) => setChangeRequestReason(event.target.value)}
+                  className={className}
+                >
+                  <option value="" disabled>Select a reason...</option>
+                  <option value="Document expired / needs renewal">Document expired / needs renewal</option>
+                  <option value="Incorrect document uploaded">Incorrect document uploaded</option>
+                  <option value="Details are outdated">Details are outdated</option>
+                  <option value="Other">Other</option>
+                </select>
+              )}
+            </FormField>
+            {changeRequestReason === 'Other' && (
+              <FormField id="credential-change-custom-reason" label="Please specify" required>
+                {({ className, required, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid }) => (
+                  <textarea
+                    id="credential-change-custom-reason"
+                    required={required}
+                    aria-describedby={ariaDescribedBy}
+                    aria-invalid={ariaInvalid || undefined}
+                    value={changeRequestCustomReason}
+                    onChange={(event) => setChangeRequestCustomReason(event.target.value)}
+                    rows={3}
+                    className={className}
+                  />
+                )}
+              </FormField>
+            )}
           </form>
         )}
       </Modal>
-    </div>
+    </SurfaceCard>
   );
 }
 

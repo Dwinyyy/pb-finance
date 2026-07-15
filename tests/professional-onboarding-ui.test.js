@@ -20,6 +20,9 @@ const professionalPortal = sourceBetween(professionalPage, 'export function Prof
 const profileView = sourceBetween(professionalPage, 'function AppTalentProfileView', 'function ProfileSettingsModal');
 const profileSettings = sourceBetween(professionalPage, 'function ProfileSettingsModal', 'function ProfessionalProfilePreviewModal');
 const profilePreview = sourceBetween(professionalPage, 'function ProfessionalProfilePreviewModal', 'function ProfessionalIdentityVerificationPanel');
+const identityPanel = sourceBetween(professionalPage, 'function ProfessionalIdentityVerificationPanel', 'function AppTalentCredentialsSection');
+const credentialUploadRow = sourceBetween(professionalPage, 'function CredentialUploadRow', 'function DashboardMetric');
+const credentialSection = sourceBetween(professionalPage, 'function AppTalentCredentialsSection', 'function AppTalentOpportunitiesView');
 
 test('authenticated API exposes browser push subscription lifecycle', () => {
   for (const route of [
@@ -52,6 +55,61 @@ test('professional valid ID captures expiry and locks approved identity evidence
   assert.match(apiSource, /targetType === 'identity'/);
   assert.match(apiSource, /identity_verification_documents/);
   assert.match(adminPage, /Identity Verification[\s\S]*Identity change request:/);
+});
+
+test('professional identity and every credential class use the shared drop zone without collapsing requirements', () => {
+  assert.match(professionalPage, /import \{ FileDropzone \} from ['"]\.\.\/components\/ui\/FileDropzone['"]/);
+  assert.match(identityPanel, /<FileDropzone/);
+  assert.match(credentialUploadRow, /<FileDropzone/);
+  assert.match(credentialSection, /<FileDropzone/);
+
+  for (const label of ['Valid ID front', 'Valid ID back', 'Liveness selfie', 'PRC', 'BOA', 'Tax']) {
+    assert.match(professionalPage, new RegExp(label, 'i'));
+  }
+
+  assert.match(identityPanel, /kind: 'valid_id_front'/);
+  assert.match(identityPanel, /kind: 'valid_id_back'/);
+  assert.match(identityPanel, /kind: 'liveness_selfie'/);
+  assert.match(identityPanel, /capture: 'user'/);
+  assert.match(credentialSection, /documentLabel="Resume"/);
+  assert.match(credentialSection, /visibleCertificationRequirements\.map/);
+  assert.match(credentialSection, /otherDocuments\.map/);
+  assert.match(credentialSection, /uploadOtherDocumentRow\(row, file\)/);
+  assert.match(professionalPage, /MAX_CREDENTIAL_UPLOAD_BYTES = 3 \* 1024 \* 1024/);
+  assert.match(professionalPage, /validateCredentialFile/);
+});
+
+test('professional document expiry, locking, preview warmup, removal, and rejection states remain explicit', () => {
+  assert.match(credentialUploadRow, /expiryDate/);
+  assert.match(credentialUploadRow, /No expiration date/);
+  assert.match(credentialUploadRow, /isLocked=\{isLockedApproved\}/);
+  assert.match(credentialUploadRow, /status=\{dropzoneStatus\}/);
+  assert.match(credentialUploadRow, /error=\{getCredentialReviewMessage\(upload\)\}/);
+  assert.match(credentialUploadRow, /onMouseEnter=\{\(\) => onPreviewWarmup\?\.\(upload\)\}/);
+  assert.match(credentialUploadRow, /onFocusCapture=\{\(\) => onPreviewWarmup\?\.\(upload\)\}/);
+  assert.match(credentialUploadRow, /onRemove\(\{ documentKey, documentType, label: documentLabel \}\)/);
+  assert.match(credentialUploadRow, /changeRequestStatus === 'pending'/);
+});
+
+test('identity and credential change requests use semantic shared modal forms and sticky actions', () => {
+  for (const [source, title] of [
+    [identityPanel, 'Request Identity Document Change/Removal'],
+    [credentialSection, 'Request Document Change/Removal'],
+  ]) {
+    assert.match(source, new RegExp(`<Modal[\\s\\S]*title="${title.replace('/', '\\/')}"[\\s\\S]*footer=\\{`));
+    assert.match(source, /<FormField/);
+    assert.match(source, /bg-warning-surface/);
+    assert.match(source, /border-warning-border/);
+    assert.match(source, /<Button/);
+    assert.match(source, /Submit Request/);
+  }
+
+  assert.match(identityPanel, /Document expired \/ needs renewal/);
+  assert.match(identityPanel, /Remove this document/);
+  assert.match(credentialSection, /Incorrect document uploaded/);
+  assert.match(credentialSection, /Details are outdated/);
+  assert.match(identityPanel, /changeRequestStatus === 'pending'/);
+  assert.match(credentialUploadRow, /changeRequestStatus === 'pending'/);
 });
 
 test('professional shell and dashboard use shared signature primitives and semantic states', () => {

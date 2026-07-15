@@ -8,6 +8,7 @@ import { createServer } from 'vite';
 import { toneForDropzoneState } from '../src/components/ui/fileDropzoneState.js';
 
 const source = readFileSync(new URL('../src/components/ui/FileDropzone.jsx', import.meta.url), 'utf8');
+const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 test('drop-zone state priorities are deterministic', () => {
@@ -138,4 +139,10 @@ test('drop zone server-renders labelled, described, and actionable file states',
   } finally {
     await vite.close();
   }
+});
+
+test('professional verification routes all identity and credential selections through FileDropzone file callbacks', () => {
+  assert.match(professionalPage, /<FileDropzone[\s\S]*onFile=\{\(file\) => uploadIdentityFile\(row, file\)\}/);
+  assert.match(professionalPage, /<FileDropzone[\s\S]*onFile=\{\(file\) => onUpload\(\{[\s\S]*file,[\s\S]*\}\)\}/);
+  assert.match(professionalPage, /<FileDropzone[\s\S]*onFile=\{\(file\) => uploadOtherDocumentRow\(row, file\)\}/);
 });
