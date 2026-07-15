@@ -107,21 +107,23 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
               {navItems.map((tab) => (
                 <button 
                   key={tab.id}
+                  type="button"
                   onClick={() => navigateTo(tab.id)} 
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
                   className={`min-h-11 rounded-control px-4 py-2 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${activeTab === tab.id ? 'bg-action text-white' : 'text-text-muted hover:bg-surface-muted hover:text-text-primary'}`}
                 >
                   {tab.label}
                 </button>
               ))}
               
-              <button onClick={toggleDarkMode} className="ml-2 inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
+              <button type="button" onClick={toggleDarkMode} className="ml-2 inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
                 {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
 
               <div className="ml-2 flex items-center space-x-2 border-l border-border-subtle pl-4">
-                <Button variant="ghost" size="sm" onClick={() => openAuth('login')}>Client Login</Button>
+                <Button variant="ghost" size="sm" type="button" onClick={() => openAuth('login')} className="min-h-11">Client Login</Button>
                 {activeTab !== 'home' && (
-                  <Button variant="primary" size="sm" onClick={() => openAuth('register')}>
+                  <Button variant="primary" size="sm" type="button" onClick={() => openAuth('register')} className="min-h-11">
                     Start Hiring
                   </Button>
                 )}
@@ -129,10 +131,10 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
             </div>
 
             <div className="md:hidden flex items-center gap-2">
-              <button onClick={toggleDarkMode} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
+              <button type="button" onClick={toggleDarkMode} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
                 {isDarkMode ? <Sun size={21} /> : <Moon size={21} />}
               </button>
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle navigation menu" aria-expanded={mobileMenuOpen}>
+              <button type="button" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle navigation menu" aria-expanded={mobileMenuOpen} aria-controls="public-mobile-navigation">
                 {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
@@ -140,7 +142,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
         </div>
 
         {mobileMenuOpen && (
-          <div className="absolute z-50 w-full border-t border-border-subtle bg-surface shadow-card md:hidden" role="navigation" aria-label="Mobile navigation">
+          <div id="public-mobile-navigation" className="absolute z-50 w-full border-t border-border-subtle bg-surface shadow-card md:hidden" role="navigation" aria-label="Mobile navigation">
             <div className="px-4 pt-4 pb-6 space-y-2">
               <div className="mb-3 flex items-center justify-between rounded-control bg-surface-muted px-3 py-2 text-xs font-bold uppercase tracking-wider text-text-muted">
                 <BrandMark compact label="PB Finance mobile menu" />
@@ -149,20 +151,22 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
               {navItems.map((tab) => (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => navigateTo(tab.id)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
                   className={`block min-h-11 w-full rounded-control px-4 py-3 text-left text-sm font-semibold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 ${activeTab === tab.id ? 'bg-action text-white' : 'text-text-muted hover:bg-surface-muted hover:text-text-primary'}`}
                 >
                   {tab.id === 'agency' ? 'Enterprise Teams' : tab.label}
                 </button>
               ))}
-              <button onClick={toggleDarkMode} className="flex min-h-11 w-full items-center justify-between rounded-control px-4 py-3 text-sm font-semibold text-text-muted hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25">
+              <button type="button" onClick={toggleDarkMode} className="flex min-h-11 w-full items-center justify-between rounded-control px-4 py-3 text-sm font-semibold text-text-muted hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25">
                 <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
                 {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
               <div className="mt-4 grid gap-2 border-t border-border-subtle pt-4">
-                <Button variant="outline" size="md" onClick={() => openMobileAuth('login')} className="w-full">Client Login</Button>
+                <Button variant="outline" size="md" type="button" onClick={() => openMobileAuth('login')} className="w-full">Client Login</Button>
                 {activeTab !== 'home' && (
-                  <Button variant="primary" size="md" onClick={() => openMobileAuth('register')} className="w-full">Start Hiring</Button>
+                  <Button variant="primary" size="md" type="button" onClick={() => openMobileAuth('register')} className="w-full">Start Hiring</Button>
                 )}
               </div>
             </div>
@@ -250,25 +254,25 @@ function ROICalculator() {
             <div className="grid gap-8">
               {/* Sliders */}
               <div>
-                <div className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
+                <label htmlFor="roi-salary" className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
                   <span>Annual local salary</span>
                   <span className="text-xl text-text-primary">${salary.toLocaleString()}</span>
-                </div>
-                <input type="range" min="35000" max="160000" step="5000" value={salary} onChange={(e) => setSalary(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
+                </label>
+                <input id="roi-salary" type="range" min="35000" max="160000" step="5000" value={salary} aria-valuetext={`$${salary.toLocaleString()} annual local salary`} onChange={(e) => setSalary(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
               </div>
               <div>
-                <div className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
+                <label htmlFor="roi-benefits" className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
                   <span>Benefits and overhead (%)</span>
                   <span className="text-xl text-text-primary">{benefits}%</span>
-                </div>
-                <input type="range" min="5" max="35" step="1" value={benefits} onChange={(e) => setBenefits(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
+                </label>
+                <input id="roi-benefits" type="range" min="5" max="35" step="1" value={benefits} aria-valuetext={`${benefits}% benefits and overhead`} onChange={(e) => setBenefits(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
               </div>
               <div>
-                <div className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
+                <label htmlFor="roi-vendor-fee" className="mb-4 flex items-center justify-between text-sm font-bold text-text-primary">
                   <span>Monthly outsourced cost</span>
                   <span className="text-xl text-text-primary">${vendorFee.toLocaleString()}</span>
-                </div>
-                <input type="range" min="1200" max="9000" step="100" value={vendorFee} onChange={(e) => setVendorFee(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
+                </label>
+                <input id="roi-vendor-fee" type="range" min="1200" max="9000" step="100" value={vendorFee} aria-valuetext={`$${vendorFee.toLocaleString()} monthly outsourced cost`} onChange={(e) => setVendorFee(Number(e.target.value))} className="h-11 w-full cursor-pointer appearance-none rounded-lg bg-surface-muted accent-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" />
               </div>
 
               {/* Toggle */}
@@ -327,27 +331,39 @@ function FAQAccordion() {
 
   return (
     <div className="space-y-3">
-      {FAQ_ITEMS.map((item, index) => (
-        <SurfaceCard as="div" key={index} className="overflow-hidden transition-colors hover:border-border-control">
-          <button 
-            className="flex min-h-11 w-full items-center justify-between p-5 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-focus/25"
-            onClick={() => setOpenIndex(openIndex === index ? -1 : index)}
-            aria-expanded={openIndex === index}
-          >
-            <span className="pr-4 font-bold text-text-primary">{item.q}</span>
-            {openIndex === index ? (
-              <ChevronUp className="h-5 w-5 flex-shrink-0 text-action transition-transform duration-300" />
-            ) : (
-              <ChevronDown className="h-5 w-5 flex-shrink-0 text-text-muted transition-transform duration-300" />
-            )}
-          </button>
-          <div 
-            className={`overflow-hidden px-5 text-sm font-medium leading-relaxed text-text-muted transition-all duration-300 ease-in-out motion-reduce:transition-none ${openIndex === index ? 'max-h-40 pb-5 opacity-100' : 'max-h-0 opacity-0'}`}
-          >
-            {item.a}
-          </div>
-        </SurfaceCard>
-      ))}
+      {FAQ_ITEMS.map((item, index) => {
+        const triggerId = `faq-trigger-${index}`;
+        const panelId = `faq-panel-${index}`;
+
+        return (
+          <SurfaceCard as="div" key={index} className="overflow-hidden transition-colors hover:border-border-control">
+            <button
+              id={triggerId}
+              type="button"
+              className="flex min-h-11 w-full items-center justify-between p-5 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-focus/25"
+              onClick={() => setOpenIndex(openIndex === index ? -1 : index)}
+              aria-expanded={openIndex === index}
+              aria-controls={panelId}
+            >
+              <span className="pr-4 font-bold text-text-primary">{item.q}</span>
+              {openIndex === index ? (
+                <ChevronUp className="h-5 w-5 flex-shrink-0 text-action transition-transform duration-300" />
+              ) : (
+                <ChevronDown className="h-5 w-5 flex-shrink-0 text-text-muted transition-transform duration-300" />
+              )}
+            </button>
+            <div
+              id={panelId}
+              role="region"
+              aria-labelledby={triggerId}
+              aria-hidden={openIndex !== index}
+              className={`overflow-hidden px-5 text-sm font-medium leading-relaxed text-text-muted transition-all duration-300 ease-in-out motion-reduce:transition-none ${openIndex === index ? 'max-h-40 pb-5 opacity-100' : 'max-h-0 opacity-0'}`}
+            >
+              {item.a}
+            </div>
+          </SurfaceCard>
+        );
+      })}
     </div>
   );
 }
