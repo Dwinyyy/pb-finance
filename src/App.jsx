@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
-import { ShieldCheck, X, Loader2, Eye, EyeOff, MailCheck } from 'lucide-react';
+import { ShieldCheck, Loader2, Eye, EyeOff, MailCheck } from 'lucide-react';
+import { Button } from './components/ui/Button';
+import { FormField } from './components/ui/FormField';
+import { Modal } from './components/ui/Modal';
 
 const PublicSite = lazy(() => import('./pages/PublicPages').then(m => ({ default: m.PublicSite })));
 const ClientPortal = lazy(() => import('./pages/ClientPages').then(m => ({ default: m.ClientPortal })));
@@ -188,16 +191,13 @@ const createLocalSessionUser = (formData, role) => {
   };
 };
 
-function AuthModal({
-  isOpen,
+function AuthModalContent({
   view,
-  closeAuth,
   authError,
   authNotice,
   authStep,
   fieldErrors,
   pendingAccountLink,
-  pendingRegistration,
   isAuthLoading,
   handleAccountLinkOtpSubmit,
   handleAccountLinkSubmit,
@@ -213,8 +213,6 @@ function AuthModal({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formDraft, setFormDraft] = useState({});
   const [touchedFields, setTouchedFields] = useState({});
-
-  if (!isOpen) return null;
 
   const isRegistering = view !== 'login';
   const isRegistrationOtp = isRegistering && authStep === 'verify';
@@ -242,7 +240,6 @@ function AuthModal({
   const hasInteractedWithEmailForm = Object.keys(touchedFields).length > 0;
   const showFieldError = (field) => fieldErrors?.[field] || (hasInteractedWithEmailForm ? draftErrors[field] : '');
   const showGoogleFieldError = (field) => fieldErrors?.[field] || (touchedFields[field] ? googleDraftErrors[field] : '');
-  const otpEmail = pendingRegistration?.email || pendingAccountLink?.email || 'your email';
   const otpSubmitLabel = isGoogleLinkOtp
     ? 'Verify and Link Google'
     : isPasswordSetupOtp
@@ -274,22 +271,16 @@ function AuthModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-300"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeAuth();
-      }}
-    >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row">
+    <div className="grid gap-6 md:grid-cols-[0.8fr_1.2fr] md:items-stretch">
 
         {/* Left Side: Modern Brand Panel */}
-        <div className="hidden md:flex flex-col justify-between w-2/5 p-10 bg-gradient-to-br from-slate-900 to-primary-950 relative overflow-hidden text-white">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2"></div>
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 transform -translate-x-1/2 translate-y-1/2"></div>
+        <div className="relative hidden flex-col justify-between overflow-hidden rounded-card bg-pb-midnight p-8 text-white md:flex">
+          <div className="absolute right-0 top-0 h-64 w-64 translate-x-1/2 -translate-y-1/2 rounded-full bg-action/20 blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 h-64 w-64 -translate-x-1/2 translate-y-1/2 rounded-full bg-processing/20 blur-3xl"></div>
 
           <div className="relative z-10 flex items-center gap-3 mb-12">
             <div className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
-              <ShieldCheck className="w-5 h-5 text-cyan-300" />
+              <ShieldCheck className="h-5 w-5 text-processing" aria-hidden="true" />
             </div>
             <span className="font-bold text-xl tracking-tight text-white/90">PB Finance</span>
           </div>
@@ -298,266 +289,467 @@ function AuthModal({
             <h2 className="text-3xl font-bold mb-4 leading-tight">
               {view === 'login' ? 'Welcome back to your portal.' : view === 'register' ? 'Elevate your financial operations.' : 'Join the elite talent network.'}
             </h2>
-            <p className="text-slate-300 text-sm leading-relaxed mb-8">
+            <p className="mb-8 text-sm leading-relaxed text-white/75">
               {view === 'login'
                 ? 'Access your dashboard to manage opportunities, track earnings, and discover top financial talent.'
                 : 'Connect with industry-leading professionals and streamline your financial operations with absolute security.'}
             </p>
           </div>
 
-          <div className="relative z-10 text-xs font-medium text-slate-400">
+          <div className="relative z-10 text-xs font-medium text-white/60">
             Secure, encrypted, and trusted by leading firms.
           </div>
         </div>
 
         {/* Right Side: Form */}
-        <div className="w-full md:w-3/5 p-8 sm:p-10 lg:p-12 overflow-y-auto max-h-[90vh] bg-white dark:bg-slate-900 relative">
-          <button onClick={closeAuth} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 bg-slate-50 dark:bg-slate-800 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-            <X size={20} />
-          </button>
-
-          <div className="max-w-sm mx-auto py-8 flex flex-col justify-center min-h-full">
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-slate-950 dark:text-white tracking-tight mb-2">
-                {isOtpStep
-                  ? 'Verify Your Email'
-                  : isGoogleLinkPassword
-                    ? 'Link Google Sign-In'
-                    : isGoogleCompany
-                      ? 'Company Required'
-                    : isPasswordSetup || isPasswordSetupGoogle
-                      ? 'Create Email Password'
-                      : view === 'login' ? 'Sign In' : view === 'register' ? 'Create Client Account' : 'Apply as Talent'}
-              </h2>
-              <p className="text-slate-500 text-sm">
-                {isOtpStep
-                  ? `Enter the code sent to ${otpEmail}.`
-                  : isGoogleLinkPassword
-                    ? `An email/password account already exists for ${pendingAccountLink?.email || 'this email'}. Enter that account password first.`
-                    : isGoogleCompany
-                      ? 'Add your company name before continuing with this Google account.'
-                    : isPasswordSetupGoogle
-                      ? 'Email verified. Continue with Google to finish adding email/password login.'
-                    : isPasswordSetup
-                      ? `This email is registered with Google Sign-In. Create a password for ${pendingAccountLink?.email || 'this email'}.`
-                      : view === 'login' ? 'Enter your credentials to continue.' : 'Fill out the details below to get started.'}
-              </p>
-            </div>
+        <div className="relative w-full rounded-card border border-border-subtle bg-surface p-5 sm:p-7">
+          <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center">
 
             {authError && (
-              <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+              <div className="mb-6 rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-sm font-semibold text-danger" role="alert">
                 {authError}
               </div>
             )}
 
             {visibleAuthNotice && (
-              <div className="mb-6 rounded-2xl border border-cyan-200 bg-cyan-50 px-5 py-4 text-sm font-semibold text-cyan-800">
+              <div className="mb-6 rounded-control border border-processing-border bg-processing-surface px-5 py-4 text-sm font-semibold text-processing" role="status" aria-live="polite">
                 {visibleAuthNotice}
               </div>
             )}
 
             {isOtpStep ? (
               <form onSubmit={isRegistrationOtp ? handleOtpSubmit : handleAccountLinkOtpSubmit} className="space-y-5" autoComplete="one-time-code">
-                <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4 text-cyan-900">
+                <div className="rounded-control border border-processing-border bg-processing-surface p-4 text-processing" role="status" aria-live="polite">
                   <div className="mb-2 flex items-center gap-2 text-sm font-black">
-                    <MailCheck size={18} />
+                    <MailCheck size={18} aria-hidden="true" />
                     Code sent
                   </div>
-                  <p className="text-xs font-semibold leading-relaxed text-cyan-800">
+                  <p className="text-xs font-semibold leading-relaxed">
                     The code expires in 10 minutes.
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Verification Code</label>
-                  <input name="otp" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="one-time-code" className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-center text-2xl bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-black tracking-[0.3em]" placeholder="000000" />
-                  {fieldErrors?.otp && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.otp}</p>}
-                </div>
+                <FormField id="auth-otp" label="Verification Code" error={fieldErrors?.otp} required>
+                  {({ className, describedBy, ...fieldProps }) => (
+                    <input
+                      {...fieldProps}
+                      id="auth-otp"
+                      name="otp"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                      autoComplete="one-time-code"
+                      aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                      className={`${className} text-center text-2xl font-black tracking-[0.3em]`}
+                      placeholder="000000"
+                    />
+                  )}
+                </FormField>
 
-                <button type="submit" disabled={isAuthLoading} className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-2xl font-bold transition-all mt-4 shadow-lg shadow-slate-900/10 text-sm disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center group">
+                <Button type="submit" variant="primary" size="lg" disabled={isAuthLoading} className="mt-4 w-full">
                   {isAuthLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
                   {isAuthLoading ? 'Please wait...' : otpSubmitLabel}
-                </button>
+                </Button>
 
-                <button type="button" onClick={() => switchAuthView(view)} className="w-full text-sm font-bold text-slate-500 transition-colors hover:text-primary-600">
+                <Button type="button" variant="ghost" size="md" onClick={() => switchAuthView(view)} className="w-full text-action">
                   {isRegistrationOtp ? 'Use a different email' : 'Cancel account linking'}
-                </button>
+                </Button>
               </form>
             ) : isGoogleLinkPassword ? (
               <form onSubmit={handleAccountLinkSubmit} onInput={handleFieldInput} noValidate className="space-y-5" autoComplete="off">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Existing Account Password</label>
-                  <div className="relative">
-                    <input name="pbAuthPasscode" type={showPassword ? "text" : "password"} required autoComplete="current-password" aria-invalid={Boolean(showFieldError('pbAuthPasscode'))} className="w-full px-5 py-3.5 pr-12 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="********" />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                      {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-                    </button>
-                  </div>
-                  {showFieldError('pbAuthPasscode') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('pbAuthPasscode')}</p>}
-                </div>
+                <FormField id="auth-existing-password" label="Existing Account Password" error={showFieldError('pbAuthPasscode')} required>
+                  {({ className, describedBy, ...fieldProps }) => (
+                    <div className="relative">
+                      <input
+                        {...fieldProps}
+                        id="auth-existing-password"
+                        name="pbAuthPasscode"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                        className={`${className} pr-12`}
+                        placeholder="********"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                      </Button>
+                    </div>
+                  )}
+                </FormField>
 
-                <button type="submit" disabled={emailSubmitDisabled} className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-2xl font-bold transition-all mt-4 shadow-lg shadow-slate-900/10 text-sm disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center group">
+                <Button type="submit" variant="primary" size="lg" disabled={emailSubmitDisabled} className="mt-4 w-full">
                   {isAuthLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
                   {isAuthLoading ? 'Please wait...' : 'Send Verification Code'}
-                </button>
+                </Button>
 
-                <button type="button" onClick={() => switchAuthView('login')} className="w-full text-sm font-bold text-slate-500 transition-colors hover:text-primary-600">
+                <Button type="button" variant="ghost" size="md" onClick={() => switchAuthView('login')} className="w-full text-action">
                   Cancel account linking
-                </button>
+                </Button>
               </form>
             ) : isGoogleCompany ? (
               <form onSubmit={handleGoogleCompanySubmit} onInput={handleFieldInput} noValidate className="space-y-5" autoComplete="off">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Company</label>
-                  <input name="company" type="text" required aria-invalid={Boolean(showFieldError('company'))} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="Company name" />
-                  {showFieldError('company') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('company')}</p>}
-                </div>
+                <FormField id="auth-google-company" label="Company" error={showFieldError('company')} required>
+                  {({ className, describedBy, ...fieldProps }) => (
+                    <input
+                      {...fieldProps}
+                      id="auth-google-company"
+                      name="company"
+                      type="text"
+                      aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                      className={className}
+                      placeholder="Company name"
+                    />
+                  )}
+                </FormField>
 
-                <button type="submit" disabled={emailSubmitDisabled} className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-2xl font-bold transition-all mt-4 shadow-lg shadow-slate-900/10 text-sm disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center group">
+                <Button type="submit" variant="primary" size="lg" disabled={emailSubmitDisabled} className="mt-4 w-full">
                   {isAuthLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
                   {isAuthLoading ? 'Please wait...' : 'Continue'}
-                </button>
+                </Button>
 
-                <button type="button" onClick={() => switchAuthView('login')} className="w-full text-sm font-bold text-slate-500 transition-colors hover:text-primary-600">
+                <Button type="button" variant="ghost" size="md" onClick={() => switchAuthView('login')} className="w-full text-action">
                   Back to login
-                </button>
+                </Button>
               </form>
             ) : isPasswordSetup ? (
               <form onSubmit={handlePasswordSetupSubmit} onInput={handleFieldInput} noValidate className="space-y-5" autoComplete="off">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Email</label>
-                  <input name="email" type="email" readOnly value={pendingAccountLink?.email || ''} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 outline-none text-sm bg-slate-100 dark:bg-slate-950 text-slate-600 dark:text-slate-300 font-medium" />
-                </div>
+                <FormField id="auth-setup-email" label="Email">
+                  {({ className, describedBy, ...fieldProps }) => (
+                    <input
+                      {...fieldProps}
+                      id="auth-setup-email"
+                      name="email"
+                      type="email"
+                      readOnly
+                      value={pendingAccountLink?.email || ''}
+                      aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                      className={`${className} bg-surface-muted text-text-muted`}
+                    />
+                  )}
+                </FormField>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">New Password</label>
-                  <div className="relative">
-                    <input name="pbAuthPasscode" type={showPassword ? "text" : "password"} minLength={8} required autoComplete="new-password" aria-invalid={Boolean(showFieldError('pbAuthPasscode'))} className="w-full px-5 py-3.5 pr-12 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="********" />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                      {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-                    </button>
-                  </div>
-                  {showFieldError('pbAuthPasscode') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('pbAuthPasscode')}</p>}
-                </div>
+                <FormField id="auth-new-password" label="New Password" error={showFieldError('pbAuthPasscode')} required>
+                  {({ className, describedBy, ...fieldProps }) => (
+                    <div className="relative">
+                      <input
+                        {...fieldProps}
+                        id="auth-new-password"
+                        name="pbAuthPasscode"
+                        type={showPassword ? "text" : "password"}
+                        minLength={8}
+                        autoComplete="new-password"
+                        aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                        className={`${className} pr-12`}
+                        placeholder="********"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                      </Button>
+                    </div>
+                  )}
+                </FormField>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Confirm Password</label>
-                  <div className="relative">
-                    <input name="pbAuthPasscodeConfirm" type={showConfirmPassword ? "text" : "password"} minLength={8} required autoComplete="new-password" aria-invalid={Boolean(showFieldError('pbAuthPasscodeConfirm'))} className="w-full px-5 py-3.5 pr-12 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="********" />
-                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                      {showConfirmPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-                    </button>
-                  </div>
-                  {showFieldError('pbAuthPasscodeConfirm') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('pbAuthPasscodeConfirm')}</p>}
-                </div>
+                <FormField id="auth-confirm-password" label="Confirm Password" error={showFieldError('pbAuthPasscodeConfirm')} required>
+                  {({ className, describedBy, ...fieldProps }) => (
+                    <div className="relative">
+                      <input
+                        {...fieldProps}
+                        id="auth-confirm-password"
+                        name="pbAuthPasscodeConfirm"
+                        type={showConfirmPassword ? "text" : "password"}
+                        minLength={8}
+                        autoComplete="new-password"
+                        aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                        className={`${className} pr-12`}
+                        placeholder="********"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
+                        aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                      >
+                        {showConfirmPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                      </Button>
+                    </div>
+                  )}
+                </FormField>
 
-                <button type="submit" disabled={emailSubmitDisabled} className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-2xl font-bold transition-all mt-4 shadow-lg shadow-slate-900/10 text-sm disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center group">
+                <Button type="submit" variant="primary" size="lg" disabled={emailSubmitDisabled} className="mt-4 w-full">
                   {isAuthLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
                   {isAuthLoading ? 'Please wait...' : 'Send Verification Code'}
-                </button>
+                </Button>
 
-                <button type="button" onClick={() => switchAuthView('login')} className="w-full text-sm font-bold text-slate-500 transition-colors hover:text-primary-600">
+                <Button type="button" variant="ghost" size="md" onClick={() => switchAuthView('login')} className="w-full text-action">
                   Back to login
-                </button>
+                </Button>
               </form>
             ) : isPasswordSetupGoogle ? (
               <div className="space-y-5">
-                <button type="button" disabled={isAuthLoading} onClick={handlePasswordSetupGoogleConfirm} className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-black text-slate-800 shadow-sm transition-all hover:border-primary-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-black text-slate-700">G</span>
+                <Button type="button" variant="outline" size="lg" disabled={isAuthLoading} onClick={handlePasswordSetupGoogleConfirm} className="w-full gap-3">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border-subtle bg-surface text-sm font-black text-text-primary" aria-hidden="true">G</span>
                   {isAuthLoading ? 'Please wait...' : 'Continue with Google'}
-                </button>
+                </Button>
 
-                <button type="button" onClick={() => switchAuthView('login')} className="w-full text-sm font-bold text-slate-500 transition-colors hover:text-primary-600">
+                <Button type="button" variant="ghost" size="md" onClick={() => switchAuthView('login')} className="w-full text-action">
                   Back to login
-                </button>
+                </Button>
               </div>
             ) : (
               <>
                 {view === 'register' && (
                   <div className="mb-4">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Company for Google Sign-Up</label>
-                    <input name="googleCompany" type="text" required onInput={handleFieldInput} aria-invalid={Boolean(showGoogleFieldError('googleCompany'))} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="Company name" />
-                    {showGoogleFieldError('googleCompany') && <p className="mt-2 text-xs font-semibold text-red-600">{showGoogleFieldError('googleCompany')}</p>}
+                    <FormField id="auth-google-start-company" label="Company for Google Sign-Up" error={showGoogleFieldError('googleCompany')} required>
+                      {({ className, describedBy, ...fieldProps }) => (
+                        <input
+                          {...fieldProps}
+                          id="auth-google-start-company"
+                          name="googleCompany"
+                          type="text"
+                          onInput={handleFieldInput}
+                          aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                          className={className}
+                          placeholder="Company name"
+                        />
+                      )}
+                    </FormField>
                   </div>
                 )}
 
-                <button type="button" disabled={googleSubmitDisabled} onClick={() => handleGoogleAuth(view, { company: formValue(formDraft, 'googleCompany') })} className="mb-5 flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-black text-slate-800 shadow-sm transition-all hover:border-primary-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-black text-slate-700">G</span>
+                <Button type="button" variant="outline" size="lg" disabled={googleSubmitDisabled} onClick={() => handleGoogleAuth(view, { company: formValue(formDraft, 'googleCompany') })} className="mb-5 w-full gap-3">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border-subtle bg-surface text-sm font-black text-text-primary" aria-hidden="true">G</span>
                   {isAuthLoading ? 'Please wait...' : googleLabel}
-                </button>
+                </Button>
 
                 <div className="mb-5 flex items-center gap-3">
-                  <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800"></div>
-                  <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">Email</div>
-                  <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800"></div>
+                  <div className="h-px flex-1 bg-border-subtle"></div>
+                  <div className="text-[11px] font-black uppercase tracking-wider text-text-muted">Email</div>
+                  <div className="h-px flex-1 bg-border-subtle"></div>
                 </div>
 
                 <form onSubmit={(e) => handleAuthSubmit(e, view === 'register_pro' ? 'professional' : 'client', view)} onInput={handleFieldInput} noValidate className="space-y-5" autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true">
                   {view !== 'login' && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Full Name</label>
-                      <input name="fullName" type="text" required aria-invalid={Boolean(showFieldError('fullName'))} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="Your full name" />
-                      {showFieldError('fullName') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('fullName')}</p>}
-                    </div>
+                    <FormField id="auth-full-name" label="Full Name" error={showFieldError('fullName')} required>
+                      {({ className, describedBy, ...fieldProps }) => (
+                        <input
+                          {...fieldProps}
+                          id="auth-full-name"
+                          name="fullName"
+                          type="text"
+                          aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                          className={className}
+                          placeholder="Your full name"
+                        />
+                      )}
+                    </FormField>
                   )}
                   {view === 'register' && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Company</label>
-                      <input name="company" type="text" required aria-invalid={Boolean(showFieldError('company'))} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="Company name" />
-                      {showFieldError('company') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('company')}</p>}
-                    </div>
+                    <FormField id="auth-company" label="Company" error={showFieldError('company')} required>
+                      {({ className, describedBy, ...fieldProps }) => (
+                        <input
+                          {...fieldProps}
+                          id="auth-company"
+                          name="company"
+                          type="text"
+                          aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                          className={className}
+                          placeholder="Company name"
+                        />
+                      )}
+                    </FormField>
                   )}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Email</label>
-                    <input name="pbWorkEmail" type="email" required autoComplete="off" aria-invalid={Boolean(showFieldError('pbWorkEmail'))} data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="email@example.com" />
-                    {showFieldError('pbWorkEmail') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('pbWorkEmail')}</p>}
-                  </div>
+                  <FormField id="auth-work-email" label="Email" error={showFieldError('pbWorkEmail')} required>
+                    {({ className, describedBy, ...fieldProps }) => (
+                      <input
+                        {...fieldProps}
+                        id="auth-work-email"
+                        name="pbWorkEmail"
+                        type="email"
+                        autoComplete="off"
+                        aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                        data-1p-ignore="true"
+                        data-form-type="other"
+                        data-lpignore="true"
+                        className={className}
+                        placeholder="email@example.com"
+                      />
+                    )}
+                  </FormField>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Password</label>
-                    <div className="relative">
-                      <input name="pbAuthPasscode" type={showPassword ? "text" : "password"} minLength={8} required autoComplete="new-password" aria-invalid={Boolean(showFieldError('pbAuthPasscode'))} data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-5 py-3.5 pr-12 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="********" />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                        {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-                      </button>
-                    </div>
-                    {showFieldError('pbAuthPasscode') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('pbAuthPasscode')}</p>}
-                  </div>
+                  <FormField id="auth-password" label="Password" error={showFieldError('pbAuthPasscode')} required>
+                    {({ className, describedBy, ...fieldProps }) => (
+                      <div className="relative">
+                        <input
+                          {...fieldProps}
+                          id="auth-password"
+                          name="pbAuthPasscode"
+                          type={showPassword ? "text" : "password"}
+                          minLength={8}
+                          autoComplete="new-password"
+                          aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                          data-1p-ignore="true"
+                          data-form-type="other"
+                          data-lpignore="true"
+                          className={`${className} pr-12`}
+                          placeholder="********"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                        </Button>
+                      </div>
+                    )}
+                  </FormField>
 
                   {view !== 'login' && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Confirm Password</label>
-                      <div className="relative">
-                        <input name="pbAuthPasscodeConfirm" type={showConfirmPassword ? "text" : "password"} minLength={8} required autoComplete="new-password" aria-invalid={Boolean(showFieldError('pbAuthPasscodeConfirm'))} data-1p-ignore="true" data-form-type="other" data-lpignore="true" className="w-full px-5 py-3.5 pr-12 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium" placeholder="********" />
-                        <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                          {showConfirmPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-                        </button>
-                      </div>
-                      {showFieldError('pbAuthPasscodeConfirm') && <p className="mt-2 text-xs font-semibold text-red-600">{showFieldError('pbAuthPasscodeConfirm')}</p>}
-                    </div>
+                    <FormField id="auth-password-confirm" label="Confirm Password" error={showFieldError('pbAuthPasscodeConfirm')} required>
+                      {({ className, describedBy, ...fieldProps }) => (
+                        <div className="relative">
+                          <input
+                            {...fieldProps}
+                            id="auth-password-confirm"
+                            name="pbAuthPasscodeConfirm"
+                            type={showConfirmPassword ? "text" : "password"}
+                            minLength={8}
+                            autoComplete="new-password"
+                            aria-describedby={fieldProps['aria-describedby'] ? describedBy : undefined}
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            className={`${className} pr-12`}
+                            placeholder="********"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 !p-2 text-text-muted"
+                            aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                          >
+                            {showConfirmPassword ? <Eye size={18} aria-hidden="true" /> : <EyeOff size={18} aria-hidden="true" />}
+                          </Button>
+                        </div>
+                      )}
+                    </FormField>
                   )}
 
-                  <button type="submit" disabled={emailSubmitDisabled} className="w-full bg-slate-950 hover:bg-primary-600 text-white py-4 rounded-2xl font-bold transition-all mt-4 shadow-lg shadow-slate-900/10 text-sm disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center group">
+                  <Button type="submit" variant="primary" size="lg" disabled={emailSubmitDisabled} className="mt-4 w-full">
                     {isAuthLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
                     {isAuthLoading ? 'Please wait...' : view === 'login' ? 'Sign In to Portal' : 'Send Verification Code'}
-                  </button>
+                  </Button>
                 </form>
               </>
             )}
 
             {!isGoogleLinkPassword && !isGoogleCompany && !isPasswordSetup && !isPasswordSetupGoogle && !isGoogleLinkOtp && !isPasswordSetupOtp && (
-              <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 text-center text-sm text-slate-600 dark:text-slate-400">
+              <div className="mt-8 border-t border-border-subtle pt-6 text-center text-sm text-text-muted">
                 {view === 'login' ? (
-                  <p>Don't have an account? <button onClick={() => switchAuthView('register')} className="text-primary-600 font-bold hover:text-primary-700 hover:underline transition-colors">Sign up as Client</button> or <button onClick={() => switchAuthView('register_pro')} className="text-primary-600 font-bold hover:text-primary-700 hover:underline transition-colors">Apply as Talent</button></p>
+                  <p>
+                    Don't have an account?{' '}
+                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('register')} className="!px-1 !py-0 text-action hover:underline">
+                      Sign up as Client
+                    </Button>{' '}
+                    or{' '}
+                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('register_pro')} className="!px-1 !py-0 text-action hover:underline">
+                      Apply as Talent
+                    </Button>
+                  </p>
                 ) : (
-                  <p>Already have an account? <button onClick={() => switchAuthView('login')} className="text-primary-600 font-bold hover:text-primary-700 hover:underline transition-colors">Log in</button></p>
+                  <p>
+                    Already have an account?{' '}
+                    <Button type="button" variant="ghost" size="sm" onClick={() => switchAuthView('login')} className="!px-1 !py-0 text-action hover:underline">
+                      Log in
+                    </Button>
+                  </p>
                 )}
               </div>
             )}
           </div>
         </div>
-      </div>
     </div>
+  );
+}
+
+function AuthModal(props) {
+  const {
+    isOpen,
+    view,
+    closeAuth,
+    authStep,
+    pendingAccountLink,
+    pendingRegistration,
+  } = props;
+  const isRegistering = view !== 'login';
+  const isRegistrationOtp = isRegistering && authStep === 'verify';
+  const isGoogleLinkPassword = authStep === 'google_link_password';
+  const isGoogleLinkOtp = authStep === 'google_link_verify';
+  const isPasswordSetup = authStep === 'password_setup';
+  const isPasswordSetupOtp = authStep === 'password_setup_verify';
+  const isPasswordSetupGoogle = authStep === 'password_setup_google';
+  const isGoogleCompany = authStep === 'google_company';
+  const isOtpStep = isRegistrationOtp || isGoogleLinkOtp || isPasswordSetupOtp;
+  const otpEmail = pendingRegistration?.email || pendingAccountLink?.email || 'your email';
+  const authTitle = isOtpStep
+    ? 'Verify Your Email'
+    : isGoogleLinkPassword
+      ? 'Link Google Sign-In'
+      : isGoogleCompany
+        ? 'Company Required'
+        : isPasswordSetup || isPasswordSetupGoogle
+          ? 'Create Email Password'
+          : view === 'login'
+            ? 'Sign In'
+            : view === 'register'
+              ? 'Create Client Account'
+              : 'Apply as Talent';
+  const authDescription = isOtpStep
+    ? `Enter the code sent to ${otpEmail}.`
+    : isGoogleLinkPassword
+      ? `An email/password account already exists for ${pendingAccountLink?.email || 'this email'}. Enter that account password first.`
+      : isGoogleCompany
+        ? 'Add your company name before continuing with this Google account.'
+        : isPasswordSetupGoogle
+          ? 'Email verified. Continue with Google to finish adding email/password login.'
+          : isPasswordSetup
+            ? `This email is registered with Google Sign-In. Create a password for ${pendingAccountLink?.email || 'this email'}.`
+            : view === 'login'
+              ? 'Enter your credentials to continue.'
+              : 'Fill out the details below to get started.';
+
+  return (
+    <Modal
+      open={isOpen}
+      onClose={closeAuth}
+      size="wide"
+      title={authTitle}
+      description={authDescription}
+    >
+      <AuthModalContent key={`${isOpen}-${view}-${authStep}`} {...props} />
+    </Modal>
   );
 }
 
@@ -1497,7 +1689,6 @@ export default function App() {
       </Suspense>
 
       <AuthModal
-        key={`${authModal.isOpen ? 'open' : 'closed'}-${authModal.view}-${authStep}`}
         isOpen={authModal.isOpen}
         view={authModal.view}
         closeAuth={closeAuth}

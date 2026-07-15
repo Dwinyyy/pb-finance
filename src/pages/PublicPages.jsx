@@ -184,7 +184,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
             <div className="flex min-h-[50vh] flex-col items-center justify-center bg-canvas px-4 pb-20 pt-32 text-center">
               <h1 className="mb-4 text-4xl font-bold text-text-primary">404 - Page Not Found</h1>
               <p className="mb-8 max-w-md text-text-muted">The page you are looking for doesn't exist or has been moved.</p>
-              <Button variant="primary" size="lg" onClick={() => navigateTo('home')}>
+              <Button variant="primary" size="lg" type="button" onClick={() => navigateTo('home')}>
                 Return Home
               </Button>
             </div>
@@ -538,7 +538,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
           </FadeIn>
 
           <FadeIn delay={400} className="w-full max-w-2xl flex justify-center mb-5">
-            <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto">
+            <Button variant="primary" size="lg" type="button" onClick={() => openAuth('register')} className="w-full sm:w-auto">
               Start Building Your Team
             </Button>
           </FadeIn>
@@ -555,6 +555,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
               return (
                 <button
                   key={path.label}
+                  type="button"
                   onClick={path.action}
                   className="flex min-h-11 min-w-[230px] flex-1 items-center justify-center gap-3 rounded-card border border-border-subtle bg-surface/90 px-4 py-3 text-center shadow-card transition-[border-color,background-color,box-shadow] hover:border-action/40 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
                 >
@@ -664,7 +665,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
               <SurfaceCard as="div" tone="trust" className="mt-12 p-8 text-center sm:p-10">
                 <h3 className="mb-4 text-2xl font-bold text-text-primary">Still have questions?</h3>
                 <p className="mx-auto mb-8 max-w-sm text-lg text-text-muted">Schedule a brief call to see how we can map a solution to your exact workflow.</p>
-                <Button variant="primary" size="lg" onClick={() => navigateTo('pricing')}>
+                <Button variant="primary" size="lg" type="button" onClick={() => navigateTo('pricing')}>
                   View Pricing
                 </Button>
               </SurfaceCard>
@@ -688,7 +689,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
                     </li>
                   ))}
                 </ul>
-                <Button variant="primary" size="lg" onClick={() => navigateTo('talents')}>
+                <Button variant="primary" size="lg" type="button" onClick={() => navigateTo('talents')}>
                   Preview Directory <ArrowRight size={20} className="ml-2" />
                 </Button>
               </FadeIn>
@@ -735,26 +736,26 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
   );
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-950 min-h-screen">
-      <section className="pt-16 pb-12 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+    <div className="min-h-screen bg-canvas">
+      <section className="border-b border-border-subtle bg-surface pb-12 pt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
             <FadeIn>
               <div>
-                <div className="inline-flex mb-5 rounded-full border border-primary-200 bg-primary-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-700 dark:border-primary-900/50 dark:bg-primary-950/30 dark:text-primary-300">
+                <div className="mb-5 inline-flex rounded-full border border-info-border bg-info-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-info">
                   Talent Directory Preview
                 </div>
-                <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-5">
+                <h1 className="mb-5 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
                   See the roles, rates, and readiness before you sign in.
                 </h1>
-                <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed mb-8">
+                <p className="mb-8 max-w-2xl text-lg leading-relaxed text-text-muted">
                   Preview anonymized finance profiles with the same signals clients use to shortlist: role fit, tools, availability, overlap, and estimated rate.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <Button variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full sm:w-auto">
+                  <Button variant="primary" size="lg" type="button" onClick={() => openAuth('register')} className="w-full sm:w-auto">
                     Unlock Full Directory
                   </Button>
-                  <Button variant="outline" size="lg" onClick={() => openAuth('login')} className="w-full sm:w-auto bg-white dark:bg-slate-800">
+                  <Button variant="outline" size="lg" type="button" onClick={() => openAuth('login')} className="w-full sm:w-auto">
                     Client Login
                   </Button>
                 </div>
@@ -769,9 +770,9 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
                   ['24-72h', 'Shortlist turnaround'],
                   ['Role-fit', 'Credential screening'],
                 ].map(([value, label]) => (
-                  <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{value}</div>
-                    <div className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</div>
+                  <div key={label} className="rounded-card border border-border-subtle bg-surface-muted p-5">
+                    <div className="text-2xl font-black tracking-tight text-text-primary">{value}</div>
+                    <div className="mt-1 text-xs font-bold uppercase tracking-wider text-text-muted">{label}</div>
                   </div>
                 ))}
               </div>
@@ -783,11 +784,11 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <section className="py-10">
           <FadeIn>
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-card border border-border-subtle bg-surface p-4 shadow-card">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex min-h-12 flex-1 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 dark:border-slate-800 dark:bg-slate-950">
-                  <Search size={18} className="mr-3 text-slate-400" />
-                  <span className="text-sm font-semibold text-slate-500">Search by role, software, shift, or credential</span>
+                <div className="flex min-h-12 flex-1 items-center rounded-control border border-border-control bg-surface-muted px-4">
+                  <Search size={18} className="mr-3 text-text-muted" aria-hidden="true" />
+                  <span className="text-sm font-semibold text-text-muted">Search by role, software, shift, or credential</span>
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide lg:pb-0">
                   {DIRECTORY_FILTERS.map((filter) => (
@@ -795,10 +796,11 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
                       key={filter}
                       type="button"
                       onClick={() => setActiveFilter(filter)}
+                      aria-pressed={activeFilter === filter}
                       className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-bold ${
                         activeFilter === filter
-                          ? 'border-slate-950 bg-slate-950 text-white dark:border-primary-500 dark:bg-primary-600'
-                          : 'border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                          ? 'border-action bg-action text-white'
+                          : 'border-border-control bg-surface text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary'
                       }`}
                     >
                       {filter}
@@ -811,51 +813,51 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
             {filteredPreviewProfiles.map((profile, index) => (
-              <FadeIn key={profile.code} delay={(index % 6) * 60} direction="up" hover={true} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-primary-200 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <FadeIn key={profile.code} delay={(index % 6) * 60} direction="up" hover={true} className="rounded-card border border-border-subtle bg-surface p-6 shadow-card transition-all hover:border-info-border hover:shadow-modal">
                 <div className="mb-5 flex items-start justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white dark:bg-primary-600">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-control bg-processing-surface text-sm font-black text-processing">
                       {profile.code.split('-')[0]}
                     </div>
                     <div>
-                      <h3 className="text-lg font-black leading-tight text-slate-950 dark:text-white">{profile.title}</h3>
-                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{profile.code} verified preview</p>
+                      <h3 className="text-lg font-black leading-tight text-text-primary">{profile.title}</h3>
+                      <p className="text-xs font-bold uppercase tracking-wider text-processing">{profile.code} verified preview</p>
                     </div>
                   </div>
-                  <Lock size={18} className="text-slate-300 dark:text-slate-600" />
+                  <Lock size={18} className="text-pb-midnight dark:text-text-muted" aria-label="Profile details locked" />
                 </div>
 
                 <div className="mb-5 grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rate</div>
-                    <div className="mt-1 text-base font-black text-slate-950 dark:text-white">{profile.rate}</div>
+                  <div className="rounded-control border border-border-subtle bg-surface-muted p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Rate</div>
+                    <div className="mt-1 text-base font-black text-text-primary">{profile.rate}</div>
                   </div>
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Availability</div>
-                    <div className="mt-1 text-sm font-black text-slate-950 dark:text-white">{profile.availability}</div>
+                  <div className="rounded-control border border-verified-border bg-verified-surface p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-verified">Availability</div>
+                    <div className="mt-1 text-sm font-black text-verified">{profile.availability}</div>
                   </div>
                 </div>
 
-                <div className="space-y-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                <div className="space-y-3 text-sm font-semibold text-text-muted">
                   <div className="flex items-center gap-2">
-                    <BadgeCheck size={16} className="text-emerald-500" />
+                    <BadgeCheck size={16} className="text-verified" aria-hidden="true" />
                     {profile.credentials}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Clock3 size={16} className="text-primary-500" />
+                    <Clock3 size={16} className="text-processing" aria-hidden="true" />
                     {profile.overlap}
                   </div>
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-2">
                   {[...new Set([...asList(profile.skills), ...asList(profile.tools)])].map((tool) => (
-                    <span key={tool} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                    <span key={tool} className="rounded-lg border border-border-subtle bg-surface-muted px-2.5 py-1 text-xs font-bold text-text-muted">
                       {tool}
                     </span>
                   ))}
                 </div>
 
-                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <div className="mt-6 rounded-control border border-dashed border-border-control bg-pb-midnight-soft px-4 py-3 text-center text-sm font-bold text-pb-midnight dark:bg-surface-muted dark:text-text-primary">
                   Full resume unlocks after client signup
                 </div>
               </FadeIn>
@@ -866,30 +868,30 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
         <section className="pb-24">
           <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-stretch">
             <FadeIn>
-              <div className="h-full rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-300">
+              <div className="h-full rounded-card border border-border-subtle bg-surface p-8 shadow-card">
+                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-control bg-pb-midnight-soft text-pb-midnight dark:bg-surface-muted dark:text-text-primary">
                   <Lock size={24} />
                 </div>
-                <h2 className="mb-4 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Verified client access protects the talent pool.</h2>
-                <p className="mb-8 text-base font-medium leading-relaxed text-slate-600 dark:text-slate-400">
+                <h2 className="mb-4 text-3xl font-bold tracking-tight text-text-primary">Verified client access protects the talent pool.</h2>
+                <p className="mb-8 text-base font-medium leading-relaxed text-text-muted">
                   Public previews stay anonymized. Approved client accounts can view full profiles, save candidates, and request interviews from the portal.
                 </p>
-                <Button variant="outline" size="md" onClick={() => navigateTo('pricing')} className="w-full sm:w-auto bg-white dark:bg-slate-800">
+                <Button variant="outline" size="md" type="button" onClick={() => navigateTo('pricing')} className="w-full sm:w-auto">
                   View Pricing
                 </Button>
               </div>
             </FadeIn>
 
             <FadeIn delay={150} direction="left">
-              <div className="h-full rounded-3xl border border-slate-200 bg-slate-950 p-8 text-white shadow-xl dark:border-slate-800">
+              <div className="h-full rounded-card border border-white/10 bg-pb-midnight p-8 text-white shadow-modal">
                 <h3 className="mb-6 text-xl font-black">What unlocks after signup</h3>
                 <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
                   {DIRECTORY_UNLOCKS.map((item, index) => (
                     <div key={item} className="flex gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-processing-surface text-processing">
                         {index + 1}
                       </div>
-                      <div className="text-sm font-bold leading-relaxed text-slate-200">{item}</div>
+                      <div className="text-sm font-bold leading-relaxed text-white/80">{item}</div>
                     </div>
                   ))}
                 </div>
@@ -904,71 +906,72 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
 
 function AgencyMarketingView({ openAuth }) {
   return (
-    <div className="animate-in fade-in duration-700 bg-white dark:bg-slate-900">
+    <div className="animate-in fade-in bg-canvas duration-700">
       {/* Agency Header */}
-      <div className="relative pt-24 pb-32 lg:pt-36 lg:pb-40 overflow-hidden bg-slate-950 text-white border-b border-slate-800">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80')] opacity-[0.05] bg-cover bg-center mix-blend-overlay"></div>
-        <div className="absolute top-0 right-0 w-[800px] h-[600px] bg-primary-600/20 blur-[120px] rounded-full pointer-events-none -z-10"></div>
+      <div className="relative overflow-hidden border-b border-white/10 bg-pb-midnight pb-32 pt-24 text-white lg:pb-40 lg:pt-36">
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80')] bg-cover bg-center opacity-30"></div>
+        <div className="absolute inset-0 bg-pb-midnight/85"></div>
+        <div className="pointer-events-none absolute right-0 top-0 h-[600px] w-[800px] rounded-full bg-action/20 blur-[120px]"></div>
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="flex flex-col lg:flex-row gap-16 items-center">
             
             <div className="lg:w-3/5">
               <FadeIn delay={100}>
-                <div className="inline-flex items-center bg-white/5 backdrop-blur-md px-4 py-2 rounded-full text-xs font-bold text-primary-300 border border-white/10 mb-8 tracking-wider uppercase shadow-sm">
-                  <Star className="w-4 h-4 text-amber-400 mr-2 fill-current" /> Enterprise Finance Delivery
+                <div className="mb-8 inline-flex items-center rounded-full border border-premium-detail/40 bg-white/5 px-4 py-2 text-xs font-bold uppercase tracking-wider text-premium-detail shadow-card backdrop-blur-md">
+                  <Star className="mr-2 h-4 w-4 fill-current" aria-hidden="true" /> Enterprise Finance Delivery
                 </div>
                 <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-8">
                   Managed finance pods
                 </h1>
-                <p className="text-slate-400 text-xl max-w-2xl mb-12 leading-relaxed">
+                <p className="mb-12 max-w-2xl text-xl leading-relaxed text-white/70">
                   Strategic finance support delivered by role-based teams with clear capabilities, availability, and engagement history.
                 </p>
 
                 <div className="flex flex-wrap gap-6 mb-12">
                   <div className="bg-white/5 backdrop-blur-md p-5 rounded-[24px] flex items-center border border-white/10 min-w-[200px]">
-                    <MapPin className="text-cyan-400 w-8 h-8 mr-4" />
+                    <MapPin className="mr-4 h-8 w-8 rounded-control bg-processing-surface p-1.5 text-processing" aria-hidden="true" />
                     <div>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Location</p>
+                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-white/60">Location</p>
                       <p className="font-bold text-white text-lg">Philippines Hubs</p>
                     </div>
                   </div>
                   <div className="bg-white/5 backdrop-blur-md p-5 rounded-[24px] flex items-center border border-white/10 min-w-[200px]">
-                    <Building className="text-cyan-400 w-8 h-8 mr-4" />
+                    <Building className="mr-4 h-8 w-8 rounded-control bg-processing-surface p-1.5 text-processing" aria-hidden="true" />
                     <div>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Specialty</p>
+                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-white/60">Specialty</p>
                       <p className="font-bold text-white text-lg">Tax, Close, Reporting</p>
                     </div>
                   </div>
                 </div>
 
-                <button onClick={() => openAuth('register')} className="bg-white text-slate-950 px-10 py-4 rounded-full font-bold text-lg hover:bg-primary-50 transition-all shadow-xl shadow-white/10 flex items-center transform hover:-translate-y-1">
-                  Contact Agency <ArrowRight size={20} className="ml-3 text-slate-400" />
-                </button>
+                <Button type="button" variant="primary" size="lg" onClick={() => openAuth('register')} className="rounded-full px-10 text-lg">
+                  Contact Agency <ArrowRight size={20} className="ml-3" aria-hidden="true" />
+                </Button>
               </FadeIn>
             </div>
 
             <div className="lg:w-2/5 w-full">
               <FadeIn delay={300} direction="left">
-                <div className="bg-slate-900/50 backdrop-blur-2xl p-10 rounded-[32px] border border-white/10 shadow-2xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/20 blur-[50px] rounded-full"></div>
+                <div className="relative overflow-hidden rounded-modal border border-white/10 bg-white/5 p-10 shadow-modal backdrop-blur-2xl">
+                  <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-action/20 blur-[50px]"></div>
                   <h3 className="text-2xl font-bold mb-8 text-white relative z-10">Agency Capabilities</h3>
                   <div className="space-y-6 relative z-10">
                     <div className="flex items-start">
-                      <CheckCircle className="text-emerald-400 w-6 h-6 mr-4 flex-shrink-0 mt-0.5" />
-                      <p className="text-slate-300 text-base font-medium">100% CPA or equivalent qualified staff</p>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-verified-surface p-0.5 text-verified" aria-hidden="true" />
+                      <p className="text-base font-medium text-white/80">100% CPA or equivalent qualified staff</p>
                     </div>
                     <div className="flex items-start">
-                      <CheckCircle className="text-emerald-400 w-6 h-6 mr-4 flex-shrink-0 mt-0.5" />
-                      <p className="text-slate-300 text-base font-medium">US GAAP and IFRS compliant workflows</p>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-verified-surface p-0.5 text-verified" aria-hidden="true" />
+                      <p className="text-base font-medium text-white/80">US GAAP and IFRS compliant workflows</p>
                     </div>
                     <div className="flex items-start">
-                      <CheckCircle className="text-emerald-400 w-6 h-6 mr-4 flex-shrink-0 mt-0.5" />
-                      <p className="text-slate-300 text-base font-medium">SOC 2 Type II Certified infrastructure</p>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-verified-surface p-0.5 text-verified" aria-hidden="true" />
+                      <p className="text-base font-medium text-white/80">SOC 2 Type II Certified infrastructure</p>
                     </div>
                     <div className="flex items-start">
-                      <CheckCircle className="text-emerald-400 w-6 h-6 mr-4 flex-shrink-0 mt-0.5" />
-                      <p className="text-slate-300 text-base font-medium">Dedicated account managers for client pods</p>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-verified-surface p-0.5 text-verified" aria-hidden="true" />
+                      <p className="text-base font-medium text-white/80">Dedicated account managers for client pods</p>
                     </div>
                   </div>
                 </div>
@@ -978,30 +981,30 @@ function AgencyMarketingView({ openAuth }) {
         </div>
       </div>
 
-      <section className="py-24 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+      <section className="border-b border-border-subtle bg-surface py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <FadeIn>
               <div>
-                <div className="inline-flex mb-4 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <div className="mb-4 inline-flex rounded-full border border-processing-border bg-processing-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-processing">
                   Pod Design Preview
                 </div>
-                <h2 className="mb-5 text-4xl font-bold tracking-tight text-slate-950 dark:text-white md:text-5xl">
+                <h2 className="mb-5 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
                   Pick the finance workload. We shape the team around it.
                 </h2>
-                <p className="mb-8 text-lg leading-relaxed text-slate-600 dark:text-slate-400">
+                <p className="mb-8 text-lg leading-relaxed text-text-muted">
                   Enterprise clients need more than resumes. They need coverage, ownership, QA, and a clean handoff from scope to recurring execution.
                 </p>
 
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
-                  <h3 className="mb-4 text-sm font-black uppercase tracking-wider text-slate-500">Setup Path</h3>
+                <div className="rounded-card border border-border-subtle bg-surface-muted p-5">
+                  <h3 className="mb-4 text-sm font-black uppercase tracking-wider text-text-muted">Setup Path</h3>
                   <div className="space-y-3">
                     {POD_SETUP_STEPS.map((step, index) => (
-                      <div key={step} className="flex items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white dark:bg-primary-600">
+                      <div key={step} className="flex items-center gap-3 rounded-control bg-surface p-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-processing-surface text-xs font-black text-processing">
                           {index + 1}
                         </span>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{step}</span>
+                        <span className="text-sm font-bold text-text-primary">{step}</span>
                       </div>
                     ))}
                   </div>
@@ -1015,14 +1018,14 @@ function AgencyMarketingView({ openAuth }) {
 
                 return (
                   <FadeIn key={item.title} delay={index * 90} direction="left">
-                    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-primary-200 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                    <div className="rounded-card border border-border-subtle bg-surface p-6 shadow-card transition-all hover:border-processing-border hover:shadow-modal">
                       <div className="flex gap-5">
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-300">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-control bg-processing-surface text-processing">
                           <Icon size={24} />
                         </div>
                         <div>
-                          <h3 className="mb-2 text-xl font-black text-slate-950 dark:text-white">{item.title}</h3>
-                          <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">{item.text}</p>
+                          <h3 className="mb-2 text-xl font-black text-text-primary">{item.title}</h3>
+                          <p className="text-sm font-medium leading-relaxed text-text-muted">{item.text}</p>
                         </div>
                       </div>
                     </div>
@@ -1035,48 +1038,48 @@ function AgencyMarketingView({ openAuth }) {
       </section>
 
       {/* Engagement Models */}
-      <div className="py-32 bg-slate-50 dark:bg-slate-950 relative overflow-hidden">
+      <div className="relative overflow-hidden bg-surface-muted py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <FadeIn>
             <div className="text-center mb-20 max-w-3xl mx-auto">
-              <div className="inline-flex mb-4 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider shadow-sm">
+              <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-text-muted shadow-card">
                 Engagement Models
               </div>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-950 dark:text-white mb-6">Scale with structure</h2>
-              <p className="text-slate-600 dark:text-slate-400 text-xl leading-relaxed">Choose the setup that fits your workload, rather than forcing your business into a rigid software subscription.</p>
+              <h2 className="mb-6 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">Scale with structure</h2>
+              <p className="text-xl leading-relaxed text-text-muted">Choose the setup that fits your workload, rather than forcing your business into a rigid software subscription.</p>
             </div>
           </FadeIn>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 max-w-5xl mx-auto">
             {/* Model 1 */}
             <FadeIn delay={100} direction="up" className="h-full">
-              <div className="bg-white dark:bg-slate-900 rounded-[40px] shadow-lg shadow-slate-200/50 border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col hover:shadow-2xl hover:border-primary-200 hover:-translate-y-2 transition-all duration-500 p-10 h-full">
+              <div className="flex h-full flex-col overflow-hidden rounded-modal border border-border-subtle bg-surface p-10 shadow-card transition-all duration-500 hover:-translate-y-2 hover:border-info-border hover:shadow-modal">
                 <div className="mb-8">
-                  <h3 className="text-3xl font-bold text-slate-950 dark:text-white mb-4">Dedicated Embedded Hire</h3>
-                  <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
+                  <h3 className="mb-4 text-3xl font-bold text-text-primary">Dedicated Embedded Hire</h3>
+                  <p className="mb-6 text-lg leading-relaxed text-text-muted">
                     Best for recurring workflows where you want one primary professional to own processes, reporting, and communication.
                   </p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-black text-slate-950 dark:text-white tracking-tight">$1,500</span>
-                    <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">/ mo</span>
+                    <span className="text-4xl font-black tracking-tight text-text-primary">$1,500</span>
+                    <span className="text-sm font-bold uppercase tracking-wider text-text-muted">/ mo</span>
                   </div>
                 </div>
                 <div className="flex-grow flex flex-col">
-                  <ul className="space-y-5 mb-10 bg-slate-50 dark:bg-slate-950 p-8 rounded-[24px] border border-slate-100 dark:border-slate-800 flex-grow">
+                  <ul className="mb-10 flex-grow space-y-5 rounded-card border border-border-subtle bg-surface-muted p-8">
                     <li className="flex items-start">
-                      <CheckCircle className="w-6 h-6 text-emerald-500 mr-4 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-700 dark:text-slate-300 text-base font-bold">Consistent ownership of recurring work</span>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 text-verified" aria-hidden="true" />
+                      <span className="text-base font-bold text-text-primary">Consistent ownership of recurring work</span>
                     </li>
                     <li className="flex items-start">
-                      <CheckCircle className="w-6 h-6 text-emerald-500 mr-4 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-700 dark:text-slate-300 text-base font-bold">Direct communication via Slack/Teams</span>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 text-verified" aria-hidden="true" />
+                      <span className="text-base font-bold text-text-primary">Direct communication via Slack/Teams</span>
                     </li>
                     <li className="flex items-start">
-                      <CheckCircle className="w-6 h-6 text-emerald-500 mr-4 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-700 dark:text-slate-300 text-base font-bold">Billed at flat monthly rate</span>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 text-verified" aria-hidden="true" />
+                      <span className="text-base font-bold text-text-primary">Billed at flat monthly rate</span>
                     </li>
                   </ul>
-                  <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 text-center text-sm font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                  <div className="w-full rounded-control border border-border-subtle bg-surface-muted py-4 text-center text-sm font-black text-text-muted">
                     Embedded hire option
                   </div>
                 </div>
@@ -1085,34 +1088,31 @@ function AgencyMarketingView({ openAuth }) {
 
             {/* Model 2 */}
             <FadeIn delay={200} direction="up" className="h-full">
-              <div className="bg-slate-950 rounded-[40px] shadow-2xl shadow-slate-900/30 border border-slate-800 overflow-hidden flex flex-col hover:shadow-primary-900/20 hover:-translate-y-2 transition-all duration-500 relative p-10 h-full group">
-                <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-primary-600/20 blur-[80px] rounded-full pointer-events-none group-hover:bg-cyan-500/20 transition-colors duration-700"></div>
-                <div className="absolute top-8 right-8 bg-gradient-to-r from-primary-500 to-cyan-500 text-white text-xs font-bold px-4 py-1.5 rounded-full uppercase tracking-wider shadow-lg">
-                  Most Popular
-                </div>
-                <div className="mb-8 pr-24 relative z-10">
+              <div className="group relative flex h-full flex-col overflow-hidden rounded-modal border border-white/10 bg-pb-midnight p-10 shadow-modal transition-all duration-500 hover:-translate-y-2">
+                <div className="pointer-events-none absolute right-0 top-0 h-[300px] w-[300px] rounded-full bg-action/20 blur-[80px] transition-colors duration-700 group-hover:bg-processing/20"></div>
+                <div className="relative z-10 mb-8">
                   <h3 className="text-3xl font-bold text-white mb-4">Managed Pod</h3>
-                  <p className="text-lg text-slate-400 leading-relaxed mb-6">
+                  <p className="mb-6 text-lg leading-relaxed text-white/70">
                     Cross-functional teams managed by a senior CPA. Best for teams with multiple workflows needing backup coverage and QA.
                   </p>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-black text-white tracking-tight">$3,600</span>
-                    <span className="text-sm font-bold text-primary-300 uppercase tracking-wider">/ mo</span>
+                    <span className="text-sm font-bold uppercase tracking-wider text-processing">/ mo</span>
                   </div>
                 </div>
                 <div className="flex-grow flex flex-col relative z-10">
-                  <ul className="space-y-5 mb-10 bg-slate-900/50 p-8 rounded-[24px] border border-slate-800 backdrop-blur-md flex-grow">
+                  <ul className="mb-10 flex-grow space-y-5 rounded-card border border-white/10 bg-white/5 p-8 backdrop-blur-md">
                     <li className="flex items-start">
-                      <CheckCircle className="w-6 h-6 text-cyan-400 mr-4 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-200 text-base font-bold">Role-based accountability and QA</span>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-processing-surface p-0.5 text-processing" aria-hidden="true" />
+                      <span className="text-base font-bold text-white/80">Role-based accountability and QA</span>
                     </li>
                     <li className="flex items-start">
-                      <CheckCircle className="w-6 h-6 text-cyan-400 mr-4 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-200 text-base font-bold">Built-in backup coverage (no downtime)</span>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-processing-surface p-0.5 text-processing" aria-hidden="true" />
+                      <span className="text-base font-bold text-white/80">Built-in backup coverage (no downtime)</span>
                     </li>
                     <li className="flex items-start">
-                      <CheckCircle className="w-6 h-6 text-cyan-400 mr-4 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-200 text-base font-bold">Includes CPAs, Tax Prep, and Reviewers</span>
+                      <CheckCircle className="mr-4 mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-processing-surface p-0.5 text-processing" aria-hidden="true" />
+                      <span className="text-base font-bold text-white/80">Includes CPAs, Tax Prep, and Reviewers</span>
                     </li>
                   </ul>
                   <div className="w-full rounded-2xl border border-white/10 bg-white/10 py-4 text-center text-sm font-black text-white">
@@ -1142,17 +1142,17 @@ function PublicFooter({ navigateTo, openAuth }) {
           <div>
             <h4 className="text-white font-bold mb-6 uppercase tracking-wider text-sm">Platform</h4>
             <ul className="space-y-1 font-medium text-white/70">
-              <li><button onClick={() => navigateTo('home')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Overview</button></li>
-              <li><button onClick={() => navigateTo('talents')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Talent Directory</button></li>
-              <li><button onClick={() => navigateTo('agency')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Enterprise Pods</button></li>
+              <li><button type="button" onClick={() => navigateTo('home')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Overview</button></li>
+              <li><button type="button" onClick={() => navigateTo('talents')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Talent Directory</button></li>
+              <li><button type="button" onClick={() => navigateTo('agency')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Enterprise Pods</button></li>
             </ul>
           </div>
           <div>
             <h4 className="text-white font-bold mb-6 uppercase tracking-wider text-sm">Connect</h4>
             <ul className="space-y-1 font-medium text-white/70">
-              <li><button onClick={() => openAuth('register')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Book Discovery</button></li>
-              <li><button onClick={() => openAuth('login')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Client Login</button></li>
-              <li><button onClick={() => openAuth('register_pro')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Apply as Talent</button></li>
+              <li><button type="button" onClick={() => openAuth('register')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Book Discovery</button></li>
+              <li><button type="button" onClick={() => openAuth('login')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Client Login</button></li>
+              <li><button type="button" onClick={() => openAuth('register_pro')} className="inline-flex min-h-11 items-center rounded-control transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/40">Apply as Talent</button></li>
             </ul>
           </div>
         </div>
@@ -1168,15 +1168,15 @@ function PublicFooter({ navigateTo, openAuth }) {
 
 function PricingView({ openAuth }) {
   return (
-    <div className="animate-in fade-in duration-700 bg-white dark:bg-slate-900 pt-20 pb-28 min-h-screen">
+    <div className="min-h-screen animate-in fade-in bg-canvas pb-28 pt-20 duration-700">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
           <div className="mx-auto mb-16 max-w-3xl text-center">
-            <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            <div className="mb-4 inline-flex rounded-full border border-info-border bg-info-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-info">
               Pricing
             </div>
-            <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white md:text-5xl mb-5">Transparent access, custom delivery.</h1>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
+            <h1 className="mb-5 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">Transparent access, custom delivery.</h1>
+            <p className="text-lg text-text-muted">
               Start with the directory for individual hiring, or move into a managed pod when the workflow needs structure, coverage, and QA.
             </p>
           </div>
@@ -1184,49 +1184,49 @@ function PricingView({ openAuth }) {
         
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
           <FadeIn delay={100} direction="up" hover={true} className="h-full">
-            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 md:p-10 flex flex-col h-full hover:shadow-xl transition-shadow">
+            <div className="flex h-full flex-col rounded-card border border-border-subtle bg-surface p-8 shadow-card transition-shadow hover:shadow-modal md:p-10">
               <div className="mb-8 flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-950 dark:text-white mb-2">Platform Access</h3>
-                  <p className="text-slate-500 dark:text-slate-400">Best for hiring 1-2 remote professionals.</p>
+                  <h3 className="mb-2 text-2xl font-bold text-text-primary">Platform Access</h3>
+                  <p className="text-text-muted">Best for hiring 1-2 remote professionals.</p>
                 </div>
-                <div className="rounded-2xl bg-white p-3 text-primary-600 shadow-sm dark:bg-slate-900">
-                  <User size={22} />
+                <div className="rounded-control bg-info-surface p-3 text-info shadow-card">
+                  <User size={22} aria-hidden="true" />
                 </div>
               </div>
-              <div className="text-5xl font-black text-slate-950 dark:text-white tracking-tight mb-8">Free<span className="text-lg font-bold text-slate-500 tracking-normal"> forever</span></div>
+              <div className="mb-8 text-5xl font-black tracking-tight text-text-primary">Free<span className="text-lg font-bold tracking-normal text-text-muted"> forever</span></div>
               <ul className="space-y-4 mb-10 flex-grow">
                 {['Browse full talent directory', 'Interview up to 3 candidates', 'Standard KYC compliance', 'Shortlist and interview tracking'].map((item) => (
-                  <li key={item} className="flex items-center text-slate-700 dark:text-slate-300">
-                    <CheckCircle className="text-primary-500 w-5 h-5 mr-3 shrink-0" /> {item}
+                  <li key={item} className="flex items-center text-text-primary">
+                    <CheckCircle className="mr-3 h-5 w-5 shrink-0 text-info" aria-hidden="true" /> {item}
                   </li>
                 ))}
               </ul>
-              <button onClick={() => openAuth('register')} className="w-full bg-slate-950 text-white rounded-2xl py-4 font-bold hover:bg-primary-600 transition-colors">Create Free Account</button>
+              <Button type="button" variant="primary" size="lg" onClick={() => openAuth('register')} className="w-full">Create Free Account</Button>
             </div>
           </FadeIn>
 
           <FadeIn delay={200} direction="up" hover={true} className="h-full">
-            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-8 md:p-10 flex flex-col h-full shadow-2xl relative overflow-hidden group hover:border-primary-500 transition-colors">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/15 blur-[60px] rounded-full pointer-events-none group-hover:bg-cyan-500/20 transition-colors"></div>
+            <div className="group relative flex h-full flex-col overflow-hidden rounded-card border border-white/10 bg-pb-midnight p-8 shadow-modal transition-colors hover:border-action md:p-10">
+              <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-action/15 blur-[60px] transition-colors group-hover:bg-processing/20"></div>
               <div className="relative z-10 mb-8 flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-2xl font-bold text-white mb-2">Enterprise Pods</h3>
-                  <p className="text-slate-400">Dedicated managed teams and SLAs.</p>
+                  <p className="text-white/70">Dedicated managed teams and SLAs.</p>
                 </div>
-                <div className="rounded-2xl bg-white/10 p-3 text-cyan-300">
-                  <Layers3 size={22} />
+                <div className="rounded-control bg-processing-surface p-3 text-processing">
+                  <Layers3 size={22} aria-hidden="true" />
                 </div>
               </div>
               <div className="text-5xl font-black text-white tracking-tight mb-8 relative z-10">Custom</div>
               <ul className="space-y-4 mb-10 flex-grow relative z-10">
                 {['Dedicated account manager', 'Role-based pod design', 'Backup coverage and QA cadence', 'Priority placement within 72hrs'].map((item) => (
-                  <li key={item} className="flex items-center text-slate-300">
-                    <CheckCircle className="text-cyan-400 w-5 h-5 mr-3 shrink-0" /> {item}
+                  <li key={item} className="flex items-center text-white/80">
+                    <CheckCircle className="mr-3 h-5 w-5 shrink-0 rounded-full bg-processing-surface p-0.5 text-processing" aria-hidden="true" /> {item}
                   </li>
                 ))}
               </ul>
-              <button onClick={() => openAuth('register')} className="w-full bg-white text-slate-950 rounded-2xl py-4 font-bold hover:bg-slate-100 transition-colors relative z-10">Draft a Pod Structure</button>
+              <Button type="button" variant="primary" size="lg" onClick={() => openAuth('register')} className="relative z-10 w-full">Draft a Pod Structure</Button>
             </div>
           </FadeIn>
         </div>
@@ -1234,13 +1234,13 @@ function PricingView({ openAuth }) {
         <section className="mt-12 grid gap-6 lg:grid-cols-2">
           {PRICING_DECISION_GUIDE.map((guide, index) => (
             <FadeIn key={guide.title} delay={index * 100}>
-              <div className="h-full rounded-3xl border border-slate-200 bg-white p-7 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <h2 className="mb-3 text-xl font-black text-slate-950 dark:text-white">{guide.title}</h2>
-                <p className="mb-6 text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">{guide.text}</p>
+              <div className="h-full rounded-card border border-border-subtle bg-surface p-7 shadow-card">
+                <h2 className="mb-3 text-xl font-black text-text-primary">{guide.title}</h2>
+                <p className="mb-6 text-sm font-medium leading-relaxed text-text-muted">{guide.text}</p>
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
                   {guide.points.map((point) => (
-                    <div key={point} className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-700 dark:bg-slate-950 dark:text-slate-300">
-                      <CheckCircle size={16} className="text-emerald-500 shrink-0" />
+                    <div key={point} className="flex items-center gap-3 rounded-control border border-verified-border bg-verified-surface p-3 text-sm font-bold text-verified">
+                      <CheckCircle size={16} className="shrink-0" aria-hidden="true" />
                       {point}
                     </div>
                   ))}
@@ -1251,9 +1251,9 @@ function PricingView({ openAuth }) {
         </section>
 
         <FadeIn delay={250}>
-          <div className="mt-12 rounded-3xl border border-primary-100 bg-primary-50 p-8 text-center dark:border-slate-800 dark:bg-slate-950">
-            <h2 className="mb-3 text-2xl font-black text-slate-950 dark:text-white">Not sure which path fits?</h2>
-            <p className="mx-auto max-w-2xl text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-400">
+          <div className="mt-12 rounded-card border border-info-border bg-info-surface p-8 text-center">
+            <h2 className="mb-3 text-2xl font-black text-text-primary">Not sure which path fits?</h2>
+            <p className="mx-auto max-w-2xl text-sm font-medium leading-relaxed text-text-muted">
               Start free, describe the workload, and PB Finance can steer you toward individual profiles or a managed team structure.
             </p>
           </div>

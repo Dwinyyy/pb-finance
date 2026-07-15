@@ -8,7 +8,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { createServer } from 'vite';
 
 const publicPage = readFileSync(new URL('../src/pages/PublicPages.jsx', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+
+const sourceBetween = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+const directoryView = sourceBetween(publicPage, 'function PreviewDirectoryView', 'function AgencyMarketingView');
+const agencyView = sourceBetween(publicPage, 'function AgencyMarketingView', 'function PublicFooter');
+const pricingView = publicPage.slice(publicPage.indexOf('function PricingView'));
+const authModal = sourceBetween(app, 'function AuthModal', 'export default function App');
 
 test('public shell and Home use the signature system', () => {
   assert.match(publicPage, /<BrandMark/);
@@ -65,6 +72,179 @@ test('public navigation, ROI sliders, and FAQ expose complete accessibility rela
   }
 });
 
+test('public route controls declare non-submit button behavior', () => {
+  const lines = publicPage.split(/\r?\n/);
+  const buttonTags = lines.flatMap((line, index) => (
+    /<(?:button|Button)\b/.test(line) ? [lines.slice(index, index + 5).join('\n')] : []
+  ));
+
+  assert.ok(buttonTags.length > 0);
+  for (const tag of buttonTags) assert.match(tag, /type="button"/);
+});
+
+test('secondary public routes use governed signature semantics', () => {
+  for (const component of ['PreviewDirectoryView', 'AgencyMarketingView', 'PricingView']) {
+    assert.match(publicPage, new RegExp(`function ${component}`));
+  }
+
+  assert.match(directoryView, /bg-verified-surface/);
+  assert.match(directoryView, /bg-processing-surface/);
+  assert.match(directoryView, /bg-pb-midnight/);
+  assert.match(directoryView, /bg-action/);
+  assert.match(agencyView, /bg-pb-midnight/);
+  assert.match(agencyView, /text-premium-detail/);
+  assert.match(agencyView, /text-verified/);
+  assert.match(agencyView, /text-processing/);
+  assert.match(pricingView, /bg-surface/);
+  assert.match(pricingView, /bg-pb-midnight/);
+  assert.match(pricingView, /bg-action/);
+  assert.doesNotMatch(`${agencyView}\n${pricingView}`, /Most Popular/);
+
+  assert.doesNotMatch(
+    publicPage,
+    /(?:bg|text|border|from|via|to|shadow|ring|accent)-(?:slate|gray|zinc|violet|blue|cyan|emerald|primary)-/,
+  );
+  assert.doesNotMatch(publicPage, /#[\da-f]{3,8}\b/i);
+});
+
+test('secondary public routes preserve filters, locked previews, pricing copy, images, and CTAs', () => {
+  assert.match(directoryView, /const \[activeFilter, setActiveFilter\] = useState\('All'\)/);
+  assert.match(directoryView, /DIRECTORY_PREVIEW_PROFILES\.filter\(\(profile\) => directoryProfileMatchesFilter\(profile, activeFilter\)\)/);
+  assert.match(directoryView, /DIRECTORY_FILTERS\.map\(\(filter\) =>/);
+  assert.match(directoryView, /overflow-x-auto/);
+  assert.match(directoryView, /Full resume unlocks after client signup/);
+  assert.match(directoryView, /openAuth\('register'\)/);
+  assert.match(directoryView, /openAuth\('login'\)/);
+  assert.match(directoryView, /navigateTo\('pricing'\)/);
+
+  assert.match(
+    agencyView,
+    /https:\/\/images\.unsplash\.com\/photo-1486406146926-c627a92ad1ab\?ixlib=rb-4\.0\.3&auto=format&fit=crop&w=2000&q=80/,
+  );
+  assert.match(agencyView, /openAuth\('register'\)/);
+
+  for (const copy of [
+    'Transparent access, custom delivery.',
+    'Start with the directory for individual hiring, or move into a managed pod when the workflow needs structure, coverage, and QA.',
+    'Platform Access',
+    'Best for hiring 1-2 remote professionals.',
+    'Free',
+    'forever',
+    'Browse full talent directory',
+    'Interview up to 3 candidates',
+    'Standard KYC compliance',
+    'Shortlist and interview tracking',
+    'Create Free Account',
+    'Enterprise Pods',
+    'Dedicated managed teams and SLAs.',
+    'Custom',
+    'Dedicated account manager',
+    'Role-based pod design',
+    'Backup coverage and QA cadence',
+    'Priority placement within 72hrs',
+    'Draft a Pod Structure',
+    'Not sure which path fits?',
+    'Start free, describe the workload, and PB Finance can steer you toward individual profiles or a managed team structure.',
+  ]) {
+    assert.match(pricingView, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.equal([...pricingView.matchAll(/openAuth\('register'\)/g)].length, 2);
+});
+
+test('public auth entry uses shared accessible primitives and semantic feedback', () => {
+  assert.match(app, /import \{ Button \} from '\.\/components\/ui\/Button'/);
+  assert.match(app, /import \{ FormField \} from '\.\/components\/ui\/FormField'/);
+  assert.match(app, /import \{ Modal \} from '\.\/components\/ui\/Modal'/);
+  assert.match(authModal, /<Modal/);
+  assert.match(authModal, /open=\{isOpen\}/);
+  assert.doesNotMatch(authModal, /if \(!isOpen\) return null/);
+  assert.match(authModal, /<FormField/);
+  assert.match(authModal, /<Button/);
+  assert.doesNotMatch(authModal, /<button\b/);
+  assert.match(authModal, /role="alert"/);
+  assert.match(authModal, /role="status"/);
+  assert.match(authModal, /aria-live="polite"/);
+  assert.match(authModal, /aria-label=\{showPassword \? 'Hide password' : 'Show password'\}/);
+  assert.match(authModal, /aria-label=\{showConfirmPassword \? 'Hide password confirmation' : 'Show password confirmation'\}/);
+  assert.doesNotMatch(
+    authModal,
+    /(?:bg|text|border|from|via|to|shadow|ring|accent)-(?:slate|gray|zinc|violet|blue|cyan|emerald|red|amber|primary)-/,
+  );
+});
+
+test('public auth migration preserves views, fields, validation, handlers, API calls, and password branches', () => {
+  for (const step of [
+    'google_link_password',
+    'google_link_verify',
+    'password_setup',
+    'password_setup_verify',
+    'password_setup_google',
+    'google_company',
+  ]) {
+    assert.match(authModal, new RegExp(`authStep === '${step}'`));
+  }
+
+  assert.deepEqual(
+    [...new Set([...authModal.matchAll(/name="([^"]+)"/g)].map((match) => match[1]))].sort(),
+    ['company', 'email', 'fullName', 'googleCompany', 'otp', 'pbAuthPasscode', 'pbAuthPasscodeConfirm', 'pbWorkEmail'],
+  );
+
+  for (const validation of [
+    'getPasswordRequirementError',
+    'validateAuthValues',
+    'validateGoogleStartValues',
+    'validateGoogleLinkValues',
+    'validatePasswordSetupValues',
+    'validateGoogleCompanyValues',
+  ]) {
+    assert.match(app, new RegExp(`const ${validation} =`));
+  }
+
+  for (const handler of [
+    'handleAccountLinkOtpSubmit',
+    'handleAccountLinkSubmit',
+    'handleAuthSubmit',
+    'handleGoogleCompanySubmit',
+    'handleGoogleAuth',
+    'handleOtpSubmit',
+    'handlePasswordSetupGoogleConfirm',
+    'handlePasswordSetupSubmit',
+  ]) {
+    assert.match(authModal, new RegExp(handler));
+  }
+
+  for (const method of [
+    'login',
+    'register',
+    'verifyRegistration',
+    'requestGoogleLink',
+    'requestPasswordSetup',
+    'verifyPasswordSetup',
+    'verifyGoogleLink',
+    'google',
+    'completePasswordSetup',
+    'finalizeOAuth',
+    'logout',
+  ]) {
+    assert.match(app, new RegExp(`backendApi\\.auth\\.${method}\\b`));
+  }
+
+  for (const destination of ['login', 'register', 'register_pro']) {
+    assert.match(authModal, new RegExp(`switchAuthView\\('${destination}'\\)`));
+  }
+  assert.equal([...authModal.matchAll(/type=\{showPassword \? "text" : "password"\}/g)].length, 3);
+  assert.equal([...authModal.matchAll(/setShowPassword\(!showPassword\)/g)].length, 3);
+  assert.equal([...authModal.matchAll(/type=\{showConfirmPassword \? "text" : "password"\}/g)].length, 2);
+  assert.equal([...authModal.matchAll(/setShowConfirmPassword\(!showConfirmPassword\)/g)].length, 2);
+});
+
+test('public auth modal stays mounted for exit animation and resets transient form state', () => {
+  assert.doesNotMatch(app, /<AuthModal\s+key=/);
+  assert.match(authModal, /<Modal[\s\S]*open=\{isOpen\}/);
+  assert.match(authModal, /<AuthModalContent\s+key=\{`\$\{isOpen\}-\$\{view\}-\$\{authStep\}`\}/);
+  assert.doesNotMatch(authModal, /useEffect\([\s\S]*setShowPassword\(false\)/);
+});
+
 test('public shell and Home server-render accessible signature landmarks', async () => {
   const vite = await createServer({
     root: projectRoot,
@@ -116,6 +296,40 @@ test('public shell and Home server-render accessible signature landmarks', async
 
     const collapsedFaqPanel = html.match(/<div[^>]*id="faq-panel-1"[^>]*>/)?.[0] || '';
     assert.match(collapsedFaqPanel, /aria-hidden="true"/);
+
+    for (const [path, expectedCopy] of [
+      ['/talents', 'See the roles, rates, and readiness before you sign in.'],
+      ['/agency', 'Managed finance pods'],
+      ['/pricing', 'Transparent access, custom delivery.'],
+      ['/missing-public-route', '404 - Page Not Found'],
+    ]) {
+      const routeHtml = renderToStaticMarkup(createElement(
+        MemoryRouter,
+        { initialEntries: [path] },
+        createElement(PublicSite, {
+          isDarkMode: false,
+          openAuth: () => {},
+          toggleDarkMode: () => {},
+        }),
+      ));
+
+      assert.match(routeHtml, /<main[^>]*>/);
+      assert.match(routeHtml, /<footer[^>]*bg-pb-midnight/);
+      assert.match(routeHtml, new RegExp(expectedCopy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    }
+
+    const directoryHtml = renderToStaticMarkup(createElement(
+      MemoryRouter,
+      { initialEntries: ['/talents'] },
+      createElement(PublicSite, {
+        isDarkMode: false,
+        openAuth: () => {},
+        toggleDarkMode: () => {},
+      }),
+    ));
+    assert.match(directoryHtml, /<button[^>]*aria-pressed="true"[^>]*>All<\/button>/);
+    assert.match(directoryHtml, /Full resume unlocks after client signup/);
+    assert.match(directoryHtml, /Profile details locked/);
   } finally {
     await vite.close();
   }
