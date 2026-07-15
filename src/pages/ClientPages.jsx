@@ -532,7 +532,7 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
               >
                 {isDarkMode ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
               </Button>
-              <div className="[&>div]:h-11 [&>div]:w-11 [&>div>button]:min-h-11 [&>div>button]:min-w-11 [&>div>button]:rounded-control [&>div>button]:text-text-muted [&>div>button]:focus-visible:outline-none [&>div>button]:focus-visible:ring-4 [&>div>button]:focus-visible:ring-focus/25 [&>div>div]:top-12">
+              <div className="[&>div]:h-11 [&>div]:w-11 [&>div>button]:min-h-11 [&>div>button]:min-w-11 [&>div>button]:rounded-control [&>div>button]:text-text-muted [&>div>button:hover]:!text-action [&>div>button:focus-visible]:!text-action [&>div>button]:focus-visible:outline-none [&>div>button]:focus-visible:ring-4 [&>div>button]:focus-visible:ring-focus/25 [&>div>div]:!fixed [&>div>div]:!inset-x-4 [&>div>div]:!top-32 [&>div>div]:!w-auto sm:[&>div>div]:!absolute sm:[&>div>div]:!inset-x-auto sm:[&>div>div]:!right-0 sm:[&>div>div]:!top-12 sm:[&>div>div]:!w-[min(22rem,calc(100vw-2rem))]">
                 <NotificationBell notificationState={notificationState} unreadClassName="bg-action" userId={user.id} />
               </div>
               <Button

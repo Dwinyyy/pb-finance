@@ -54,6 +54,26 @@ test('client shell migration preserves permission, onboarding, notification, and
   assert.match(clientPortal, /onClick=\{onLogout\}/);
 });
 
+test('client notification trigger and panel stay semantic and viewport-safe', () => {
+  for (const className of [
+    '[&>div>button:hover]:!text-action',
+    '[&>div>button:focus-visible]:!text-action',
+    '[&>div>div]:!fixed',
+    '[&>div>div]:!inset-x-4',
+    '[&>div>div]:!top-32',
+    '[&>div>div]:!w-auto',
+    'sm:[&>div>div]:!absolute',
+    'sm:[&>div>div]:!inset-x-auto',
+    'sm:[&>div>div]:!right-0',
+    'sm:[&>div>div]:!top-12',
+    'sm:[&>div>div]:!w-[min(22rem,calc(100vw-2rem))]',
+  ]) {
+    assert.ok(clientPortal.includes(className), `missing notification shell class: ${className}`);
+  }
+
+  assert.match(clientPortal, /<NotificationBell notificationState=\{notificationState\} unreadClassName="bg-action" userId=\{user\.id\} \/>/);
+});
+
 test('all four client modal bodies use shared semantic presentation and accessible controls', () => {
   assert.equal([...clientPage.matchAll(/<Modal\b/g)].length, 4);
   assert.equal([...clientPage.matchAll(/<Modal[^>]*description=/g)].length, 4);
