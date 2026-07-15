@@ -1,6 +1,6 @@
 # PB Finance Signature UI System and Core Surface Refresh
 
-**Status:** Revised; awaiting user review for implementation planning
+**Status:** Approved for implementation
 
 **Date:** 2026-07-15
 
@@ -151,7 +151,7 @@ Dark mode will preserve the same semantic relationships instead of mechanically 
 
 - **Client Verification:** Trust navy anchors the page and identity requirements; innovation cyan marks liveness and active upload processing; growth emerald appears only as evidence becomes complete or approved; action cobalt owns the final submit action; pearl surfaces and restrained champagne details keep the experience clear and premium.
 - **Professional Onboarding:** Trust colors frame identity and regulated credentials; innovation colors distinguish liveness, automation, and file-processing moments; growth colors show completion and verified standing; amber draws attention to missing or expiring evidence; premium neutrals keep dense document sections calm.
-- **Tier presentation:** Basic and unverified tiers use clear neutral styling, verified tiers use growth emerald supported by a subtle trust-blue edge, and preview controls use action/innovation colors without suggesting that preview mode changes the account tier.
+- **Tier presentation:** Basic and Unverified tiers use clear neutral styling, Verified tiers use Growth Emerald supported by a subtle Midnight edge, and the existing VIP client tier uses Midnight with a scarce Champagne detail. Preview controls use action/innovation colors without suggesting that preview mode changes the account tier.
 - **Profile Settings:** Clarity and luxury dominate through pearl surfaces, ink typography, spacious grouping, and a fine champagne divider. Cobalt appears only on Save; growth appears only after a successful save.
 - **Document Change/Removal:** Trust navy explains that the approved file remains protected, amber identifies the request as consequential and pending admin review, cobalt submits the request, and red appears only when validation or submission fails.
 
@@ -206,6 +206,10 @@ These small presentation primitives will establish consistent card structure, ti
 ### SegmentedControl
 
 Tier preview and binary display controls will use a keyboard-accessible segmented control. It will have a clear selected segment, hover and active states, and an accessible group label. It will not change permissions; it only selects the existing preview mode.
+
+### Toggle
+
+Immediate binary settings such as professional profile visibility will use a shared switch-style toggle with an explicit text label, `role="switch"`, `aria-checked`, disabled/busy treatment, and visible focus. Ordinary multi-option declarations such as “No expiration date” remain checkboxes because they are form values rather than immediate settings.
 
 ### Modal
 
@@ -269,9 +273,9 @@ The shared public shell and every existing marketing route will adopt the signat
 
 There is no standalone User Tiers page. Tier information is currently expressed through permission objects, navigation access, status copy, and the professional “View Profile As” feature. The redesign will keep that architecture and improve only the visible tier surfaces.
 
-- Client tiers will display the backend-provided Basic or Verified label consistently in the client shell and relevant verification/status areas.
+- Client tiers will display the backend-provided Basic, Verified, or VIP label consistently in the client shell and relevant verification/status areas.
 - Professional tiers will display the backend-provided Unverified, Basic, or Verified label where available. No frontend-only tier will be invented.
-- Tier badges will use the shared status system rather than custom per-page pills: neutral for Basic/Unverified and growth emerald with a restrained trust-blue detail for Verified.
+- Tier badges will use the shared status system rather than custom per-page pills: neutral for Basic/Unverified, growth Emerald with a restrained Midnight detail for Verified, and Midnight with a scarce Champagne detail for the existing VIP client tier.
 - Locked navigation or actions will continue to be driven by current permission checks.
 - “View Profile As” becomes a segmented Basic Client / Verified Client control with a concise explanation of what each audience can see.
 - Preview content continues to come from `backendApi.talent.getProfilePreview`; the frontend must not infer document visibility.
@@ -401,6 +405,7 @@ The exact implementation plan may refine names, but the intended boundaries are:
 - `src/components/ui/StatusBadge.jsx`: tier and workflow status presentation.
 - `src/components/ui/SurfaceCard.jsx`: consistent card composition.
 - `src/components/ui/SegmentedControl.jsx`: tier-preview control.
+- `src/components/ui/Toggle.jsx`: accessible immediate-setting switch.
 - `src/components/ClientVerificationDashboard.jsx`: client workflow composition.
 - `src/pages/PublicPages.jsx`: shared public shell plus Home, Directory, Enterprise, Pricing, and not-found integration.
 - `src/App.jsx`: signature-token integration for authentication overlays reached from public CTAs, without auth behavior changes.
@@ -417,12 +422,13 @@ The exact implementation plan may refine names, but the intended boundaries are:
 - Color use remains semantically consistent: green never decorates incomplete work, amber never signals approval, red remains reserved for failure/destructive states, and champagne never reduces text contrast or invents a paid-tier meaning.
 - PB Midnight and PB Cobalt remain the dominant brand colors, PB Champagne remains a scarce premium detail, and no target section creates a rainbow effect.
 - Migrated target JSX contains no raw signature hex values or independent semantic status-color choices when a canonical token or shared primitive applies.
-- No target workflow uses a bespoke modal, upload button, form-control style, tier toggle, or status badge when the shared primitive applies.
+- No target workflow uses a bespoke modal, upload button, form-control style, immediate-setting toggle, tier selector, or status badge when the shared primitive applies.
 - All required client and professional documents remain distinct and obey their current rules.
 - Drag-and-drop and click/keyboard upload paths produce the same validation and upload behavior.
 - Profile Settings and both document-change request flows use the shared animated modal.
 - Client and professional layouts remain usable from 320px mobile width through large desktop widths.
 - All public routes and the mobile public shell remain usable from 320px through large desktop widths without changing routes, content, CTA destinations, auth behavior, or pricing behavior.
 - Tier labels and visibility remain driven by existing backend data and permissions.
+- Existing Basic, Verified, and VIP client permissions and Unverified, Basic, and Verified professional permissions remain unchanged; the redesign changes their presentation only.
 - `verifiedBusinessName` remains exact, protected, read-only, and visible in the approved client state.
 - The complete test suite, ESLint, production build, token contrast checks, and browser verification pass before the branch is considered complete.
