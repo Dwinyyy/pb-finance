@@ -1,6 +1,5 @@
 import { useRef } from 'react';
-
-const ARROW_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+import { canActivateControl, nextSegmentedIndex } from './interactionState.js';
 
 export function SegmentedControl({ ariaLabel, disabled = false, onChange, options = [], value }) {
   const buttonRefs = useRef([]);
@@ -8,17 +7,22 @@ export function SegmentedControl({ ariaLabel, disabled = false, onChange, option
   const tabStopIndex = selectedIndex >= 0 ? selectedIndex : 0;
 
   const selectOption = (option, index) => {
-    if (disabled) return;
+    if (!canActivateControl({ disabled })) return;
     onChange?.(option.value);
     buttonRefs.current[index]?.focus();
   };
 
   const handleKeyDown = (event, index) => {
-    if (disabled || !ARROW_KEYS.has(event.key) || options.length === 0) return;
+    if (!canActivateControl({ disabled })) return;
+
+    const nextIndex = nextSegmentedIndex({
+      currentIndex: index,
+      key: event.key,
+      optionCount: options.length,
+    });
+    if (nextIndex === null) return;
 
     event.preventDefault();
-    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
-    const nextIndex = (index + direction + options.length) % options.length;
     selectOption(options[nextIndex], nextIndex);
   };
 

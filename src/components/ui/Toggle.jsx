@@ -1,11 +1,13 @@
 import { useId } from 'react';
+import { canActivateControl } from './interactionState.js';
 
 export function Toggle({ checked = false, disabled = false, isBusy = false, label, onChange }) {
   const labelId = useId();
-  const isDisabled = disabled || isBusy;
+  const canChange = canActivateControl({ disabled, isBusy });
+  const isDisabled = !canChange;
 
   const handleChange = () => {
-    if (!isDisabled) onChange?.(!checked);
+    if (canChange) onChange?.(!checked);
   };
 
   return (
