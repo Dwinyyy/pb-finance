@@ -4,7 +4,11 @@ import { ExternalLink, FileUp, LockKeyhole, RefreshCw } from 'lucide-react';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
 import { SurfaceCard } from './SurfaceCard';
-import { toneForDropzoneState } from './fileDropzoneState.js';
+import {
+  canSelectDropzoneFile,
+  nextDropzoneDragDepth,
+  toneForDropzoneState,
+} from './fileDropzoneState.js';
 
 const TONE_CLASSES = {
   danger: 'border-danger-border bg-danger-surface text-danger',
@@ -18,7 +22,7 @@ const TONE_CLASSES = {
 
 const formatStatus = (status) => String(status || '').replaceAll('_', ' ');
 
-export function FileDropzone({
+function FileDropzoneState({
   accept,
   capture,
   disabled = false,
@@ -73,28 +77,33 @@ export function FileDropzone({
         : 'Choose file';
 
   const selectFile = (file) => {
-    if (!file || disabled || isLocked || isBusy) return;
+    if (!canSelectDropzoneFile({ disabled, file, isBusy, isLocked })) return;
     onFile(file);
+  };
+
+  const updateDragState = (action) => {
+    const nextDepth = nextDropzoneDragDepth({
+      action,
+      depth: dragDepth.current,
+      isUnavailable,
+    });
+    dragDepth.current = nextDepth;
+    setIsDragging(nextDepth > 0);
   };
 
   const handleDragEnter = (event) => {
     event.preventDefault();
-    if (isUnavailable) return;
-    dragDepth.current += 1;
-    setIsDragging(true);
+    updateDragState('enter');
   };
 
   const handleDragLeave = (event) => {
     event.preventDefault();
-    if (isUnavailable) return;
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) setIsDragging(false);
+    updateDragState('leave');
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
-    dragDepth.current = 0;
-    setIsDragging(false);
+    updateDragState('drop');
     selectFile(event.dataTransfer.files?.[0]);
   };
 
@@ -166,4 +175,12 @@ export function FileDropzone({
       )}
     </SurfaceCard>
   );
+}
+
+export function FileDropzone(props) {
+  const availabilityKey = props.disabled || props.isLocked || props.isBusy
+    ? 'unavailable'
+    : 'available';
+
+  return <FileDropzoneState key={availabilityKey} {...props} />;
 }

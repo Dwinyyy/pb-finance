@@ -38,6 +38,49 @@ test('drop-zone state uses the required priority when conditions overlap', () =>
   assert.equal(toneForDropzoneState({ hasFile: true, status: 'rejected' }), 'danger');
 });
 
+test('drag-depth transitions handle nesting, terminal events, and unavailable resets', async () => {
+  const { nextDropzoneDragDepth } = await import('../src/components/ui/fileDropzoneState.js');
+  assert.equal(typeof nextDropzoneDragDepth, 'function');
+
+  const cases = [
+    { name: 'first enter starts dragging', depth: 0, action: 'enter', expected: 1 },
+    { name: 'nested enter increments depth', depth: 1, action: 'enter', expected: 2 },
+    { name: 'nested leave keeps drag active', depth: 2, action: 'leave', expected: 1 },
+    { name: 'final leave clears drag depth', depth: 1, action: 'leave', expected: 0 },
+    { name: 'leave clamps at zero', depth: 0, action: 'leave', expected: 0 },
+    { name: 'negative input clamps at zero', depth: -3, action: 'leave', expected: 0 },
+    { name: 'drop always clears drag depth', depth: 3, action: 'drop', expected: 0 },
+    { name: 'explicit reset clears drag depth', depth: 3, action: 'reset', expected: 0 },
+    { name: 'becoming unavailable overrides enter', depth: 2, action: 'enter', isUnavailable: true, expected: 0 },
+    { name: 'becoming unavailable overrides leave', depth: 2, action: 'leave', isUnavailable: true, expected: 0 },
+  ];
+
+  for (const { name, expected, ...input } of cases) {
+    assert.equal(nextDropzoneDragDepth(input), expected, name);
+  }
+});
+
+test('file selection permits only an available non-empty file', async () => {
+  const { canSelectDropzoneFile } = await import('../src/components/ui/fileDropzoneState.js');
+  assert.equal(typeof canSelectDropzoneFile, 'function');
+  const file = { name: 'evidence.png' };
+
+  assert.equal(canSelectDropzoneFile({ file }), true);
+  assert.equal(canSelectDropzoneFile({}), false);
+  assert.equal(canSelectDropzoneFile({ file, disabled: true }), false);
+  assert.equal(canSelectDropzoneFile({ file, isLocked: true }), false);
+  assert.equal(canSelectDropzoneFile({ file, isBusy: true }), false);
+});
+
+test('component consumes deterministic drag and selection state with a keyed availability reset', () => {
+  assert.match(source, /nextDropzoneDragDepth/);
+  assert.match(source, /canSelectDropzoneFile/);
+  assert.match(source, /const availabilityKey = props\.disabled \|\| props\.isLocked \|\| props\.isBusy/);
+  assert.match(source, /<FileDropzoneState key=\{availabilityKey\}/);
+  assert.doesNotMatch(source, /useEffect/);
+  assert.doesNotMatch(source, /const handleDragLeave[\s\S]{0,220}if \(isUnavailable\) return;/);
+});
+
 test('drop zone server-renders labelled, described, and actionable file states', async () => {
   const vite = await createServer({
     root: projectRoot,
