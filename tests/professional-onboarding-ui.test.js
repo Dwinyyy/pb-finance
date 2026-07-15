@@ -153,6 +153,21 @@ test('Profile Settings remains a responsive modal with shared fields, guidance, 
   assert.match(profileSettings, /<Button[\s\S]*Save Settings/);
 });
 
+test('Profile Settings only describes multi-select controls when FormField renders a description', () => {
+  for (const field of [
+    'professional-titles',
+    'professional-skills',
+    'professional-tools',
+  ]) {
+    const fieldStart = profileSettings.indexOf(`<FormField id="${field}"`);
+    const fieldSource = profileSettings.slice(fieldStart, profileSettings.indexOf('</FormField>', fieldStart));
+
+    assert.match(fieldSource, /\{\(\{ 'aria-describedby': ariaDescribedBy \}\) =>/);
+    assert.match(fieldSource, /describedBy=\{ariaDescribedBy\}/);
+    assert.doesNotMatch(fieldSource, /\{\(\{ describedBy \}\) =>/);
+  }
+});
+
 test('professional profile columns can shrink inside the 320px workspace', () => {
   assert.match(profileView, /grid min-w-0 gap-6 xl:grid-cols-\[340px_minmax\(0,1fr\)\]/);
   assert.match(profileView, /className="min-w-0 w-full"/);

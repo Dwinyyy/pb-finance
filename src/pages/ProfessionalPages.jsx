@@ -1463,11 +1463,11 @@ function ProfileSettingsModal({
                   </FormField>
                   <div className="sm:col-span-2">
                     <FormField id="professional-titles" label="Professional titles">
-                      {({ describedBy }) => (
+                      {({ 'aria-describedby': ariaDescribedBy }) => (
                         <MultiSelectPicker
                           id="professional-titles"
                           className={formControlClassName}
-                          describedBy={describedBy}
+                          describedBy={ariaDescribedBy}
                           getRemoveDisabledReason={getTitleRemoveDisabledReason}
                           value={form.titles || []}
                           onChange={(titles) => onChange('titles', titles)}
@@ -1514,10 +1514,10 @@ function ProfileSettingsModal({
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField id="professional-skills" label="Skills">
-                    {({ describedBy }) => <MultiSelectPicker id="professional-skills" className={formControlClassName} describedBy={describedBy} value={form.skills || []} onChange={(skills) => onChange('skills', skills)} optionsList={SKILLS_OPTIONS} placeholder="Select skills" />}
+                    {({ 'aria-describedby': ariaDescribedBy }) => <MultiSelectPicker id="professional-skills" className={formControlClassName} describedBy={ariaDescribedBy} value={form.skills || []} onChange={(skills) => onChange('skills', skills)} optionsList={SKILLS_OPTIONS} placeholder="Select skills" />}
                   </FormField>
                   <FormField id="professional-tools" label="Tools / Software">
-                    {({ describedBy }) => <MultiSelectPicker id="professional-tools" className={formControlClassName} describedBy={describedBy} value={form.tools || []} onChange={(tools) => onChange('tools', tools)} optionsList={SOFTWARE_OPTIONS} placeholder="Select software" />}
+                    {({ 'aria-describedby': ariaDescribedBy }) => <MultiSelectPicker id="professional-tools" className={formControlClassName} describedBy={ariaDescribedBy} value={form.tools || []} onChange={(tools) => onChange('tools', tools)} optionsList={SOFTWARE_OPTIONS} placeholder="Select software" />}
                   </FormField>
                 </div>
               </section>
