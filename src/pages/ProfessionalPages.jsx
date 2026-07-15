@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   Search, MapPin, Building, Star, Filter, 
@@ -1268,24 +1268,38 @@ function ProfileSettingsModal({
 }) {
   const [photoError, setPhotoError] = useState('');
   const [isPhotoUploading, setIsPhotoUploading] = useState(false);
+  const uploadGenerationRef = useRef(0);
   const sections = [
     { id: 'profile', icon: User, label: 'Profile' },
     { id: 'bio', icon: FileText, label: 'Bio' },
     { id: 'rates', icon: DollarSign, label: 'Rates' },
   ];
 
+  useEffect(() => {
+    if (open) return;
+
+    uploadGenerationRef.current += 1;
+    setPhotoError('');
+    setIsPhotoUploading(false);
+  }, [open]);
+
   const uploadPhoto = async (file) => {
     if (!file) return;
 
+    const uploadGeneration = ++uploadGenerationRef.current;
     setPhotoError('');
     setIsPhotoUploading(true);
 
     try {
       await onPhotoUpload(file);
     } catch (error) {
-      setPhotoError(error.message || 'Unable to upload profile photo.');
+      if (uploadGenerationRef.current === uploadGeneration) {
+        setPhotoError(error.message || 'Unable to upload profile photo.');
+      }
     } finally {
-      setIsPhotoUploading(false);
+      if (uploadGenerationRef.current === uploadGeneration) {
+        setIsPhotoUploading(false);
+      }
     }
   };
 
