@@ -39,6 +39,14 @@ test('drop-zone state uses the required priority when conditions overlap', () =>
   assert.equal(toneForDropzoneState({ hasFile: true, status: 'rejected' }), 'danger');
 });
 
+test('review and saved statuses take semantic precedence over uploaded filenames', () => {
+  assert.equal(toneForDropzoneState({ hasFile: true, status: 'pending_review' }), 'warning');
+  assert.equal(toneForDropzoneState({ hasFile: true, status: 'pending_change' }), 'warning');
+  assert.equal(toneForDropzoneState({ hasFile: true, status: 'draft' }), 'neutral');
+  assert.equal(toneForDropzoneState({ hasFile: true, status: 'saved' }), 'neutral');
+  assert.equal(toneForDropzoneState({ hasFile: true, status: 'approved' }), 'verified');
+});
+
 test('drag-depth transitions handle nesting, terminal events, and unavailable resets', async () => {
   const { nextDropzoneDragDepth } = await import('../src/components/ui/fileDropzoneState.js');
   assert.equal(typeof nextDropzoneDragDepth, 'function');
@@ -136,6 +144,28 @@ test('drop zone server-renders labelled, described, and actionable file states',
     assert.match(busy, /aria-live="polite"/);
     assert.match(busy, /Uploading securely/);
     assert.doesNotMatch(busy, /\b\d{1,3}%\b/);
+
+    const pendingReview = renderToStaticMarkup(createElement(FileDropzone, {
+      fileName: 'credential.pdf',
+      id: 'pending-credential',
+      label: 'Credential pending review',
+      onFile: () => {},
+      status: 'pending_review',
+    }));
+    const savedDraft = renderToStaticMarkup(createElement(FileDropzone, {
+      fileName: 'draft.pdf',
+      id: 'draft-credential',
+      label: 'Saved draft credential',
+      onFile: () => {},
+      status: 'draft',
+    }));
+
+    assert.match(pendingReview, /border-warning-border bg-warning-surface text-warning/);
+    assert.match(pendingReview, />pending review</);
+    assert.doesNotMatch(pendingReview, /border-verified-border bg-verified-surface/);
+    assert.match(savedDraft, /border-border-control bg-surface text-text-primary/);
+    assert.match(savedDraft, />draft</);
+    assert.doesNotMatch(savedDraft, /border-verified-border bg-verified-surface/);
   } finally {
     await vite.close();
   }

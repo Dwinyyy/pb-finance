@@ -1836,6 +1836,7 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
                 : (row.document?.status || '');
             const fileMeta = [
               row.required ? 'Required' : 'Optional',
+              formatFileSize(row.document?.fileSize),
               row.requiresExpiry && row.document?.expiryDate ? `Expires ${row.document.expiryDate}` : '',
             ].filter(Boolean).join(' · ');
 

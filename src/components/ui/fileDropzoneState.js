@@ -7,11 +7,14 @@ export const toneForDropzoneState = ({
   isUploading,
   status,
 } = {}) => {
-  if (error || status === 'rejected') return 'danger';
+  const normalizedStatus = String(status || '').toLowerCase();
+
+  if (error || normalizedStatus === 'rejected') return 'danger';
   if (isLocked) return 'trust';
   if (isUploading || isDragging) return 'processing';
-  if (status === 'pending_change') return 'warning';
-  if (hasFile || status === 'approved') return 'verified';
+  if (['pending_change', 'pending_review'].includes(normalizedStatus)) return 'warning';
+  if (['draft', 'saved'].includes(normalizedStatus)) return 'neutral';
+  if (normalizedStatus === 'approved' || hasFile) return 'verified';
   if (disabled) return 'disabled';
   return 'neutral';
 };

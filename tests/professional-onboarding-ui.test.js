@@ -71,6 +71,7 @@ test('professional identity and every credential class use the shared drop zone 
   assert.match(identityPanel, /kind: 'valid_id_back'/);
   assert.match(identityPanel, /kind: 'liveness_selfie'/);
   assert.match(identityPanel, /capture: 'user'/);
+  assert.match(identityPanel, /formatFileSize\(row\.document\?\.fileSize\)/);
   assert.match(credentialSection, /documentLabel="Resume"/);
   assert.match(credentialSection, /visibleCertificationRequirements\.map/);
   assert.match(credentialSection, /otherDocuments\.map/);
