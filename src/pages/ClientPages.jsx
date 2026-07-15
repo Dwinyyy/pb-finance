@@ -457,15 +457,12 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
 
   return (
     <div className="relative flex min-h-screen flex-col bg-canvas font-sans text-text-primary">
-      <AnimatePresence>
-        {showWorkflowOnboarding && (
-          <ClientWorkflowOnboardingModal
-            user={user}
-            onClose={dismissWorkflowOnboarding}
-            onStart={startWorkflowOnboarding}
-          />
-        )}
-      </AnimatePresence>
+      <ClientWorkflowOnboardingModal
+        user={user}
+        open={showWorkflowOnboarding}
+        onClose={dismissWorkflowOnboarding}
+        onStart={startWorkflowOnboarding}
+      />
 
       {/* App Header */}
       <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 shadow-card backdrop-blur-xl">
@@ -580,8 +577,8 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       </header>
 
       {/* App Workspace */}
-      <main className="flex-1 bg-canvas">
-        <div className="relative mx-auto w-full max-w-[1600px] scroll-smooth px-3 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <main className="min-w-0 flex-1 bg-canvas">
+        <div className="relative mx-auto min-w-0 w-full max-w-[1600px] scroll-smooth px-3 py-6 sm:px-6 sm:py-8 lg:px-8">
           {appView === 'discover' && <AppDiscoverView user={user} />}
           {appView === 'verification' && <ClientVerificationDashboard />}
           {appView === 'agencies' && clientPermissions.canDiscoverAgencies && <AppAgenciesView />}
@@ -667,7 +664,13 @@ function AITalentMatchmaker({ clientPermissions }) {
       </button>
 
       {/* AI Chat Window */}
-      <Motion.div drag dragMomentum={false} className={`fixed bottom-8 right-8 w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}>
+      <Motion.div
+        drag
+        dragMomentum={false}
+        inert={!isOpen}
+        aria-hidden={!isOpen}
+        className={`fixed bottom-8 right-8 w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}
+      >
 
         {/* Chat Header */}
         <div className="bg-slate-950 p-4 rounded-t-3xl flex justify-between items-center shrink-0 relative overflow-hidden">
@@ -854,7 +857,7 @@ function AppDiscoverView({ user }) {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-start portal-fade-in">
+    <div className="flex min-w-0 flex-col items-start gap-8 lg:flex-row portal-fade-in">
 
       {/* Sticky Advanced Filters Sidebar */}
       <div className="w-full lg:w-72 flex-shrink-0 sticky top-[150px]">
@@ -862,13 +865,14 @@ function AppDiscoverView({ user }) {
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
             <h3 className="font-bold text-slate-950 dark:text-white flex items-center gap-2"><SlidersHorizontal size={18} className="text-primary-600"/> Filters</h3>
             <button
+              type="button"
               onClick={() => {
                 setActiveFilter('All');
                 setSelectedAvailabilities(new Set());
                 setSelectedSoftware(new Set());
                 setMaxRate(50);
               }}
-              className="text-xs font-bold text-primary-600 hover:underline"
+              className="inline-flex min-h-11 items-center text-xs font-bold text-primary-600 hover:underline"
             >
               Reset
             </button>
@@ -886,6 +890,7 @@ function AppDiscoverView({ user }) {
                 <AnimatePresence>
                   {[...selectedAvailabilities].map(val => (
                     <Motion.button
+                      type="button"
                       key={val}
                       initial={{ opacity: 0, scale: 0.8, y: 5 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -899,7 +904,7 @@ function AppDiscoverView({ user }) {
                         newSet.delete(val);
                         setSelectedAvailabilities(newSet);
                       }}
-                      className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors border border-emerald-100 dark:border-emerald-800/50 z-10 relative shadow-sm"
+                      className="relative z-10 flex min-h-11 items-center gap-1.5 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
                     >
                       {val} <X size={12} className="opacity-70 hover:opacity-100 transition-opacity"/>
                     </Motion.button>
@@ -934,12 +939,13 @@ function AppDiscoverView({ user }) {
                       {selectedAvailabilities.size > 0 && (
                         <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedAvailabilities(new Set());
                               setIsAvailabilityOpen(false);
                             }}
-                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 py-2 rounded-lg transition-colors"
+                            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                           >
                             <X size={14} /> Deselect All
                           </button>
@@ -950,6 +956,7 @@ function AppDiscoverView({ user }) {
                           const isSelected = selectedAvailabilities.has(opt);
                           return (
                             <button
+                              type="button"
                               key={opt}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -961,7 +968,7 @@ function AppDiscoverView({ user }) {
                                 }
                                 setSelectedAvailabilities(newSet);
                               }}
-                              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                              className={`flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                             >
                               {opt}
                               {isSelected && <CheckCircle size={16} className="text-emerald-500" />}
@@ -980,8 +987,8 @@ function AppDiscoverView({ user }) {
               {SOFTWARE_OPTIONS.map((software) => {
                 const isSelected = selectedSoftware.has(software);
                 return (
-                <label key={software} className="flex items-center space-x-3 mb-3 cursor-pointer group">
-                  <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
+                <label key={software} className="group mb-3 flex min-h-11 cursor-pointer items-center space-x-3 rounded-lg focus-within:ring-4 focus-within:ring-focus/20">
+                  <input type="checkbox" className="sr-only" checked={isSelected} onChange={(e) => {
                     const newSet = new Set(selectedSoftware);
                     if (e.target.checked) newSet.add(software);
                     else newSet.delete(software);
@@ -1009,14 +1016,15 @@ function AppDiscoverView({ user }) {
       </div>
 
       {/* Main Grid */}
-      <div className="flex-1 w-full">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+      <div className="min-w-0 flex-1">
+        <div className="mb-6 flex min-w-0 items-center justify-between">
+          <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-hide pb-2">
             {TALENT_SKILL_FILTERS.map((filter) => (
               <button
                 key={filter}
+                type="button"
                 onClick={() => setActiveFilter(filter)}
-                className={`px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
+                className={`min-h-11 rounded-full px-5 py-2 text-sm font-bold whitespace-nowrap transition-all ${
                   activeFilter === filter
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-50'
@@ -1092,8 +1100,9 @@ function AppDiscoverView({ user }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={() => setPreviewProfile(profile)}
-                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow flex items-center transform hover:-translate-y-0.5"
+                    className="min-h-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow flex items-center transform motion-safe:hover:-translate-y-0.5"
                   >
                     View
                   </button>
@@ -1103,9 +1112,10 @@ function AppDiscoverView({ user }) {
                     </div>
                   ) : (
                   <button
+                    type="button"
                     onClick={() => handleSaveProfile(profile)}
                     disabled={busyProfileId === profile.id}
-                    className="bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-default disabled:transform-none"
+                    className="min-h-11 bg-slate-950 text-white hover:bg-primary-600 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center transform motion-safe:hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-default disabled:transform-none"
                   >
                     {busyProfileId === profile.id ? (
                     <>

@@ -1681,10 +1681,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 scroll-smooth selection:bg-primary-500/30">
+    <div className="min-h-screen bg-canvas font-sans text-text-primary scroll-smooth selection:bg-action/20">
 
       {/* Conditional Rendering: Entire UI changes if logged in */}
-      <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary-500" size={32} /></div>}>
+      <Suspense fallback={<div className="flex h-screen items-center justify-center bg-canvas text-action"><Loader2 className="animate-spin" size={32} /></div>}>
         {user ? (
           user.role === 'admin' ? (
             <AdminPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />

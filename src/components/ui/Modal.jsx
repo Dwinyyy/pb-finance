@@ -10,16 +10,20 @@ const overlayMotion = { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: 
 
 const sizeClasses = {
   default: 'max-w-lg',
+  onboarding: 'max-w-5xl',
+  preview: 'max-w-6xl',
   wide: 'max-w-3xl',
 };
 
 export function Modal({
+  bodyClassName = '',
   children,
   description,
   footer,
   initialFocusRef,
   onClose,
   open,
+  panelClassName = '',
   size = 'default',
   title,
 }) {
@@ -103,7 +107,7 @@ export function Modal({
           animate={overlayMotion.animate}
           exit={overlayMotion.exit}
           transition={{ duration: prefersReducedMotion ? 0.01 : 0.18 }}
-          className="fixed inset-0 z-[200] flex min-h-full items-end justify-center overflow-y-auto bg-text-primary/65 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          className="fixed inset-0 z-[200] flex min-h-full items-end justify-center overflow-y-auto bg-pb-midnight/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
           onClick={closeFromOverlay}
         >
           <Motion.div
@@ -117,7 +121,7 @@ export function Modal({
             animate={panelMotion.animate}
             exit={panelMotion.exit}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: 'easeOut' }}
-            className={`flex max-h-[calc(100dvh-2rem)] w-full ${widthClass} flex-col overflow-hidden rounded-t-modal border border-border-subtle bg-surface text-text-primary shadow-modal sm:rounded-modal`}
+            className={`flex max-h-[calc(100dvh-2rem)] w-full ${widthClass} flex-col overflow-hidden rounded-t-modal border border-border-subtle bg-surface text-text-primary shadow-modal sm:rounded-modal ${panelClassName}`}
           >
             <header className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-4 border-b border-border-subtle bg-surface px-5 py-4 sm:px-6">
               <div className="min-w-0">
@@ -134,7 +138,7 @@ export function Modal({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="shrink-0 !p-2"
+                className="shrink-0 size-11 !p-0"
                 aria-label="Close dialog"
                 onClick={() => onCloseRef.current()}
               >
@@ -142,7 +146,7 @@ export function Modal({
               </Button>
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-canvas px-5 py-5 sm:px-6">
+            <div className={`min-h-0 flex-1 overflow-y-auto bg-canvas px-5 py-5 sm:px-6 ${bodyClassName}`}>
               {children}
             </div>
 

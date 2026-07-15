@@ -26,6 +26,12 @@ test('public shell and Home use the signature system', () => {
   assert.match(publicPage, /text-verified/);
   assert.match(publicPage, /text-processing/);
   assert.doesNotMatch(publicPage, /violet-/);
+  assert.match(publicPage, /motion as Motion, useReducedMotion/);
+  assert.match(publicPage, /const prefersReducedMotion = useReducedMotion\(\)/);
+  assert.match(publicPage, /behavior: prefersReducedMotion \? 'auto' : 'smooth'/);
+  assert.match(publicPage, /animate=\{prefersReducedMotion \? undefined : \{ y: isNavVisible \? 0 : '-100%' \}\}/);
+  assert.equal([...publicPage.matchAll(/motion-safe:hover:-translate-y-2/g)].length, 2);
+  assert.doesNotMatch(publicPage, /(?<!motion-safe:)hover:-translate-y-2/);
 });
 
 test('public route and CTA behavior remains intact', () => {
@@ -40,6 +46,9 @@ test('public route and CTA behavior remains intact', () => {
 });
 
 test('public navigation, ROI sliders, and FAQ expose complete accessibility relationships', () => {
+  assert.match(publicPage, /className="hidden items-center space-x-1 lg:flex"/);
+  assert.match(publicPage, /className="flex items-center gap-2 lg:hidden"/);
+  assert.match(publicPage, /shadow-card lg:hidden/);
   assert.equal(
     [...publicPage.matchAll(/aria-current=\{activeTab === tab\.id \? 'page' : undefined\}/g)].length,
     2,
@@ -334,6 +343,12 @@ test('public auth modal stays mounted for exit animation and resets transient fo
   assert.match(authModal, /<Modal[\s\S]*open=\{isOpen\}/);
   assert.match(authModal, /<AuthModalContent\s+key=\{`\$\{isOpen\}-\$\{view\}-\$\{authStep\}`\}/);
   assert.doesNotMatch(authModal, /useEffect\([\s\S]*setShowPassword\(false\)/);
+});
+
+test('application root and lazy fallback use semantic canvas tokens', () => {
+  assert.match(app, /min-h-screen bg-canvas font-sans text-text-primary/);
+  assert.match(app, /fallback=\{<div className="flex h-screen items-center justify-center bg-canvas text-action"/);
+  assert.doesNotMatch(app, /min-h-screen bg-slate-50 dark:bg-slate-950/);
 });
 
 test('public shell and Home server-render accessible signature landmarks', async () => {

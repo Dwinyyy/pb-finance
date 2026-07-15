@@ -13,7 +13,7 @@ export const Button = React.forwardRef(({
 }, ref) => {
   const shouldReduceMotion = useReducedMotion();
   const isMotionDisabled = shouldReduceMotion || disabled || isLoading;
-  const baseStyles = "inline-flex items-center justify-center rounded-control font-semibold transition-[color,background-color,border-color,box-shadow,transform,translate] duration-200 ease-pb-fluid motion-safe:hover:-translate-y-px motion-safe:active:translate-y-px focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-50 motion-safe:disabled:hover:translate-y-0 motion-safe:disabled:active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none";
+  const baseStyles = "inline-flex min-h-11 items-center justify-center rounded-control font-semibold transition-[color,background-color,border-color,box-shadow,transform,translate] duration-200 ease-pb-fluid motion-safe:hover:-translate-y-px motion-safe:active:translate-y-px focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-50 motion-safe:disabled:hover:translate-y-0 motion-safe:disabled:active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none";
   
   const variants = {
     primary: "bg-action text-white shadow-card hover:bg-action/90",

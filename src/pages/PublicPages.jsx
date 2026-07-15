@@ -14,7 +14,7 @@ import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { FAQ_ITEMS, MATCHING_WORKFLOW, PROCESS_STEPS, SERVICE_CARDS } from '../data/staticContent';
 import { SKILLS_OPTIONS } from '../data/constants';
 import FadeIn from '../components/FadeIn';
-import { motion as Motion } from 'framer-motion';
+import { motion as Motion, useReducedMotion } from 'framer-motion';
 import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
@@ -29,6 +29,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isNavVisible, setIsNavVisible] = useState(true);
+  const prefersReducedMotion = useReducedMotion();
   const lastScrollY = useRef(0);
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
     const path = tab === 'home' ? '/' : `/${tab}`;
     navigate(path);
     setMobileMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
   };
 
   const openMobileAuth = (view) => {
@@ -88,9 +89,9 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
     <>
       <Motion.nav
         aria-label="Primary navigation"
-        initial={{y:0}}
-        animate={{y: isNavVisible ? 0 : '-100%'}}
-        transition={{duration: 0.3}}
+        initial={false}
+        animate={prefersReducedMotion ? undefined : { y: isNavVisible ? 0 : '-100%' }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.3 }}
         className="fixed top-0 z-50 w-full border-b border-border-subtle bg-surface/95 text-text-primary shadow-card backdrop-blur-xl transition-colors"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -103,7 +104,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
               <BrandMark />
             </button>
 
-            <div className="hidden md:flex items-center space-x-1">
+            <div className="hidden items-center space-x-1 lg:flex">
               {navItems.map((tab) => (
                 <button 
                   key={tab.id}
@@ -130,7 +131,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
               </div>
             </div>
 
-            <div className="md:hidden flex items-center gap-2">
+            <div className="flex items-center gap-2 lg:hidden">
               <button type="button" onClick={toggleDarkMode} className="inline-flex size-11 items-center justify-center rounded-control text-text-muted transition-colors hover:bg-surface-muted hover:text-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25" aria-label="Toggle dark mode">
                 {isDarkMode ? <Sun size={21} /> : <Moon size={21} />}
               </button>
@@ -142,7 +143,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
         </div>
 
         {mobileMenuOpen && (
-          <div id="public-mobile-navigation" className="absolute z-50 w-full border-t border-border-subtle bg-surface shadow-card md:hidden" role="navigation" aria-label="Mobile navigation">
+          <div id="public-mobile-navigation" className="absolute z-50 w-full border-t border-border-subtle bg-surface shadow-card lg:hidden" role="navigation" aria-label="Mobile navigation">
             <div className="px-4 pt-4 pb-6 space-y-2">
               <div className="mb-3 flex items-center justify-between rounded-control bg-surface-muted px-3 py-2 text-xs font-bold uppercase tracking-wider text-text-muted">
                 <BrandMark compact label="PB Finance mobile menu" />
@@ -1053,7 +1054,7 @@ function AgencyMarketingView({ openAuth }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 max-w-5xl mx-auto">
             {/* Model 1 */}
             <FadeIn delay={100} direction="up" className="h-full">
-              <div className="flex h-full flex-col overflow-hidden rounded-modal border border-border-subtle bg-surface p-10 shadow-card transition-all duration-500 hover:-translate-y-2 hover:border-info-border hover:shadow-modal">
+              <div className="flex h-full flex-col overflow-hidden rounded-modal border border-border-subtle bg-surface p-10 shadow-card transition-all duration-500 motion-safe:hover:-translate-y-2 hover:border-info-border hover:shadow-modal">
                 <div className="mb-8">
                   <h3 className="mb-4 text-3xl font-bold text-text-primary">Dedicated Embedded Hire</h3>
                   <p className="mb-6 text-lg leading-relaxed text-text-muted">
@@ -1088,7 +1089,7 @@ function AgencyMarketingView({ openAuth }) {
 
             {/* Model 2 */}
             <FadeIn delay={200} direction="up" className="h-full">
-              <div className="group relative flex h-full flex-col overflow-hidden rounded-modal border border-white/10 bg-pb-midnight p-10 shadow-modal transition-all duration-500 hover:-translate-y-2">
+              <div className="group relative flex h-full flex-col overflow-hidden rounded-modal border border-white/10 bg-pb-midnight p-10 shadow-modal transition-all duration-500 motion-safe:hover:-translate-y-2">
                 <div className="pointer-events-none absolute right-0 top-0 h-[300px] w-[300px] rounded-full bg-action/20 blur-[80px] transition-colors duration-700 group-hover:bg-processing/20"></div>
                 <div className="relative z-10 mb-8">
                   <h3 className="text-3xl font-bold text-white mb-4">Managed Pod</h3>

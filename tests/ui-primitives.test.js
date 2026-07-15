@@ -41,6 +41,8 @@ test('shared primitives expose accessible semantic interfaces', () => {
   assert.match(read('../src/components/ui/Toggle.jsx'), /aria-checked/);
   assert.match(read('../src/components/ui/Button.jsx'), /active:translate-y-px/);
   assert.match(read('../src/components/ui/Button.jsx'), /focus-visible:ring-focus/);
+  assert.match(read('../src/components/ui/Button.jsx'), /min-h-11/);
+  assert.match(read('../src/components/ui/SurfaceCard.jsx'), /dark:border-pb-midnight-soft\/25 dark:bg-pb-midnight/);
 });
 
 test('Button uses one positional mechanism and gates tap scale for reduced motion', () => {
@@ -125,11 +127,12 @@ test('shared controls server-render their accessible state', async () => {
   });
 
   try {
-    const [formFieldModule, toggleModule, segmentedModule, buttonModule] = await Promise.all([
+    const [formFieldModule, toggleModule, segmentedModule, buttonModule, surfaceCardModule] = await Promise.all([
       vite.ssrLoadModule('/src/components/ui/FormField.jsx'),
       vite.ssrLoadModule('/src/components/ui/Toggle.jsx'),
       vite.ssrLoadModule('/src/components/ui/SegmentedControl.jsx'),
       vite.ssrLoadModule('/src/components/ui/Button.jsx'),
+      vite.ssrLoadModule('/src/components/ui/SurfaceCard.jsx'),
     ]);
 
     const formField = renderToStaticMarkup(createElement(formFieldModule.FormField, {
@@ -206,6 +209,14 @@ test('shared controls server-render their accessible state', async () => {
     assert.match(loadingButton, /aria-busy="true"/);
     assert.match(loadingButton, /disabled=""/);
     assert.match(loadingButton, />Save changes<\/button>/);
+    assert.match(loadingButton, /class="[^"]*min-h-11/);
+
+    const trustCard = renderToStaticMarkup(createElement(surfaceCardModule.SurfaceCard, {
+      tone: 'trust',
+      children: 'Protected evidence',
+    }));
+    assert.match(trustCard, /dark:border-pb-midnight-soft\/25/);
+    assert.match(trustCard, /dark:bg-pb-midnight/);
   } finally {
     await vite.close();
   }

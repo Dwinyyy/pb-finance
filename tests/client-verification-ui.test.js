@@ -6,6 +6,8 @@ const clientPage = readFileSync(new URL('../src/pages/ClientPages.jsx', import.m
 const adminPage = readFileSync(new URL('../src/pages/AdminPages.jsx', import.meta.url), 'utf8');
 const clientDashboard = readFileSync(new URL('../src/components/ClientVerificationDashboard.jsx', import.meta.url), 'utf8');
 const adminReview = readFileSync(new URL('../src/components/ClientVerificationReview.jsx', import.meta.url), 'utf8');
+const onboarding = readFileSync(new URL('../src/components/ClientWorkflowOnboardingModal.jsx', import.meta.url), 'utf8');
+const notificationBell = readFileSync(new URL('../src/components/NotificationBell.jsx', import.meta.url), 'utf8');
 const sourceBetween = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end));
 const clientPortal = sourceBetween(clientPage, 'export function ClientPortal', 'function AITalentMatchmaker');
 const qualifications = sourceBetween(clientPage, 'function ProfileQualificationsSection', 'function InterviewDateTimePicker');
@@ -13,6 +15,7 @@ const dateTimePicker = sourceBetween(clientPage, 'function InterviewDateTimePick
 const discoverView = sourceBetween(clientPage, 'function AppDiscoverView', 'function AppAgenciesView');
 const shortlistView = sourceBetween(clientPage, 'function AppShortlistView', 'function AppInterviewsView');
 const interviewsView = sourceBetween(clientPage, 'function AppInterviewsView', 'function AppBillingView');
+const matchmaker = sourceBetween(clientPage, 'function AITalentMatchmaker', 'function AppDiscoverView');
 
 test('client shell and tiers use shared signature primitives and semantic states', () => {
   assert.match(clientPage, /<BrandMark/);
@@ -52,6 +55,31 @@ test('client shell migration preserves permission, onboarding, notification, and
   assert.match(clientPortal, /clientPermissions\.canUseMatchmaker && matchmakerVisible/);
   assert.match(clientPortal, /setMatchmakerVisible\(!matchmakerVisible\)/);
   assert.match(clientPortal, /onClick=\{onLogout\}/);
+  assert.match(clientPortal, /<ClientWorkflowOnboardingModal[\s\S]*open=\{showWorkflowOnboarding\}/);
+  assert.match(onboarding, /<Modal/);
+  assert.doesNotMatch(onboarding, /createPortal|useEffect/);
+});
+
+test('Discover layout shrinks without exposing closed matchmaker controls', () => {
+  assert.match(discoverView, /className="flex min-w-0 flex-col items-start gap-8 lg:flex-row portal-fade-in"/);
+  assert.match(discoverView, /className="min-w-0 flex-1"/);
+  assert.doesNotMatch(discoverView, /className="flex-1 w-full"/);
+  assert.match(discoverView, /overflow-x-auto scrollbar-hide/);
+  assert.match(matchmaker, /inert=\{!isOpen\}/);
+  assert.match(matchmaker, /aria-hidden=\{!isOpen\}/);
+});
+
+test('shared and native client controls meet the 44px target contract', () => {
+  assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center"/);
+  assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center text-slate-400/);
+  assert.match(notificationBell, /className="inline-flex size-11 items-center justify-center/);
+  assert.match(notificationBell, /className="min-h-11 shrink-0 rounded-lg/);
+
+  assert.match(discoverView, /Reset[\s\S]*?min-h-11|className="inline-flex min-h-11[^\n]*"[\s\S]*?Reset/);
+  assert.match(discoverView, /min-h-11[^"]*TALENT_SKILL_FILTERS|TALENT_SKILL_FILTERS[\s\S]*className=\{`min-h-11/);
+  assert.match(discoverView, /<label key=\{software\} className="[^"]*min-h-11/);
+  assert.match(discoverView, /className="min-h-11[^"]*"[\s\S]*?View/);
+  assert.match(discoverView, /className="min-h-11[^"]*"[\s\S]*?Save/);
 });
 
 test('client notification trigger and panel stay semantic and viewport-safe', () => {

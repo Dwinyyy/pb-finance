@@ -98,9 +98,10 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
   };
 
   return (
-    <div className="relative flex h-5 w-5 items-center justify-center">
+    <div className="relative flex h-11 w-11 items-center justify-center">
       <button
-        className="relative flex h-5 w-5 items-center justify-center text-slate-400 transition-colors hover:text-white"
+        type="button"
+        className="relative flex h-11 w-11 items-center justify-center text-slate-400 transition-colors hover:text-white"
         onClick={() => {
           setIsOpen((current) => {
             const next = !current;
@@ -131,7 +132,8 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
               <div className="text-xs font-medium text-slate-500">{unreadCount} unread</div>
             </div>
             <button
-              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 dark:hover:bg-slate-800 dark:hover:text-white"
+              type="button"
+              className="inline-flex size-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 dark:hover:bg-slate-800 dark:hover:text-white"
               disabled={!unreadCount}
               onClick={markAllRead}
               title="Mark all read"
@@ -156,7 +158,7 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
                   type="button"
                   disabled={pushBusy || pushState.permission === 'denied'}
                   onClick={togglePushNotifications}
-                  className="shrink-0 rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[11px] font-black text-cyan-700 transition-colors hover:bg-cyan-50 disabled:cursor-default disabled:opacity-50 dark:border-cyan-900/60 dark:bg-slate-900 dark:text-cyan-300"
+                  className="min-h-11 shrink-0 rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[11px] font-black text-cyan-700 transition-colors hover:bg-cyan-50 disabled:cursor-default disabled:opacity-50 dark:border-cyan-900/60 dark:bg-slate-900 dark:text-cyan-300"
                 >
                   {pushBusy ? 'Saving...' : pushState.enabled ? 'Disable' : 'Enable push alerts'}
                 </button>
@@ -190,6 +192,7 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-prim
             {!isLoading && !error && notifications.map((notification) => (
               <button
                 key={notification.id}
+                type="button"
                 className={`block w-full border-b border-slate-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60 ${notification.isRead ? '' : 'bg-cyan-50/60 dark:bg-cyan-950/20'}`}
                 onClick={() => openNotification(notification)}
               >

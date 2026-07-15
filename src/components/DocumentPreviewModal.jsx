@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { FileText, Loader2, X } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 
+import { Modal } from './ui/Modal';
 import { getDocumentBlob, getDocumentKind } from '../utils/documentPreview';
 import { loadPdfJs } from '../utils/pdfPreview';
 
@@ -459,12 +459,18 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
     }));
   };
 
-  return createPortal(
+  return (
+    <Modal
+      open
+      title={title}
+      description="Read-only preview"
+      onClose={onClose}
+      size="preview"
+      panelClassName="h-[88vh]"
+      bodyClassName="!overflow-hidden !p-0"
+    >
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-pb-midnight/75 p-4 backdrop-blur-sm"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      className="document-preview-locked flex h-full min-h-0 flex-1 items-center justify-center bg-surface-muted text-text-primary"
       onContextMenu={(event) => event.preventDefault()}
       onCopy={preventPreviewInteraction}
       onCut={preventPreviewInteraction}
@@ -490,55 +496,36 @@ export function DocumentPreviewModal({ previewDocument, onClose }) {
           }
         `}
       </style>
-      <div className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-modal border border-border-subtle bg-surface text-text-primary shadow-modal">
-        <div className="flex items-center justify-between gap-4 border-b border-border-subtle bg-surface px-4 py-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-black text-text-primary">{title}</div>
-            <div className="text-xs font-semibold text-text-muted">Read-only preview</div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border-subtle text-text-muted transition-colors hover:border-border-control hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
-            title="Close preview"
-          >
-            <X size={18} />
-          </button>
+      {preview.isLoading ? (
+        <div className="flex items-center gap-2 rounded-control border border-processing-border bg-processing-surface px-4 py-3 text-sm font-bold text-processing shadow-card">
+          <Loader2 size={16} className="animate-spin" />
+          Loading preview
         </div>
-
-        <div className="document-preview-locked flex min-h-0 flex-1 items-center justify-center bg-surface-muted">
-          {preview.isLoading ? (
-            <div className="flex items-center gap-2 rounded-control border border-processing-border bg-processing-surface px-4 py-3 text-sm font-bold text-processing shadow-card">
-              <Loader2 size={16} className="animate-spin" />
-              Loading preview
-            </div>
-          ) : preview.error ? (
-            <div className="mx-4 max-w-md rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-center text-sm font-semibold text-danger">
-              {preview.error}
-            </div>
-          ) : preview.kind === 'pdf' ? (
-            <PdfCanvasPreview
-              blob={preview.blob}
-              onSourceError={retryPdfWithBlob}
-              sourceUrl={preview.pdfUrl}
-            />
-          ) : preview.kind === 'image' ? (
-            <img
-              src={preview.dataUrl}
-              alt={title}
-              draggable={false}
-              onError={retryImageWithBlob}
-              className="max-h-full max-w-full select-none object-contain"
-            />
-          ) : (
-            <div className="mx-4 max-w-md rounded-control border border-border-subtle bg-surface px-5 py-5 text-center text-sm font-semibold text-text-muted shadow-card">
-              <FileText className="mx-auto mb-3 text-text-muted" size={28} />
-              This document format cannot be rendered in the browser preview.
-            </div>
-          )}
+      ) : preview.error ? (
+        <div className="mx-4 max-w-md rounded-control border border-danger-border bg-danger-surface px-5 py-4 text-center text-sm font-semibold text-danger">
+          {preview.error}
         </div>
-      </div>
-    </div>,
-    window.document.body
+      ) : preview.kind === 'pdf' ? (
+        <PdfCanvasPreview
+          blob={preview.blob}
+          onSourceError={retryPdfWithBlob}
+          sourceUrl={preview.pdfUrl}
+        />
+      ) : preview.kind === 'image' ? (
+        <img
+          src={preview.dataUrl}
+          alt={title}
+          draggable={false}
+          onError={retryImageWithBlob}
+          className="max-h-full max-w-full select-none object-contain"
+        />
+      ) : (
+        <div className="mx-4 max-w-md rounded-control border border-border-subtle bg-surface px-5 py-5 text-center text-sm font-semibold text-text-muted shadow-card">
+          <FileText className="mx-auto mb-3 text-text-muted" size={28} />
+          This document format cannot be rendered in the browser preview.
+        </div>
+      )}
+    </div>
+    </Modal>
   );
 }
