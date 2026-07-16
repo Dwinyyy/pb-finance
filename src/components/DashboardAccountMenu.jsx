@@ -22,7 +22,9 @@ import { NotificationPanel } from './NotificationPanel';
 const ACCOUNT_MENU_WIDTH_CLASS = 'w-[min(286px,calc(100vw-36px))]';
 const hoverQuery = '(hover: hover) and (pointer: fine)';
 
-const ACTION_CLASS = 'flex min-h-11 w-full items-center gap-3 rounded-control px-3 py-2 text-left text-sm font-semibold text-text-primary transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 motion-reduce:transition-none';
+const ACTION_STRUCTURE_CLASS = 'flex min-h-11 w-full items-center gap-3 rounded-control px-3 py-2 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 motion-reduce:transition-none';
+const ACTION_TONE_CLASS = 'text-text-primary hover:bg-surface-muted';
+const DANGER_ACTION_TONE_CLASS = 'bg-danger-surface text-danger hover:bg-danger-surface/80';
 
 const getInitials = (name) => {
   const initials = String(name || '')
@@ -57,7 +59,7 @@ export function DashboardAccountMenu({
     undefined,
     createDashboardAccountMenuState,
   );
-  const [panelTop, setPanelTop] = useState(0);
+  const [panelTop, setPanelTop] = useState(null);
   const prefersReducedMotion = useReducedMotion();
   const generatedId = useId();
   const panelId = `${generatedId}-dashboard-account-panel`;
@@ -81,6 +83,11 @@ export function DashboardAccountMenu({
     closeTimerRef.current = null;
   }, []);
 
+  const updatePanelTop = useCallback(() => {
+    const triggerBottom = triggerRef.current?.getBoundingClientRect().bottom;
+    if (Number.isFinite(triggerBottom)) setPanelTop(Math.round(triggerBottom));
+  }, []);
+
   const scheduleHoverClose = useCallback(() => {
     clearCloseTimer();
     closeTimerRef.current = window.setTimeout(() => {
@@ -91,6 +98,7 @@ export function DashboardAccountMenu({
 
   const handlePointerEnter = (event) => {
     clearCloseTimer();
+    updatePanelTop();
     const hoverCapable = window.matchMedia(hoverQuery).matches;
 
     if (shouldUseHoverPreview({ hoverCapable, pointerType: event.pointerType })) {
@@ -100,6 +108,8 @@ export function DashboardAccountMenu({
 
   const handleFocusCapture = () => {
     if (suppressFocusOpenRef.current) return;
+
+    updatePanelTop();
 
     if (preserveGuideInteractionRef.current) {
       preserveGuideInteractionRef.current = false;
@@ -127,12 +137,6 @@ export function DashboardAccountMenu({
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const updatePanelTop = () => {
-      const triggerBottom = triggerRef.current?.getBoundingClientRect().bottom;
-      if (Number.isFinite(triggerBottom)) setPanelTop(Math.round(triggerBottom));
-    };
-
-    updatePanelTop();
     window.addEventListener('resize', updatePanelTop);
     window.addEventListener('scroll', updatePanelTop, true);
 
@@ -140,7 +144,7 @@ export function DashboardAccountMenu({
       window.removeEventListener('resize', updatePanelTop);
       window.removeEventListener('scroll', updatePanelTop, true);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePanelTop]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -176,6 +180,11 @@ export function DashboardAccountMenu({
     callback?.();
   };
 
+  const handleTriggerClick = () => {
+    updatePanelTop();
+    dispatch({ type: 'toggle-pin' });
+  };
+
   const openGuide = () => {
     preserveGuideInteractionRef.current = true;
     if (!state.pinned) dispatch({ type: 'toggle-pin' });
@@ -205,7 +214,7 @@ export function DashboardAccountMenu({
         aria-describedby={unreadCount > 0 ? unreadDescriptionId : undefined}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        onClick={() => dispatch({ type: 'toggle-pin' })}
+        onClick={handleTriggerClick}
         className={`relative flex min-h-11 min-w-11 items-center justify-start overflow-hidden rounded-full border bg-surface text-text-primary transition-[width,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25 motion-reduce:transition-none ${motionClass} ${
           isOpen
             ? `${ACCOUNT_MENU_WIDTH_CLASS} border-focus shadow-modal ring-4 ring-focus/20`
@@ -255,7 +264,7 @@ export function DashboardAccountMenu({
         )}
       </button>
 
-      {isOpen && (
+      {isOpen && panelTop !== null && (
         <div
           id={panelId}
           style={{ '--dashboard-account-panel-top': `${panelTop}px` }}
@@ -271,7 +280,11 @@ export function DashboardAccountMenu({
               />
             ) : (
               <section aria-label="Account actions" className="space-y-1 p-2">
-                <button type="button" onClick={() => dismissThen(onProfile)} className={ACTION_CLASS}>
+                <button
+                  type="button"
+                  onClick={() => dismissThen(onProfile)}
+                  className={`${ACTION_STRUCTURE_CLASS} ${ACTION_TONE_CLASS}`}
+                >
                   <UserRound size={18} aria-hidden="true" className="shrink-0 text-text-muted" />
                   <span className="min-w-0 flex-1 truncate">Profile</span>
                 </button>
@@ -279,7 +292,7 @@ export function DashboardAccountMenu({
                 <button
                   type="button"
                   onClick={() => dispatch({ type: 'show-notifications' })}
-                  className={ACTION_CLASS}
+                  className={`${ACTION_STRUCTURE_CLASS} ${ACTION_TONE_CLASS}`}
                 >
                   <Bell size={18} aria-hidden="true" className="shrink-0 text-text-muted" />
                   <span className="min-w-0 flex-1 truncate">Notifications</span>
@@ -291,7 +304,11 @@ export function DashboardAccountMenu({
                   )}
                 </button>
 
-                <button type="button" onClick={onThemeToggle} className={ACTION_CLASS}>
+                <button
+                  type="button"
+                  onClick={onThemeToggle}
+                  className={`${ACTION_STRUCTURE_CLASS} ${ACTION_TONE_CLASS}`}
+                >
                   {isDarkMode ? (
                     <Sun size={18} aria-hidden="true" className="shrink-0 text-text-muted" />
                   ) : (
@@ -302,7 +319,11 @@ export function DashboardAccountMenu({
                   </span>
                 </button>
 
-                <button type="button" onClick={openGuide} className={ACTION_CLASS}>
+                <button
+                  type="button"
+                  onClick={openGuide}
+                  className={`${ACTION_STRUCTURE_CLASS} ${ACTION_TONE_CLASS}`}
+                >
                   <BookOpen size={18} aria-hidden="true" className="shrink-0 text-text-muted" />
                   <span className="min-w-0 flex-1 truncate">
                     {role === 'client' ? 'Client guide' : 'Professional guide'}
@@ -314,7 +335,7 @@ export function DashboardAccountMenu({
                     type="button"
                     aria-pressed={matchmakerAction.pressed}
                     onClick={() => dismissThen(matchmakerAction.onToggle)}
-                    className={ACTION_CLASS}
+                    className={`${ACTION_STRUCTURE_CLASS} ${ACTION_TONE_CLASS}`}
                   >
                     <Sparkles size={18} aria-hidden="true" className="shrink-0 text-text-muted" />
                     <span className="min-w-0 flex-1 truncate">{matchmakerAction.label}</span>
@@ -325,7 +346,7 @@ export function DashboardAccountMenu({
                   <button
                     type="button"
                     onClick={() => dismissThen(onLogout)}
-                    className={`${ACTION_CLASS} bg-danger-surface text-danger hover:bg-danger-surface/80`}
+                    className={`${ACTION_STRUCTURE_CLASS} ${DANGER_ACTION_TONE_CLASS}`}
                   >
                     <LogOut size={18} aria-hidden="true" className="shrink-0" />
                     <span>Log out</span>

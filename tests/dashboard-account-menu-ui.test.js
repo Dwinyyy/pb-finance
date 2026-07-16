@@ -82,3 +82,21 @@ test('account menu source preserves the interaction and design contracts', () =>
   assert.doesNotMatch(source, /role="menu"/);
   assert.doesNotMatch(source, /#[0-9a-f]{3,8}/i);
 });
+
+test('danger actions have no competing neutral tone and mobile position is seeded before open', () => {
+  const structureClass = source.match(/const ACTION_STRUCTURE_CLASS = '([^']+)'/)?.[1] || '';
+
+  assert.ok(structureClass, 'missing structural action class');
+  assert.doesNotMatch(
+    structureClass,
+    /\btext-text-primary\b|\btext-danger\b|\bbg-surface-muted\b|\bbg-danger-surface\b|hover:bg-/,
+  );
+  assert.match(source, /const ACTION_TONE_CLASS = 'text-text-primary hover:bg-surface-muted'/);
+  assert.match(source, /const DANGER_ACTION_TONE_CLASS = 'bg-danger-surface text-danger hover:bg-danger-surface\/80'/);
+  assert.match(source, /className={`\$\{ACTION_STRUCTURE_CLASS\} \$\{DANGER_ACTION_TONE_CLASS\}`}/);
+
+  assert.match(source, /const updatePanelTop = useCallback/);
+  assert.match(source, /const handleTriggerClick = \(\) => \{[\s\S]*?updatePanelTop\(\);[\s\S]*?dispatch\(\{ type: 'toggle-pin' \}\);/);
+  assert.match(source, /const handlePointerEnter = \(event\) => \{[\s\S]*?updatePanelTop\(\);[\s\S]*?dispatch\(\{ type: 'hover-enter' \}\);/);
+  assert.match(source, /\{isOpen && panelTop !== null && \(/);
+});
