@@ -8,6 +8,7 @@ const clientDashboard = readFileSync(new URL('../src/components/ClientVerificati
 const adminReview = readFileSync(new URL('../src/components/ClientVerificationReview.jsx', import.meta.url), 'utf8');
 const onboarding = readFileSync(new URL('../src/components/ClientWorkflowOnboardingModal.jsx', import.meta.url), 'utf8');
 const notificationBell = readFileSync(new URL('../src/components/NotificationBell.jsx', import.meta.url), 'utf8');
+const notificationPanel = readFileSync(new URL('../src/components/NotificationPanel.jsx', import.meta.url), 'utf8');
 const sourceBetween = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end));
 const clientPortal = sourceBetween(clientPage, 'export function ClientPortal', 'function AITalentMatchmaker');
 const qualifications = sourceBetween(clientPage, 'function ProfileQualificationsSection', 'function InterviewDateTimePicker');
@@ -71,9 +72,9 @@ test('Discover layout shrinks without exposing closed matchmaker controls', () =
 
 test('shared and native client controls meet the 44px target contract', () => {
   assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center"/);
-  assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center text-slate-400/);
-  assert.match(notificationBell, /className="inline-flex size-11 items-center justify-center/);
-  assert.match(notificationBell, /className="min-h-11 shrink-0 rounded-lg/);
+  assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center text-text-muted/);
+  assert.match(notificationPanel, /<Button[\s\S]*?aria-label="Mark all notifications read"[\s\S]*?className="size-11 shrink-0 p-0"/);
+  assert.match(notificationPanel, /<Button[\s\S]*?onClick=\{togglePushNotifications\}[\s\S]*?className="min-h-11 shrink-0[^"]*text-action"/);
 
   assert.match(discoverView, /Reset[\s\S]*?min-h-11|className="inline-flex min-h-11[^\n]*"[\s\S]*?Reset/);
   assert.match(discoverView, /min-h-11[^"]*TALENT_SKILL_FILTERS|TALENT_SKILL_FILTERS[\s\S]*className=\{`min-h-11/);

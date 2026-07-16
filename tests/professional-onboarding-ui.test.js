@@ -10,7 +10,7 @@ import { createServer } from 'vite';
 const apiSource = readFileSync(new URL('../api/index.js', import.meta.url), 'utf8');
 const apiService = readFileSync(new URL('../src/services/api.js', import.meta.url), 'utf8');
 const adminPage = readFileSync(new URL('../src/pages/AdminPages.jsx', import.meta.url), 'utf8');
-const notificationBell = readFileSync(new URL('../src/components/NotificationBell.jsx', import.meta.url), 'utf8');
+const notificationPanel = readFileSync(new URL('../src/components/NotificationPanel.jsx', import.meta.url), 'utf8');
 const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
 const pushService = readFileSync(new URL('../src/services/pushNotifications.js', import.meta.url), 'utf8');
 const serviceWorker = readFileSync(new URL('../public/pb-push-sw.js', import.meta.url), 'utf8');
@@ -39,8 +39,8 @@ test('authenticated API exposes browser push subscription lifecycle', () => {
 });
 
 test('notification menu requests push permission only after explicit opt in', () => {
-  assert.match(notificationBell, /Enable push alerts/i);
-  assert.match(notificationBell, /enablePushNotifications/);
+  assert.match(notificationPanel, /Enable push alerts/i);
+  assert.match(notificationPanel, /enablePushNotifications/);
   assert.match(pushService, /navigator\.serviceWorker\.register\('\/pb-push-sw\.js'\)/);
   assert.match(pushService, /Notification\.requestPermission\(\)/);
   assert.match(serviceWorker, /addEventListener\('push'/);
