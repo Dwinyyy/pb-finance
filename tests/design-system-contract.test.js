@@ -12,6 +12,8 @@ const clientPage = readFileSync(new URL('../src/pages/ClientPages.jsx', import.m
 const clientDashboard = readFileSync(new URL('../src/components/ClientVerificationDashboard.jsx', import.meta.url), 'utf8');
 const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
 const documentPreview = readFileSync(new URL('../src/components/DocumentPreviewModal.jsx', import.meta.url), 'utf8');
+const dashboardAccountMenu = readFileSync(new URL('../src/components/DashboardAccountMenu.jsx', import.meta.url), 'utf8');
+const notificationPanel = readFileSync(new URL('../src/components/NotificationPanel.jsx', import.meta.url), 'utf8');
 const fadeIn = readFileSync(new URL('../src/components/FadeIn.jsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
 
@@ -54,12 +56,40 @@ test('target React files do not contain raw signature hex values', () => {
     ['client pages', clientPage],
     ['client verification dashboard', clientDashboard],
     ['professional pages', professionalPage],
+    ['dashboard account menu', dashboardAccountMenu],
+    ['notification panel', notificationPanel],
   ]) {
     assert.doesNotMatch(
       source,
       /#(?:0B1F3A|2563EB|047857|0E7490|A67C38|F7F9FC|0A1628|B45309|B42318)\b/i,
       `${label} must consume governed signature tokens`,
     );
+  }
+});
+
+test('shared account and notification surfaces use semantic design tokens', () => {
+  for (const [label, source] of [
+    ['dashboard account menu', dashboardAccountMenu],
+    ['notification panel', notificationPanel],
+  ]) {
+    for (const semanticClass of [
+      'bg-surface',
+      'text-text-primary',
+      'text-text-muted',
+      'border-border-subtle',
+    ]) {
+      assert.match(source, new RegExp(semanticClass), `${label} must use ${semanticClass}`);
+    }
+
+    assert.doesNotMatch(
+      source,
+      /(?:bg|text|border|ring)-(?:slate|gray|zinc|red|blue|cyan|emerald|amber|violet|primary)-/,
+      `${label} must use semantic color utilities`,
+    );
+  }
+
+  for (const semanticClass of ['bg-action', 'border-focus', 'ring-focus', 'text-danger', 'bg-danger-surface']) {
+    assert.match(dashboardAccountMenu, new RegExp(semanticClass));
   }
 });
 
