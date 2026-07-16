@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test",
+    "test:dashboard-account": "node --test tests/dashboard-account-menu-state.test.js tests/dashboard-account-menu-ui.test.js tests/notification-panel-ui.test.js tests/session-summary.test.js tests/portal-guides-ui.test.js",
     "test:client-verification": "node --test tests/client-verification.test.js tests/client-verification-api.test.js tests/client-verification-ui.test.js tests/client-verification-schema.test.js tests/verified-business-identity.test.js"
   },
   "dependencies": {
