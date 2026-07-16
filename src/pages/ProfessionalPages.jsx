@@ -7,7 +7,7 @@ import {
   Mail, Lock, LogOut, Sparkles, Layers3, 
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
-  Camera, Eye, EyeOff, IdCard,
+  Camera, Eye, EyeOff,
   Bookmark, SlidersHorizontal,
   ChevronRight, FileText, Video, Download, CreditCard, Receipt,
   DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2, Plus,
@@ -19,6 +19,7 @@ import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
 import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
+import { Eyebrow } from '../components/ui/Eyebrow';
 import { FileDropzone } from '../components/ui/FileDropzone';
 import { FormField, formControlClassName } from '../components/ui/FormField';
 import { Modal } from '../components/ui/Modal';
@@ -1800,10 +1801,7 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
       <SurfaceCard tone="trust" className="p-5 sm:p-8">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-processing">
-              <IdCard size={14} aria-hidden="true" />
-              Professional onboarding
-            </div>
+            <Eyebrow className="mb-2 text-[10px] font-black uppercase tracking-wider text-processing">Professional onboarding</Eyebrow>
             <h3 className="text-xl font-bold text-text-primary">Valid ID &amp; Liveness Check</h3>
             <p className="mt-1 max-w-3xl text-sm font-medium text-text-muted">Dashboard access stays locked until PB Finance manually approves your identity and required documents.</p>
           </div>
@@ -2552,10 +2550,7 @@ function AppTalentCredentialsSection({ isLoading, onProfileUpdated, profile, sel
       )}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-processing">
-            <ShieldCheck size={14} aria-hidden="true" />
-            Verification
-          </div>
+          <Eyebrow className="mb-2 text-[10px] font-black uppercase tracking-wider text-processing">Verification</Eyebrow>
           <h3 className="text-xl font-bold text-text-primary">Credential Review</h3>
           <p className="mt-1 text-sm font-medium text-text-muted">Resume, professional links, certifications, and proof documents aligned with your selected title.</p>
         </div>

@@ -12,6 +12,7 @@ import {
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi } from '../services/api';
 import { Button } from './ui/Button';
+import { Eyebrow } from './ui/Eyebrow';
 import { FileDropzone } from './ui/FileDropzone';
 import { StatusBadge } from './ui/StatusBadge';
 import { SurfaceCard } from './ui/SurfaceCard';
@@ -187,8 +188,8 @@ export function ClientVerificationDashboard() {
       <SurfaceCard as="header" tone="trust" className="overflow-hidden p-6 md:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <StatusBadge label="Client trust center" tone="info" />
-            <h1 className="mt-4 text-3xl font-black tracking-tight text-text-primary">Onboarding & Verification</h1>
+            <Eyebrow className="mb-3 text-xs font-bold text-info">Client trust center</Eyebrow>
+            <h1 className="text-3xl font-black tracking-tight text-text-primary">Onboarding & Verification</h1>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-text-muted">
               PB Finance admins manually verify your identity, liveness selfie, profile picture, and regulated business registration before unlocking verified client features.
             </p>

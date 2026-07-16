@@ -11,12 +11,12 @@ import {
   Loader2,
   RefreshCcw,
   Search,
-  ShieldCheck,
   UserRound,
   XCircle,
 } from 'lucide-react';
 
 import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { Eyebrow } from './ui/Eyebrow';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi } from '../services/api';
 import { warmDocumentPreviewRenderer } from '../utils/pdfPreview';
@@ -372,10 +372,7 @@ export function ClientVerificationReview() {
 
       <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-cyan-700 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300">
-            <ShieldCheck size={14} />
-            PB Finance admins only
-          </div>
+          <Eyebrow className="mb-2 text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">PB Finance admins only</Eyebrow>
           <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">Client Verification</h1>
           <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500 dark:text-slate-400">
             Review identity and regulated business evidence, then establish the protected legal business name used by future payment middleware.

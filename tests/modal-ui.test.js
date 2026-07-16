@@ -36,7 +36,7 @@ test('client and professional pages no longer own portal modal implementations',
   assert.match(onboarding, /const CLIENT_WORKFLOW_STEPS/);
   assert.match(onboarding, /import \{ Modal \} from '.\/ui\/Modal'/);
   assert.match(onboarding, /import \{ Button \} from '.\/ui\/Button'/);
-  assert.match(onboarding, /import \{ StatusBadge \} from '.\/ui\/StatusBadge'/);
+  assert.match(onboarding, /import \{ Eyebrow \} from '.\/ui\/Eyebrow'/);
   assert.match(onboarding, /import \{ SurfaceCard \} from '.\/ui\/SurfaceCard'/);
   assert.match(onboarding, /ClientWorkflowOnboardingModal\(\{ user, open, onClose, onStart \}\)/);
   assert.match(onboarding, /<Modal[\s\S]*open=\{open\}[\s\S]*size="onboarding"/);

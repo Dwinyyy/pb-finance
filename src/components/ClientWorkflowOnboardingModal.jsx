@@ -1,8 +1,8 @@
-import { ArrowRight, Bookmark, Calendar, CheckCircle, FileText, Search, Sparkles } from 'lucide-react';
+import { ArrowRight, Bookmark, Calendar, CheckCircle, FileText, Search } from 'lucide-react';
 
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
-import { StatusBadge } from './ui/StatusBadge';
+import { Eyebrow } from './ui/Eyebrow';
 import { SurfaceCard } from './ui/SurfaceCard';
 
 const CLIENT_WORKFLOW_STEPS = [
@@ -64,10 +64,9 @@ export function ClientWorkflowOnboardingModal({ user, open, onClose, onStart }) 
       )}
     >
       <div className="space-y-6">
-        <div className="inline-flex items-center gap-2">
-          <Sparkles size={16} className="text-action" aria-hidden="true" />
-          <StatusBadge label={`Client guide${user?.name ? ` for ${user.name}` : ''}`} tone="info" />
-        </div>
+        <Eyebrow className="text-xs font-bold text-info">
+          {`Client guide${user?.name ? ` for ${user.name}` : ''}`}
+        </Eyebrow>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {CLIENT_WORKFLOW_STEPS.map((step, index) => {

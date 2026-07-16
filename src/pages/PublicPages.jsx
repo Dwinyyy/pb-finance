@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Search, MapPin, Building, Star, Filter, 
+  Search, MapPin, Building, Filter,
   CheckCircle, ArrowRight, User, Briefcase, 
   Menu, X, Calculator, PieChart, ShieldCheck, 
-  Mail, Lock, LogOut, Sparkles, Layers3, 
+  Mail, Lock, LogOut, Layers3,
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, Bell, SlidersHorizontal,
@@ -17,6 +17,7 @@ import FadeIn from '../components/FadeIn';
 import { motion as Motion, useReducedMotion } from 'framer-motion';
 import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
+import { Eyebrow } from '../components/ui/Eyebrow';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -219,9 +220,7 @@ function ROICalculator() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid gap-16 lg:grid-cols-[1fr_1.1fr] lg:items-center">
         <div>
           <FadeIn>
-            <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-text-muted shadow-card">
-              Savings Calculator
-            </div>
+            <Eyebrow className="mb-4 text-xs font-bold uppercase tracking-wider text-text-muted">Savings Calculator</Eyebrow>
             <h2 className="mb-6 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
               Estimate the cost difference
             </h2>
@@ -521,9 +520,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center flex flex-col items-center">
           <FadeIn delay={100}>
-            <div className="mb-5 inline-flex items-center rounded-full border border-premium-detail/35 bg-surface px-4 py-2 text-xs font-semibold text-premium-detail shadow-card backdrop-blur sm:text-sm">
-              <Sparkles className="mr-2 h-4 w-4" /> Redefining Global Finance Outsourcing
-            </div>
+            <Eyebrow className="mb-5 text-xs font-semibold text-premium-detail sm:text-sm">Redefining Global Finance Outsourcing</Eyebrow>
           </FadeIn>
           
           <FadeIn delay={200}>
@@ -628,9 +625,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-16">
           <div>
             <FadeIn>
-              <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface-muted px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-action">
-                Process
-              </div>
+              <Eyebrow className="mb-4 text-xs font-bold uppercase tracking-wider text-action">Process</Eyebrow>
               <h2 className="mb-10 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
                 Built for structured onboarding
               </h2>
@@ -655,9 +650,7 @@ function HomeMarketingView({ navigateTo, openAuth }) {
           
           <div>
             <FadeIn delay={200}>
-              <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface-muted px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-action md:hidden">
-                FAQ
-              </div>
+              <Eyebrow className="mb-4 text-xs font-bold uppercase tracking-wider text-action md:hidden">FAQ</Eyebrow>
               <h2 className="mb-10 hidden text-3xl font-bold tracking-tight text-text-primary md:block md:text-5xl">
                 Frequently asked questions
               </h2>
@@ -743,9 +736,7 @@ function PreviewDirectoryView({ navigateTo, openAuth }) {
           <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
             <FadeIn>
               <div>
-                <div className="mb-5 inline-flex rounded-full border border-info-border bg-info-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-info">
-                  Talent Directory Preview
-                </div>
+                <Eyebrow className="mb-5 text-xs font-bold uppercase tracking-wider text-info">Talent Directory Preview</Eyebrow>
                 <h1 className="mb-5 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
                   See the roles, rates, and readiness before you sign in.
                 </h1>
@@ -919,9 +910,7 @@ function AgencyMarketingView({ openAuth }) {
             
             <div className="lg:w-3/5">
               <FadeIn delay={100}>
-                <div className="mb-8 inline-flex items-center rounded-full border border-premium-detail/40 bg-white/5 px-4 py-2 text-xs font-bold uppercase tracking-wider text-premium-detail shadow-card backdrop-blur-md">
-                  <Star className="mr-2 h-4 w-4 fill-current" aria-hidden="true" /> Enterprise Finance Delivery
-                </div>
+                <Eyebrow className="mb-8 text-xs font-bold uppercase tracking-wider text-premium-detail">Enterprise Finance Delivery</Eyebrow>
                 <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-8">
                   Managed finance pods
                 </h1>
@@ -987,9 +976,7 @@ function AgencyMarketingView({ openAuth }) {
           <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <FadeIn>
               <div>
-                <div className="mb-4 inline-flex rounded-full border border-processing-border bg-processing-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-processing">
-                  Pod Design Preview
-                </div>
+                <Eyebrow className="mb-4 text-xs font-bold uppercase tracking-wider text-processing">Pod Design Preview</Eyebrow>
                 <h2 className="mb-5 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
                   Pick the finance workload. We shape the team around it.
                 </h2>
@@ -1043,9 +1030,7 @@ function AgencyMarketingView({ openAuth }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <FadeIn>
             <div className="text-center mb-20 max-w-3xl mx-auto">
-              <div className="mb-4 inline-flex rounded-full border border-border-subtle bg-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-text-muted shadow-card">
-                Engagement Models
-              </div>
+              <Eyebrow className="mb-4 text-xs font-bold uppercase tracking-wider text-text-muted">Engagement Models</Eyebrow>
               <h2 className="mb-6 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">Scale with structure</h2>
               <p className="text-xl leading-relaxed text-text-muted">Choose the setup that fits your workload, rather than forcing your business into a rigid software subscription.</p>
             </div>
@@ -1173,9 +1158,7 @@ function PricingView({ openAuth }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
           <div className="mx-auto mb-16 max-w-3xl text-center">
-            <div className="mb-4 inline-flex rounded-full border border-info-border bg-info-surface px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-info">
-              Pricing
-            </div>
+            <Eyebrow className="mb-4 text-xs font-bold uppercase tracking-wider text-info">Pricing</Eyebrow>
             <h1 className="mb-5 text-4xl font-bold tracking-tight text-text-primary md:text-5xl">Transparent access, custom delivery.</h1>
             <p className="text-lg text-text-muted">
               Start with the directory for individual hiring, or move into a managed pod when the workflow needs structure, coverage, and QA.
