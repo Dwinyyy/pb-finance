@@ -176,3 +176,13 @@ test('professional verification routes all identity and credential selections th
   assert.match(professionalPage, /<FileDropzone[\s\S]*onFile=\{\(file\) => onUpload\(\{[\s\S]*file,[\s\S]*\}\)\}/);
   assert.match(professionalPage, /<FileDropzone[\s\S]*onFile=\{\(file\) => uploadOtherDocumentRow\(row, file\)\}/);
 });
+
+test('shared drop zone keeps intrinsic height in mixed-height workflow grids', () => {
+  const rootSurface = source.match(/<SurfaceCard\b[\s\S]*?>/)?.[0] || '';
+  assert.ok(rootSurface, 'missing FileDropzone root SurfaceCard');
+  assert.doesNotMatch(
+    rootSurface,
+    /\bh-full\b/,
+    'shared drop zones must not consume the full height of wrappers that contain sibling controls',
+  );
+});

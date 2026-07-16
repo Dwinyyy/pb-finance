@@ -1822,7 +1822,7 @@ function ProfessionalIdentityVerificationPanel({ onProfileUpdated, profile }) {
           </div>
         )}
 
-        <div className="grid min-w-0 gap-4 md:grid-cols-3">
+        <div className="grid min-w-0 items-start gap-4 md:grid-cols-3">
           {rows.map((row) => {
             const uploaded = hasIdentityArtifact(row.document);
             const busy = busyKind === row.kind;

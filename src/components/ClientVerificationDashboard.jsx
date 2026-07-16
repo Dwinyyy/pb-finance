@@ -247,7 +247,7 @@ export function ClientVerificationDashboard() {
           </div>
         </SurfaceCard>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid items-start gap-5 lg:grid-cols-2">
           {DOCUMENT_CONFIG.map((config) => {
             const document = verification.documents?.[config.kind];
             const isCurrentUpload = busyKind === config.kind;

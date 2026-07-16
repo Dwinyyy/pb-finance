@@ -108,7 +108,7 @@ function FileDropzoneState({
   };
 
   return (
-    <SurfaceCard as="article" tone={tone === 'trust' ? 'trust' : 'default'} className="h-full p-5">
+    <SurfaceCard as="article" tone={tone === 'trust' ? 'trust' : 'default'} className="p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id={`${id}-label`} className="font-bold text-text-primary">{label}</h2>
