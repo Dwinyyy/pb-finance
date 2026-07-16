@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, BellRing, CheckCheck, Loader2 } from 'lucide-react';
 
@@ -7,7 +7,7 @@ import {
   enablePushNotifications,
   getPushNotificationState,
 } from '../services/pushNotifications';
-import { getNotificationNavigationTarget } from '../utils/notificationNavigation';
+import { openNotificationSafely } from '../utils/notificationNavigation';
 import { Button } from './ui/Button';
 
 const formatTime = (value) => {
@@ -29,6 +29,8 @@ export function NotificationPanel({
   onRequestClose,
 }) {
   const navigate = useNavigate();
+  const instanceId = useId();
+  const headingId = `${instanceId}-notification-panel-title`;
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
   const [pushState, setPushState] = useState(null);
@@ -66,20 +68,19 @@ export function NotificationPanel({
     }
   };
 
-  const openNotification = async (notification) => {
-    await markRead(notification);
-    onNotificationOpened?.(notification);
-    onRequestClose?.();
-
-    const target = getNotificationNavigationTarget(notification.actionUrl, window.location.origin);
-
-    if (target.kind === 'external') window.location.assign(target.href);
-    if (target.kind === 'internal') navigate(target.href);
-  };
+  const openNotification = (notification) => openNotificationSafely({
+    assign: (href) => window.location.assign(href),
+    markRead,
+    navigate,
+    notification,
+    onNotificationOpened,
+    onRequestClose,
+    origin: window.location.origin,
+  });
 
   return (
     <section
-      aria-labelledby="notification-panel-title"
+      aria-labelledby={headingId}
       className="max-h-[min(32rem,calc(100dvh-8rem))] overflow-hidden bg-surface text-text-primary"
     >
       <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
@@ -95,7 +96,7 @@ export function NotificationPanel({
             </Button>
           )}
           <div>
-            <h2 id="notification-panel-title" className="text-sm font-black">Notifications</h2>
+            <h2 id={headingId} className="text-sm font-black">Notifications</h2>
             <p className="text-xs text-text-muted">{unreadCount} unread</p>
           </div>
         </div>

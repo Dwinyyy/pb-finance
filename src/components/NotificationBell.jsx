@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 
 import { useNotifications } from '../hooks/useNotifications';
@@ -7,6 +7,9 @@ import { NotificationPanel } from './NotificationPanel';
 export function NotificationBell({ notificationState, unreadClassName = 'bg-action', userId }) {
   const internalNotificationState = useNotifications(userId, { enabled: !notificationState });
   const { unreadCount } = notificationState || internalNotificationState;
+  const instanceId = useId();
+  const panelId = `${instanceId}-notification-panel`;
+  const unreadDescriptionId = `${instanceId}-notification-unread-count`;
   const [isOpen, setIsOpen] = useState(false);
   const disclosureRef = useRef(null);
 
@@ -36,9 +39,9 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-acti
         className="relative flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:text-text-primary"
         onClick={() => setIsOpen((current) => !current)}
         aria-label="Notifications"
-        aria-describedby={unreadCount > 0 ? 'standalone-notification-unread-count' : undefined}
+        aria-describedby={unreadCount > 0 ? unreadDescriptionId : undefined}
         aria-expanded={isOpen}
-        aria-controls="standalone-notification-panel"
+        aria-controls={panelId}
         title="Notifications"
       >
         <Bell size={20} aria-hidden="true" />
@@ -50,7 +53,7 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-acti
             >
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
-            <span id="standalone-notification-unread-count" className="sr-only">
+            <span id={unreadDescriptionId} className="sr-only">
               {unreadCount} unread notifications
             </span>
           </>
@@ -59,7 +62,7 @@ export function NotificationBell({ notificationState, unreadClassName = 'bg-acti
 
       {isOpen && (
         <div
-          id="standalone-notification-panel"
+          id={panelId}
           className="absolute right-0 top-11 z-[80] w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-card border border-border-subtle bg-surface shadow-modal"
         >
           <NotificationPanel

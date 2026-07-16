@@ -20,3 +20,32 @@ export const getNotificationNavigationTarget = (actionUrl, origin) => {
     return { href: '', kind: 'none' };
   }
 };
+
+export const openNotificationSafely = async ({
+  assign,
+  markRead,
+  navigate,
+  notification,
+  onNotificationOpened,
+  onRequestClose,
+  origin,
+}) => {
+  try {
+    await markRead(notification);
+  } catch {
+    // Read tracking is best effort and must not trap the user in the panel.
+  }
+
+  try {
+    await onNotificationOpened?.(notification);
+  } catch {
+    // Session refresh is best effort and must not block safe navigation.
+  }
+
+  onRequestClose?.();
+
+  const target = getNotificationNavigationTarget(notification.actionUrl, origin);
+
+  if (target.kind === 'external') assign(target.href);
+  if (target.kind === 'internal') navigate(target.href);
+};
