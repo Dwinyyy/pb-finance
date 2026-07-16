@@ -144,7 +144,7 @@ export function PublicSite({ openAuth, isDarkMode, toggleDarkMode }) {
         </div>
 
         {mobileMenuOpen && (
-          <div id="public-mobile-navigation" className="absolute z-50 w-full border-t border-border-subtle bg-surface shadow-card lg:hidden" role="navigation" aria-label="Mobile navigation">
+          <div id="public-mobile-navigation" className="absolute z-50 max-h-[calc(100dvh-4rem)] w-full overflow-y-auto overscroll-contain border-t border-border-subtle bg-surface shadow-card lg:hidden" role="navigation" aria-label="Mobile navigation">
             <div className="px-4 pt-4 pb-6 space-y-2">
               <div className="mb-3 flex items-center justify-between rounded-control bg-surface-muted px-3 py-2 text-xs font-bold uppercase tracking-wider text-text-muted">
                 <BrandMark compact label="PB Finance mobile menu" />

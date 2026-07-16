@@ -596,18 +596,18 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
 
   return (
     <header className="sticky top-0 z-50 bg-slate-950 text-white shadow-md">
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-4">
+      <div className="mx-auto flex min-h-16 max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-600 font-bold shadow-inner">
             PB
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-black leading-tight">Admin Console</div>
-            <div className="text-xs font-medium text-slate-400">{user.email}</div>
+            <div className="truncate text-xs font-medium text-slate-400">{user.email}</div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-4">
           <NotificationBell notificationState={notificationState} unreadClassName="bg-cyan-500" userId={user.id} />
           <button onClick={toggleDarkMode} className="text-slate-400 transition-colors hover:text-white" title="Toggle Dark Mode">
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}

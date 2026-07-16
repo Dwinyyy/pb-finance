@@ -669,7 +669,7 @@ function AITalentMatchmaker({ clientPermissions }) {
         dragMomentum={false}
         inert={!isOpen}
         aria-hidden={!isOpen}
-        className={`fixed bottom-8 right-8 w-[400px] h-[600px] max-h-[80vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}
+        className={`fixed inset-x-4 bottom-4 flex h-[min(600px,calc(100dvh-2rem))] w-auto max-h-[80dvh] flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl transition-all duration-300 origin-bottom-right z-50 dark:border-slate-800 dark:bg-slate-900 sm:left-auto sm:right-8 sm:bottom-8 sm:w-[400px] ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}
       >
 
         {/* Chat Header */}
