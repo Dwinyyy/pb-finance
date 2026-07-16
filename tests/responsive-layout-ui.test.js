@@ -35,6 +35,7 @@ test('public mobile navigation remains reachable on short viewports', () => {
   const menuTagEnd = publicPage.indexOf('>', menuStart);
   const menuTag = publicPage.slice(menuTagStart, menuTagEnd + 1);
   assert.match(menuTag, /max-h-\[calc\(100dvh-4rem\)\]/);
+  assert.match(menuTag, /md:max-h-\[calc\(100dvh-5rem\)\]/);
   assert.match(menuTag, /overflow-y-auto/);
   assert.match(menuTag, /overscroll-contain/);
 });
