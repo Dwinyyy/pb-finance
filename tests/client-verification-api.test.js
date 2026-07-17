@@ -46,3 +46,17 @@ test('frontend API service exposes client and admin verification operations', ()
     assert.match(serviceSource, new RegExp(`${method}:`));
   }
 });
+
+test('admin verification decisions deep-link clients to the verification section in Profile', () => {
+  for (const route of [
+    'POST /admin/client-verifications/decision',
+    'POST /admin/client-verifications/reset',
+  ]) {
+    const marker = `'${route}': async (req, res) => {`;
+    const start = apiSource.indexOf(marker);
+    assert.notEqual(start, -1, `missing ${route}`);
+    const next = apiSource.indexOf("\n  '", start + marker.length);
+    const block = apiSource.slice(start, next === -1 ? apiSource.length : next);
+    assert.match(block, /actionUrl:\s*'\/\?tab=profile&section=verification'/);
+  }
+});

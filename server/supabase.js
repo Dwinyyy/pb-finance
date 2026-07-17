@@ -34,13 +34,19 @@ const parseResponse = async (response) => {
   }
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       data?.error_description
         || data?.msg
         || data?.message
         || data?.error
         || 'Supabase auth request failed.'
     );
+    error.body = data;
+    error.status = response.status;
+    error.code = data?.code;
+    error.details = data?.details;
+    error.hint = data?.hint;
+    throw error;
   }
 
   return data;

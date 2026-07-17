@@ -229,6 +229,9 @@ export const backendApi = {
     getUrl: (payload) => request('/documents/url', { method: 'POST', body: payload }),
   },
   client: {
+    getMyProfile: () => request('/client/me'),
+    updateMyProfile: (payload) => request('/client/me', { method: 'PATCH', body: payload }),
+    uploadProfilePhoto: (payload) => request('/client/profile-photo', { method: 'POST', body: payload }),
     getPermissions: () => request('/client/permissions'),
     getVerification: () => request('/client/verification'),
     uploadVerificationDocument: (payload) => request('/client/verification/uploads', { method: 'POST', body: payload }),
@@ -262,6 +265,8 @@ export const backendApi = {
     removePushSubscription: (payload) => request('/notifications/push-subscription', { method: 'DELETE', body: payload }),
   },
   admin: {
+    listClientNameChanges: () => request('/admin/client-name-changes'),
+    decideClientNameChange: (payload) => request('/admin/client-name-changes/decision', { method: 'POST', body: payload }),
     listClientVerifications: () => request('/admin/client-verifications'),
     decideClientVerification: (payload) => request('/admin/client-verifications/decision', { method: 'POST', body: payload }),
     resetClientVerification: (payload) => request('/admin/client-verifications/reset', { method: 'POST', body: payload }),

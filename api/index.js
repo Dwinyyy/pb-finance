@@ -22,6 +22,16 @@ import {
   validateClientVerificationSubmission,
 } from '../server/clientVerification.js';
 import {
+  classifyClientProfileDatabaseError,
+  mapAdminClientNameRequest,
+  mapClientAccount,
+  mapClientNameRequest,
+  mapClientSessionSummary,
+  validateClientNameDecision,
+  validateClientProfilePatch,
+} from '../server/clientProfile.js';
+import { parseProfileImageUpload } from '../server/profileImageUpload.js';
+import {
   getBearerToken,
   getOAuthSignInUrl,
   getSupabaseUser,
@@ -70,7 +80,6 @@ const IDENTITY_UPLOAD_LABELS = Object.freeze({
   valid_id_back: 'Valid ID back',
   valid_id_front: 'Valid ID front',
 });
-const PROFILE_PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
 const DOCUMENT_TYPE_FILE_RULES = {
   certification: {
     extensions: new Set(['.pdf', '.jpg', '.jpeg', '.png']),
@@ -143,6 +152,9 @@ const basicClientRestrictedTalentProfileNulls = Object.freeze(Object.fromEntries
   basicClientRestrictedTalentProfileFields.map((field) => [field, null])
 ));
 const CLIENT_PROFILE_SELECT = 'id,avatar_url,email,full_name,company,role,title,client_tier';
+const CLIENT_ACCOUNT_PROFILE_SELECT = 'id,avatar_url,email,full_name,company,role,client_tier';
+const CLIENT_VERIFICATION_SUMMARY_SELECT = 'client_id,status,verified_business_name,submitted_at,reviewed_at';
+const CLIENT_NAME_REQUEST_SELECT = 'id,client_id,current_full_name,requested_full_name,request_reason,status,decision_reason,created_at,reviewed_at';
 const CLIENT_TIERS = new Set(['basic', 'verified', 'vip']);
 const CLIENT_TIER_PERMISSIONS = Object.freeze({
   basic: Object.freeze({
@@ -1574,27 +1586,6 @@ const parseCredentialUpload = (body) => {
   };
 };
 
-const parseImageUpload = (body, { message = 'Upload must be a JPG or PNG image.' } = {}) => {
-  const { bytes, declaredContentType } = parseBase64Upload(body);
-  const fileName = safeFileName(body.fileName || body.name || 'profile-photo.jpg');
-  const extension = getFileExtension(fileName);
-  const contentType = ALLOWED_IMAGE_MIME_TYPES.has(declaredContentType) ? declaredContentType : '';
-
-  if (!contentType || !PROFILE_PHOTO_EXTENSIONS.has(extension)) {
-    throw new Error(message);
-  }
-
-  if (!bytes.length || bytes.length > MAX_CREDENTIAL_UPLOAD_BYTES) {
-    throw new Error('Upload must be 3 MB or smaller.');
-  }
-
-  return {
-    bytes,
-    contentType,
-    fileName,
-  };
-};
-
 const ensureCredentialBucket = async () => {
   if (credentialBucketReady) return;
 
@@ -1720,7 +1711,7 @@ const uploadIdentityVerificationFile = async ({ body, userId }) => {
   }
 
   const parsedUpload = kind === 'liveness_selfie'
-    ? parseImageUpload(body, { message: 'Liveness selfie must be a JPG or PNG image.' })
+    ? parseProfileImageUpload(body)
     : parseCredentialUpload({
       ...body,
       documentType: 'other_document',
@@ -1777,10 +1768,8 @@ const getSupabasePublicStorageUrl = (bucket, path) => {
 };
 
 const uploadProfilePhotoFile = async ({ body, userId }) => {
-  const { bytes, contentType, fileName } = parseImageUpload(body, {
-    message: 'Profile photo must be a JPG or PNG image.',
-  });
-  const path = `${userId}/profile/${Date.now()}-${fileName}`;
+  const { bytes, contentType, fileName, fileSize } = parseProfileImageUpload(body);
+  const path = `${userId}/profile/${randomUUID()}-${fileName}`;
 
   await ensureProfilePhotoBucket();
   await supabaseStorageRequest(
@@ -1788,7 +1777,7 @@ const uploadProfilePhotoFile = async ({ body, userId }) => {
     {
       body: bytes,
       contentType,
-      headers: { 'x-upsert': 'true' },
+      headers: { 'x-upsert': 'false' },
       method: 'POST',
     }
   );
@@ -1797,10 +1786,15 @@ const uploadProfilePhotoFile = async ({ body, userId }) => {
     avatarUrl: getSupabasePublicStorageUrl(PROFILE_PHOTO_BUCKET, path),
     contentType,
     fileName,
-    fileSize: bytes.length,
+    fileSize,
     path,
   };
 };
+
+const deleteProfilePhotoFile = (path) => supabaseStorageRequest(
+  `/object/${PROFILE_PHOTO_BUCKET}/${encodeStoragePath(path)}`,
+  { method: 'DELETE' }
+);
 
 const uploadClientVerificationFile = async ({ body, userId }) => {
   const upload = parseClientVerificationUpload(body);
@@ -2697,13 +2691,13 @@ const applyCredentialReview = (profile, review, adminId) => {
   };
 };
 
-const requireClientVerificationSession = async (req, res, roles = ['client']) => {
+const requireClientServiceSession = async (req, res, roles = ['client']) => {
   const user = await requireSession(req, res, roles);
 
   if (!user) return null;
 
   if (!hasServiceRoleKey()) {
-    sendError(res, 500, 'Client verification requires SUPABASE_SERVICE_ROLE_KEY on the server.');
+    sendError(res, 500, 'Client services require SUPABASE_SERVICE_ROLE_KEY on the server.');
     return null;
   }
 
@@ -2729,6 +2723,145 @@ const loadClientVerification = async (req, clientId) => {
     caseRow: asList(caseRows)[0] || { client_id: clientId, status: 'draft' },
     documentRows: asList(documentRows),
   };
+};
+
+const toClientAccountProfileResponse = ({
+  latestNameRequest,
+  pendingNameRequest,
+  profile,
+  verification,
+}) => ({
+  ...mapClientAccount({ profile, verification }),
+  pendingNameRequest: mapClientNameRequest(pendingNameRequest),
+  latestNameRequest: mapClientNameRequest(latestNameRequest),
+});
+
+const toClientAccountSessionSummary = (account) => mapClientSessionSummary(withClientPermissions({
+  avatarUrl: account.avatarUrl,
+  clientTier: account.clientTier,
+  company: account.company,
+  id: account.id,
+  name: account.fullName,
+  role: account.role,
+}));
+
+const loadClientAccountProfile = async (req, clientId) => {
+  const [profileRows, verificationRows, pendingRequestRows, latestRequestRows] = await Promise.all([
+    readRows(
+      req,
+      `/profiles?id=eq.${clientId}&select=${CLIENT_ACCOUNT_PROFILE_SELECT}&limit=1`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/client_verifications?client_id=eq.${clientId}&select=${CLIENT_VERIFICATION_SUMMARY_SELECT}&limit=1`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/client_name_change_requests?client_id=eq.${clientId}&status=eq.pending&select=${CLIENT_NAME_REQUEST_SELECT}&order=created_at.desc&limit=1`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/client_name_change_requests?client_id=eq.${clientId}&status=not.eq.pending&select=${CLIENT_NAME_REQUEST_SELECT}&order=created_at.desc&limit=1`,
+      { useServiceRole: true }
+    ),
+  ]);
+  const profile = asList(profileRows)[0];
+
+  if (!profile || profile.id !== clientId || profile.role !== 'client') {
+    const error = new Error('Client profile not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  return toClientAccountProfileResponse({
+    latestNameRequest: asList(latestRequestRows)[0],
+    pendingNameRequest: asList(pendingRequestRows)[0],
+    profile,
+    verification: asList(verificationRows)[0] || { client_id: clientId, status: 'draft' },
+  });
+};
+
+const compareClientNameRequests = (left, right) => {
+  const pendingOrder = Number(right.status === 'pending') - Number(left.status === 'pending');
+  if (pendingOrder) return pendingOrder;
+
+  const leftTime = Date.parse(left.createdAt || '') || 0;
+  const rightTime = Date.parse(right.createdAt || '') || 0;
+  return rightTime - leftTime;
+};
+
+const loadAdminClientNameChangeContext = async (req, requestRows) => {
+  const clientIds = [...new Set(asList(requestRows).map((row) => row.client_id).filter(isUuid))];
+
+  if (!clientIds.length) {
+    return { profilesById: new Map(), verificationsById: new Map() };
+  }
+
+  const idFilter = clientIds.join(',');
+  const [profileRows, verificationRows] = await Promise.all([
+    readRows(
+      req,
+      `/profiles?id=in.(${idFilter})&select=id,email,company`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/client_verifications?client_id=in.(${idFilter})&select=client_id,status`,
+      { useServiceRole: true }
+    ),
+  ]);
+
+  return {
+    profilesById: new Map(asList(profileRows).map((profile) => [profile.id, profile])),
+    verificationsById: new Map(asList(verificationRows).map((verification) => [
+      verification.client_id,
+      verification,
+    ])),
+  };
+};
+
+const mapAdminClientNameChangeRows = async (req, requestRows) => {
+  const { profilesById, verificationsById } = await loadAdminClientNameChangeContext(req, requestRows);
+
+  return asList(requestRows).map((row) => mapAdminClientNameRequest(row, {
+    profile: profilesById.get(row.client_id),
+    verification: verificationsById.get(row.client_id),
+  })).filter(Boolean);
+};
+
+const loadAdminClientNameChangeQueue = async (req) => {
+  const requestRows = asList(await readRows(
+    req,
+    `/client_name_change_requests?select=${CLIENT_NAME_REQUEST_SELECT}&order=created_at.desc&limit=250`,
+    { useServiceRole: true }
+  ));
+  const requests = await mapAdminClientNameChangeRows(req, requestRows);
+  requests.sort(compareClientNameRequests);
+
+  return {
+    pendingCount: requests.filter((request) => request.status === 'pending').length,
+    requests,
+  };
+};
+
+const loadAdminClientNameChange = async (req, requestId) => {
+  const requestRows = asList(await readRows(
+    req,
+    `/client_name_change_requests?id=eq.${requestId}&select=${CLIENT_NAME_REQUEST_SELECT}&limit=1`,
+    { useServiceRole: true }
+  ));
+  const [request] = await mapAdminClientNameChangeRows(req, requestRows);
+
+  if (!request) {
+    const error = new Error('Client name-change request not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  return request;
 };
 
 const mapAdminClientVerification = (caseRow, documentRows, profile = {}) => ({
@@ -3263,6 +3396,74 @@ const handlers = {
     }
   },
 
+  'GET /admin/client-name-changes': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    sendJson(res, 200, await loadAdminClientNameChangeQueue(req));
+  },
+
+  'POST /admin/client-name-changes/decision': async (req, res) => {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+
+    const body = await readJson(req);
+    const requestId = cleanString(body.requestId || body.request_id, 80);
+    const validation = validateClientNameDecision(body);
+
+    if (!isUuid(requestId)) {
+      sendError(res, 400, 'A valid requestId is required.');
+      return;
+    }
+
+    if (!validation.valid) {
+      sendError(res, 400, validation.errors.join(' '));
+      return;
+    }
+
+    const decisionValue = validation.value.decision;
+    let decidedRequest;
+
+    try {
+      await writeRows(
+        req,
+        '/rpc/decide_client_name_change',
+        {
+          p_decision: decisionValue,
+          p_decision_reason: validation.value.decisionReason,
+          p_request_id: requestId,
+          p_reviewer_id: user.id,
+        },
+        { useServiceRole: true }
+      );
+      decidedRequest = await loadAdminClientNameChange(req, requestId);
+    } catch (error) {
+      const classified = classifyClientProfileDatabaseError(error);
+      sendError(res, classified.status, classified.message);
+      return;
+    }
+
+    notifyUser({
+      actionUrl: '/?tab=profile&section=account',
+      body: decisionValue === 'approved'
+        ? `PB Finance approved your requested account name: ${decidedRequest.requestedFullName}.`
+        : `PB Finance did not approve your requested account name. ${decidedRequest.decisionReason || ''}`.trim(),
+      emailSubject: decisionValue === 'approved'
+        ? 'Client account name approved'
+        : 'Client account name request declined',
+      metadata: { requestId: decidedRequest.id },
+      recipientEmail: decidedRequest.client.email,
+      recipientId: decidedRequest.clientId,
+      recipientName: decidedRequest.requestedFullName,
+      title: decisionValue === 'approved' ? 'Account name approved' : 'Account name not approved',
+      type: decisionValue === 'approved'
+        ? 'client_name_change_approved'
+        : 'client_name_change_rejected',
+    }).catch(() => {});
+
+    sendJson(res, 200, decidedRequest);
+  },
+
   'GET /admin/client-verifications': async (req, res) => {
     const user = await requireAdmin(req, res);
     if (!user) return;
@@ -3346,7 +3547,7 @@ const handlers = {
     const approved = decision === 'approve';
 
     notifyUser({
-      actionUrl: '/?tab=verification',
+      actionUrl: '/?tab=profile&section=verification',
       body: approved
         ? 'PB Finance approved your client verification. Verified client features are now available.'
         : `PB Finance needs updated verification evidence. ${updated.caseRow.decision_reason || ''}`.trim(),
@@ -3401,7 +3602,7 @@ const handlers = {
     const profile = asList(profileRows)[0] || {};
 
     notifyUser({
-      actionUrl: '/?tab=verification',
+      actionUrl: '/?tab=profile&section=verification',
       body: `PB Finance reset your client verification. Upload new evidence to continue. Reason: ${reason}`,
       emailSubject: 'Client verification reset',
       metadata: { clientId },
@@ -3967,8 +4168,112 @@ const handlers = {
     });
   },
 
+  'GET /client/me': async (req, res) => {
+    const user = await requireClientServiceSession(req, res);
+    if (!user) return;
+
+    try {
+      sendJson(res, 200, await loadClientAccountProfile(req, user.id));
+    } catch (error) {
+      const classified = classifyClientProfileDatabaseError(error);
+      sendError(res, classified.status, classified.message);
+    }
+  },
+
+  'PATCH /client/me': async (req, res) => {
+    const user = await requireClientServiceSession(req, res);
+    if (!user) return;
+
+    try {
+      const body = await readJson(req);
+      const current = await loadClientAccountProfile(req, user.id);
+      const validation = validateClientProfilePatch(body, {
+        currentName: current.account.fullName,
+        pendingNameRequest: current.pendingNameRequest,
+        verificationStatus: current.verification.status,
+      });
+
+      if (!validation.valid) {
+        sendError(res, 400, validation.errors.join(' '));
+        return;
+      }
+
+      const rpcRows = await writeRows(
+        req,
+        '/rpc/save_client_account_profile',
+        {
+          p_client_id: user.id,
+          p_company: validation.value.company,
+          p_full_name: validation.value.fullName,
+          p_request_reason: validation.value.requestReason,
+        },
+        { useServiceRole: true }
+      );
+      const rpcResult = asList(rpcRows)[0] || {};
+      const requestCreated = rpcResult.request_created === true;
+      const nameOutcome = ['unchanged', 'updated', 'pending_approval'].includes(rpcResult.name_outcome)
+        ? rpcResult.name_outcome
+        : validation.nameOutcome;
+
+      if (requestCreated) {
+        notifyAdmins({
+          actionUrl: '/?tab=client-verifications&section=name-changes',
+          body: `${current.account.fullName || current.account.email || 'A client'} requested approval for a protected account-name change.`,
+          emailSubject: 'Client account-name change requested',
+          metadata: { clientId: user.id, requestId: rpcResult.request_id },
+          title: 'Client account-name change requested',
+          type: 'client_name_change_requested',
+        }).catch(() => {});
+      }
+
+      const updated = await loadClientAccountProfile(req, user.id);
+      sendJson(res, 200, {
+        ...updated,
+        nameOutcome,
+        sessionSummary: toClientAccountSessionSummary(updated.account),
+      });
+    } catch (error) {
+      const classified = classifyClientProfileDatabaseError(error);
+      sendError(res, classified.status, classified.message);
+    }
+  },
+
+  'POST /client/profile-photo': async (req, res) => {
+    const user = await requireClientServiceSession(req, res);
+    if (!user) return;
+
+    let upload;
+
+    try {
+      const body = await readJson(req);
+      upload = await uploadProfilePhotoFile({ body, userId: user.id });
+      await patchRows(
+        req,
+        `/profiles?id=eq.${user.id}`,
+        { avatar_url: upload.avatarUrl },
+        { prefer: 'return=minimal', useServiceRole: true }
+      );
+    } catch (error) {
+      if (upload?.path) {
+        await deleteProfilePhotoFile(upload.path).catch(() => {});
+      }
+
+      sendError(res, error.status || 400, error.message || 'Unable to upload profile photo.');
+      return;
+    }
+
+    const updated = await loadClientAccountProfile(req, user.id);
+    sendJson(res, 201, {
+      avatarUrl: upload.avatarUrl,
+      contentType: upload.contentType,
+      fileName: upload.fileName,
+      fileSize: upload.fileSize,
+      sessionSummary: toClientAccountSessionSummary(updated.account),
+    });
+  },
+
   'GET /client/verification': async (req, res) => {
-    const user = await requireClientVerificationSession(req, res);
+    const user = await requireClientServiceSession(req, res);
     if (!user) return;
 
     const verification = await loadClientVerification(req, user.id);
@@ -3979,7 +4284,7 @@ const handlers = {
   },
 
   'POST /client/verification/uploads': async (req, res) => {
-    const user = await requireClientVerificationSession(req, res);
+    const user = await requireClientServiceSession(req, res);
     if (!user) return;
 
     const current = await loadClientVerification(req, user.id);
@@ -4027,7 +4332,7 @@ const handlers = {
   },
 
   'POST /client/verification/submit': async (req, res) => {
-    const user = await requireClientVerificationSession(req, res);
+    const user = await requireClientServiceSession(req, res);
     if (!user) return;
 
     const current = await loadClientVerification(req, user.id);
@@ -4069,7 +4374,7 @@ const handlers = {
   },
 
   'POST /client/verification/document-url': async (req, res) => {
-    const user = await requireClientVerificationSession(req, res, ['admin', 'client']);
+    const user = await requireClientServiceSession(req, res, ['admin', 'client']);
     if (!user) return;
 
     try {
@@ -4818,9 +5123,11 @@ const handlers = {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
 
+    let upload;
+
     try {
       const body = await readJson(req);
-      const upload = await uploadProfilePhotoFile({ body, userId: user.id });
+      upload = await uploadProfilePhotoFile({ body, userId: user.id });
 
       await patchRows(
         req,
@@ -4831,6 +5138,10 @@ const handlers = {
 
       sendJson(res, 201, upload);
     } catch (error) {
+      if (upload?.path) {
+        await deleteProfilePhotoFile(upload.path).catch(() => {});
+      }
+
       sendError(res, 400, error.message || 'Unable to upload profile photo.');
     }
   },
