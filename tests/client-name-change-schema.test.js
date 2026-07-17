@@ -113,7 +113,35 @@ for (const [label, source] of [['canonical schema', schema], ['generated migrati
     );
     assert.match(
       source,
+      /server_version_num[\s\S]*>= 160000[\s\S]*grant %I to %I with admin false, inherit false, set true/i
+    );
+    assert.match(
+      source,
       /if current_user <> 'pb_finance_profile_executor'[\s\S]*'revoke %I from %I'[\s\S]*current_user/i
+    );
+    assert.match(
+      source,
+      /pg_has_role\(api_role\.oid, v_executor_oid, 'MEMBER'\)[\s\S]*API roles may not be members of the profile executor/i
+    );
+    assert.match(
+      source,
+      /pg_has_role\(current_user, v_executor_oid, 'USAGE'\)[\s\S]*migration actor still inherits profile executor privileges/i
+    );
+    assert.match(
+      source,
+      /server_version_num[\s\S]*>= 160000[\s\S]*pg_has_role\(current_user, v_executor_oid, 'SET'\)[\s\S]*migration actor can still set role to the profile executor/i
+    );
+    assert.match(
+      source,
+      /not membership\.admin_option[\s\S]*membership\.inherit_option[\s\S]*membership\.set_option[\s\S]*unexpected profile executor membership options/i
+    );
+    assert.match(
+      source,
+      /set role pb_finance_profile_executor;\s*revoke execute on function public\.prevent_protected_client_full_name_change\(\)[\s\S]*revoke execute on function public\.sync_client_primary_company\(\)[\s\S]*reset role;/i
+    );
+    assert.match(
+      source,
+      /set role pb_finance_profile_executor;\s*revoke execute on function public\.save_client_account_profile\(uuid, text, text, text\)[\s\S]*grant execute on function public\.save_client_account_profile\(uuid, text, text, text\)[\s\S]*revoke execute on function public\.decide_client_name_change\(uuid, uuid, text, text\)[\s\S]*grant execute on function public\.decide_client_name_change\(uuid, uuid, text, text\)[\s\S]*reset role;/i
     );
     assert.match(source, /grant usage on schema public to pb_finance_profile_executor/i);
     assert.match(

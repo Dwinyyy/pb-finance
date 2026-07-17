@@ -130,14 +130,23 @@ $$;
 
 do $$
 begin
-  if current_user in ('anon', 'authenticated', 'service_role') then
+  if current_user in ('anon', 'authenticated', 'service_role')
+    or current_user = 'authenticator' then
     raise exception 'API roles may not administer the profile executor.';
   elsif current_user <> 'pb_finance_profile_executor' then
-    execute format(
-      'grant %I to %I',
-      'pb_finance_profile_executor',
-      current_user
-    );
+    if current_setting('server_version_num')::integer >= 160000 then
+      execute format(
+        'grant %I to %I with admin false, inherit false, set true',
+        'pb_finance_profile_executor',
+        current_user
+      );
+    else
+      execute format(
+        'grant %I to %I',
+        'pb_finance_profile_executor',
+        current_user
+      );
+    end if;
   end if;
 end
 $$;
@@ -409,12 +418,15 @@ create trigger prevent_direct_primary_client_company_name_change
 
 revoke execute on function public.validate_client_profile_identity_fields()
   from public, anon, authenticated, service_role;
+revoke execute on function public.prevent_direct_primary_client_company_name_change()
+  from public, anon, authenticated, service_role;
+
+set role pb_finance_profile_executor;
 revoke execute on function public.prevent_protected_client_full_name_change()
   from public, anon, authenticated, service_role;
 revoke execute on function public.sync_client_primary_company()
   from public, anon, authenticated, service_role;
-revoke execute on function public.prevent_direct_primary_client_company_name_change()
-  from public, anon, authenticated, service_role;
+reset role;
 
 create or replace function public.save_client_account_profile(
   p_client_id uuid,
@@ -730,6 +742,7 @@ $$;
 alter function public.decide_client_name_change(uuid, uuid, text, text)
   owner to pb_finance_profile_executor;
 
+set role pb_finance_profile_executor;
 revoke execute on function public.save_client_account_profile(uuid, text, text, text)
   from public, anon, authenticated;
 grant execute on function public.save_client_account_profile(uuid, text, text, text)
@@ -739,6 +752,7 @@ revoke execute on function public.decide_client_name_change(uuid, uuid, text, te
   from public, anon, authenticated;
 grant execute on function public.decide_client_name_change(uuid, uuid, text, text)
   to service_role;
+reset role;
 
 create or replace function public.reject_client_verification(
   p_client_id uuid,
@@ -1155,6 +1169,71 @@ begin
       'pb_finance_profile_executor',
       current_user
     );
+  end if;
+end
+$$;
+
+-- PostgreSQL 16+ gives a non-superuser CREATEROLE creator an unavoidable
+-- bootstrap-granted ADMIN-only membership in each role it creates. The grant
+-- has INHERIT FALSE and SET FALSE, so it cannot expose executor privileges.
+-- Verify that the temporary SET-capable grant above is gone and that no API
+-- role has direct or indirect executor membership.
+do $$
+declare
+  v_executor_oid oid;
+  v_actor_is_superuser boolean;
+begin
+  select executor.oid
+  into v_executor_oid
+  from pg_roles as executor
+  where executor.rolname = 'pb_finance_profile_executor';
+
+  if exists (
+    select 1
+    from pg_roles as api_role
+    where api_role.rolname in (
+      'anon',
+      'authenticated',
+      'service_role',
+      'authenticator'
+    )
+      and pg_has_role(api_role.oid, v_executor_oid, 'MEMBER')
+  ) then
+    raise exception 'API roles may not be members of the profile executor.';
+  end if;
+
+  select actor.rolsuper
+  into v_actor_is_superuser
+  from pg_roles as actor
+  where actor.rolname = current_user;
+
+  if current_user <> 'pb_finance_profile_executor'
+    and not coalesce(v_actor_is_superuser, false) then
+    if pg_has_role(current_user, v_executor_oid, 'USAGE') then
+      raise exception 'The migration actor still inherits profile executor privileges.';
+    end if;
+
+    if current_setting('server_version_num')::integer >= 160000 then
+      if pg_has_role(current_user, v_executor_oid, 'SET') then
+        raise exception 'The migration actor can still set role to the profile executor.';
+      end if;
+
+      if exists (
+        select 1
+        from pg_auth_members as membership
+        join pg_roles as member_role
+          on member_role.oid = membership.member
+        where membership.roleid = v_executor_oid
+          and member_role.rolname = current_user
+          and (
+            not membership.admin_option
+            or membership.inherit_option
+            or membership.set_option
+          )
+      ) then
+        raise exception 'The migration actor has unexpected profile executor membership options.';
+      end if;
+    end if;
   end if;
 end
 $$;
