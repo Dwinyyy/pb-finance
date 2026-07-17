@@ -12,8 +12,8 @@ import {
   DollarSign, Settings, Bot, Send, Loader2, Sun, Moon
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
+import { ClientProfileDashboard } from '../components/ClientProfileDashboard';
 import { ClientWorkflowOnboardingModal } from '../components/ClientWorkflowOnboardingModal';
-import { ClientVerificationDashboard } from '../components/ClientVerificationDashboard';
 import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
 import { BrandMark } from '../components/ui/BrandMark';
@@ -37,7 +37,7 @@ const EMPTY_BILLING = Object.freeze({
 });
 const SUCCESS_MESSAGE_TIMEOUT_MS = 2500;
 const TALENT_SKILL_FILTERS = ['All', ...SKILLS_OPTIONS];
-const CLIENT_TABS = ['discover', 'verification', 'agencies', 'shortlist', 'interviews', 'billing'];
+const CLIENT_ROUTE_TABS = ['discover', 'profile', 'agencies', 'shortlist', 'interviews', 'billing'];
 const CLIENT_TIER_PERMISSIONS = Object.freeze({
   basic: Object.freeze({
     canDiscoverAgencies: false,
@@ -68,9 +68,9 @@ const CLIENT_TIER_PERMISSIONS = Object.freeze({
   }),
 });
 const CLIENT_NOTIFICATION_TAB_FALLBACKS = {
-  client_verification_approved: 'verification',
-  client_verification_rejected: 'verification',
-  client_verification_reset: 'verification',
+  client_verification_approved: 'profile',
+  client_verification_rejected: 'profile',
+  client_verification_reset: 'profile',
   interview_accepted: 'interviews',
   interview_cancelled: 'interviews',
   interview_declined: 'interviews',
@@ -404,14 +404,14 @@ function InterviewDateTimePicker({ value, onChange }) {
 // ==========================================
 // 2. CLIENT PORTAL (LOGGED IN EXPERIENCE)
 // ==========================================
-export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
+export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode, onUserUpdated }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'discover';
+  const section = searchParams.get('section') === 'verification' ? 'verification' : 'account';
   const clientPermissions = useMemo(() => getClientPortalPermissions(user), [user]);
   const availableTabs = useMemo(() => (
     [
       { id: 'discover', label: 'Discover Talent' },
-      { id: 'verification', label: 'Verification' },
       ...(clientPermissions.canDiscoverAgencies ? [{ id: 'agencies', label: 'Discover Agencies' }] : []),
       { id: 'shortlist', label: 'My Shortlist' },
       ...(clientPermissions.canScheduleInterviews ? [{ id: 'interviews', label: 'Interviews' }] : []),
@@ -419,8 +419,23 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
     ]
   ), [clientPermissions.canDiscoverAgencies, clientPermissions.canScheduleInterviews, clientPermissions.canViewFullDocuments]);
   const availableTabIds = useMemo(() => availableTabs.map((tab) => tab.id), [availableTabs]);
-  const appView = availableTabIds.includes(requestedTab) ? requestedTab : 'discover';
-  const setAppView = (tab) => setSearchParams({ tab });
+  const routeTabIds = useMemo(() => [...availableTabIds, 'profile'], [availableTabIds]);
+  const normalizedRequestedTab = requestedTab === 'verification' ? 'profile' : requestedTab;
+  const appView = CLIENT_ROUTE_TABS.includes(normalizedRequestedTab) && routeTabIds.includes(normalizedRequestedTab)
+    ? normalizedRequestedTab
+    : 'discover';
+  const setAppView = (tab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', tab);
+    if (tab !== 'profile') nextParams.delete('section');
+    setSearchParams(nextParams);
+  };
+  const setProfileSection = (nextSection) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', 'profile');
+    nextParams.set('section', nextSection === 'verification' ? 'verification' : 'account');
+    setSearchParams(nextParams);
+  };
   const [matchmakerVisible, setMatchmakerVisible] = useState(() => clientPermissions.canUseMatchmaker);
   const onboardingStorageKey = getClientOnboardingStorageKey(user);
   const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
@@ -431,14 +446,25 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
     fallbackByType: CLIENT_NOTIFICATION_TAB_FALLBACKS,
     notifications,
     storageKey: `pb_client_page_notification_indicators:${user?.id || user?.email || 'unknown'}`,
-    tabIds: availableTabIds,
+    tabIds: routeTabIds,
   });
 
   useEffect(() => {
-    if (!availableTabIds.includes(requestedTab)) {
-      setSearchParams({ tab: 'discover' }, { replace: true });
+    if (requestedTab === 'verification') {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('tab', 'profile');
+      nextParams.set('section', 'verification');
+      setSearchParams(nextParams, { replace: true });
+      return;
     }
-  }, [availableTabIds, requestedTab, setSearchParams]);
+
+    if (!CLIENT_ROUTE_TABS.includes(requestedTab) || !routeTabIds.includes(requestedTab)) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('tab', 'discover');
+      nextParams.delete('section');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [requestedTab, routeTabIds, searchParams, setSearchParams]);
 
   const dismissWorkflowOnboarding = () => {
     try {
@@ -580,7 +606,14 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       <main className="min-w-0 flex-1 bg-canvas">
         <div className="relative mx-auto min-w-0 w-full max-w-[1600px] scroll-smooth px-3 py-6 sm:px-6 sm:py-8 lg:px-8">
           {appView === 'discover' && <AppDiscoverView user={user} />}
-          {appView === 'verification' && <ClientVerificationDashboard />}
+          {appView === 'profile' && (
+            <ClientProfileDashboard
+              user={user}
+              section={section}
+              onSectionChange={setProfileSection}
+              onUserUpdated={onUserUpdated}
+            />
+          )}
           {appView === 'agencies' && clientPermissions.canDiscoverAgencies && <AppAgenciesView />}
           {appView === 'shortlist' && <AppShortlistView user={user} />}
           {appView === 'interviews' && <AppInterviewsView user={user} />}

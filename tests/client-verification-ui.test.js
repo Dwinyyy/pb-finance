@@ -48,7 +48,7 @@ test('client shell migration preserves permission, onboarding, notification, and
   }
 
   assert.match(clientPortal, /const availableTabs = useMemo/);
-  assert.match(clientPortal, /availableTabIds\.includes\(requestedTab\) \? requestedTab : 'discover'/);
+  assert.match(clientPortal, /CLIENT_ROUTE_TABS\.includes\(normalizedRequestedTab\)[\s\S]*routeTabIds\.includes\(normalizedRequestedTab\)/);
   assert.match(clientPortal, /localStorage\.setItem\(onboardingStorageKey, 'true'\)/);
   assert.match(clientPortal, /setShowWorkflowOnboarding\(true\)/);
   assert.match(clientPortal, /useTabNotificationIndicators/);
@@ -136,11 +136,16 @@ test('client modal migration preserves preview, scheduling, and cancellation cal
   assert.match(interviewsView, /disabled=\{busyAction === `cancel:\$\{cancelTarget\.id\}`\}/);
 });
 
-test('client portal always exposes verification while protected tabs require verified permissions', () => {
-  assert.match(clientPage, /id: 'verification', label: 'Verification'/);
+test('client portal keeps verification inside the hidden Profile route while protected tabs require permissions', () => {
+  assert.match(clientPage, /CLIENT_ROUTE_TABS[^\n]*'profile'/);
+  assert.doesNotMatch(clientPortal, /id: 'verification', label: 'Verification'/);
   assert.match(clientPage, /clientPermissions\.canScheduleInterviews[\s\S]*id: 'interviews'/);
   assert.match(clientPage, /clientPermissions\.canViewFullDocuments[\s\S]*id: 'billing'/);
-  assert.match(clientPage, /appView === 'verification'[\s\S]*ClientVerificationDashboard/);
+  assert.match(clientPage, /appView === 'profile'[\s\S]*ClientProfileDashboard/);
+  assert.match(clientPage, /requestedTab === 'verification'[\s\S]*section', 'verification'[\s\S]*replace: true/);
+  assert.match(clientPage, /client_verification_approved: 'profile'/);
+  assert.match(clientPage, /client_verification_rejected: 'profile'/);
+  assert.match(clientPage, /client_verification_reset: 'profile'/);
 });
 
 test('client dashboard requires all four evidence categories and regulated business proof', () => {
