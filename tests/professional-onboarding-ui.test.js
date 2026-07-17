@@ -12,6 +12,7 @@ const apiService = readFileSync(new URL('../src/services/api.js', import.meta.ur
 const adminPage = readFileSync(new URL('../src/pages/AdminPages.jsx', import.meta.url), 'utf8');
 const notificationPanel = readFileSync(new URL('../src/components/NotificationPanel.jsx', import.meta.url), 'utf8');
 const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
+const professionalGuide = readFileSync(new URL('../src/components/ProfessionalWorkflowOnboardingModal.jsx', import.meta.url), 'utf8');
 const pushService = readFileSync(new URL('../src/services/pushNotifications.js', import.meta.url), 'utf8');
 const serviceWorker = readFileSync(new URL('../public/pb-push-sw.js', import.meta.url), 'utf8');
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -167,6 +168,18 @@ test('professional migration preserves admin approval and dashboard permission l
   assert.match(professionalPortal, /const availableTabs = professionalPermissions\.canAccessDashboard \? PROFESSIONAL_TABS : \['profile'\]/);
   assert.match(professionalPortal, /availableTabs\.includes\(requestedTab\) \? requestedTab : 'profile'/);
   assert.match(professionalPortal, /!professionalPermissions\.canAccessDashboard[\s\S]*admin approves your identity, resume, and required documents/i);
+});
+
+test('professional guide delegates presentation and keeps approval-gated work visible', () => {
+  assert.match(professionalGuide, /<PortalGuideModal/);
+  assert.match(professionalGuide, /Professional guide/);
+  assert.match(professionalGuide, /Identity verification/);
+  assert.match(professionalGuide, /Credentials/);
+  assert.match(professionalGuide, /Admin review/);
+  assert.match(professionalGuide, /canAccessDashboard/);
+  assert.match(professionalGuide, /Approval required/);
+  assert.match(professionalGuide, /if \(!step\.available \|\| !step\.destination\) return/);
+  assert.doesNotMatch(professionalGuide, /localStorage|shouldShowPortalGuide/);
 });
 
 test('professional profile drafts never write pending identity into active profiles', () => {

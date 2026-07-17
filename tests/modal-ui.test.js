@@ -8,6 +8,9 @@ const professional = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', 
 const documentPreview = readFileSync(new URL('../src/components/DocumentPreviewModal.jsx', import.meta.url), 'utf8');
 const onboardingUrl = new URL('../src/components/ClientWorkflowOnboardingModal.jsx', import.meta.url);
 const onboarding = existsSync(onboardingUrl) ? readFileSync(onboardingUrl, 'utf8') : '';
+const professionalOnboardingUrl = new URL('../src/components/ProfessionalWorkflowOnboardingModal.jsx', import.meta.url);
+const professionalOnboarding = existsSync(professionalOnboardingUrl) ? readFileSync(professionalOnboardingUrl, 'utf8') : '';
+const portalGuide = readFileSync(new URL('../src/components/PortalGuideModal.jsx', import.meta.url), 'utf8');
 
 test('modal provides portal animation and dialog mechanics', () => {
   for (const pattern of [/createPortal/, /AnimatePresence/, /useReducedMotion/, /role="dialog"/, /aria-modal="true"/, /Escape/, /document\.body\.style\.overflow/, /previouslyFocused/, /focusable/]) {
@@ -31,15 +34,20 @@ test('client and professional pages no longer own portal modal implementations',
   assert.match(client, /from '..\/components\/ui\/Modal'/);
   assert.match(professional, /from '..\/components\/ui\/Modal'/);
   assert.equal(existsSync(onboardingUrl), true);
+  assert.equal(existsSync(professionalOnboardingUrl), true);
   assert.match(client, /from '..\/components\/ClientWorkflowOnboardingModal'/);
   assert.match(onboarding, /export function ClientWorkflowOnboardingModal/);
   assert.match(onboarding, /const CLIENT_WORKFLOW_STEPS/);
-  assert.match(onboarding, /import \{ Modal \} from '.\/ui\/Modal'/);
-  assert.match(onboarding, /import \{ Button \} from '.\/ui\/Button'/);
-  assert.match(onboarding, /import \{ Eyebrow \} from '.\/ui\/Eyebrow'/);
-  assert.match(onboarding, /import \{ SurfaceCard \} from '.\/ui\/SurfaceCard'/);
-  assert.match(onboarding, /ClientWorkflowOnboardingModal\(\{ user, open, onClose, onStart \}\)/);
-  assert.match(onboarding, /<Modal[\s\S]*open=\{open\}[\s\S]*size="onboarding"/);
+  assert.match(onboarding, /import \{ PortalGuideModal \} from '.\/PortalGuideModal\.jsx'/);
+  assert.match(onboarding, /ClientWorkflowOnboardingModal\(\{[\s\S]*clientPermissions[\s\S]*onNavigate[\s\S]*\}\)/);
+  assert.match(onboarding, /<PortalGuideModal[\s\S]*open=\{open\}/);
+  assert.match(professionalOnboarding, /import \{ PortalGuideModal \} from '.\/PortalGuideModal\.jsx'/);
+  assert.match(professionalOnboarding, /<PortalGuideModal[\s\S]*open=\{open\}/);
+  assert.match(portalGuide, /import \{ Modal \} from '.\/ui\/Modal\.jsx'/);
+  assert.match(portalGuide, /import \{ Button \} from '.\/ui\/Button\.jsx'/);
+  assert.match(portalGuide, /import \{ Eyebrow \} from '.\/ui\/Eyebrow\.jsx'/);
+  assert.match(portalGuide, /import \{ SurfaceCard \} from '.\/ui\/SurfaceCard\.jsx'/);
+  assert.match(portalGuide, /<Modal[\s\S]*open=\{open\}[\s\S]*size="onboarding"/);
   assert.doesNotMatch(onboarding, /createPortal|useEffect|role="dialog"|aria-modal="true"/);
   assert.doesNotMatch(onboarding, /(?:bg|text|border)-(?:slate|gray|zinc|red|blue|cyan|emerald|amber|violet|primary)-/);
   assert.match(client, /<ClientWorkflowOnboardingModal[\s\S]*open=\{showWorkflowOnboarding\}/);

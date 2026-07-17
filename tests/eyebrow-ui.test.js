@@ -6,6 +6,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const eyebrow = read('../src/components/ui/Eyebrow.jsx');
 const publicPage = read('../src/pages/PublicPages.jsx');
 const clientGuide = read('../src/components/ClientWorkflowOnboardingModal.jsx');
+const portalGuide = read('../src/components/PortalGuideModal.jsx');
 const clientVerification = read('../src/components/ClientVerificationDashboard.jsx');
 const professionalPage = read('../src/pages/ProfessionalPages.jsx');
 const adminReview = read('../src/components/ClientVerificationReview.jsx');
@@ -50,14 +51,15 @@ test('all audited decorative labels use plain Eyebrow text without icons or pill
     assert.doesNotMatch(tag, /<(?:Sparkles|Star|IdCard|ShieldCheck)\b/, `${copy} still has a decorative icon`);
   }
 
-  const guideStart = clientGuide.indexOf('<Eyebrow');
-  const guideEnd = clientGuide.indexOf('</Eyebrow>', guideStart);
-  const guide = clientGuide.slice(guideStart, guideEnd + '</Eyebrow>'.length);
-  assert.match(guide, /Client guide/);
-  assert.match(guide, /user\?\.name/);
-  assert.match(guide, /className="text-xs font-bold text-info"/);
+  const guideStart = portalGuide.indexOf('<Eyebrow');
+  const guideEnd = portalGuide.indexOf('</Eyebrow>', guideStart);
+  const guide = portalGuide.slice(guideStart, guideEnd + '</Eyebrow>'.length);
+  assert.match(guide, /\{eyebrow\}/);
+  assert.match(guide, /className="text-xs font-bold uppercase tracking-wider text-info"/);
   assert.doesNotMatch(guide, decorativeClassPattern);
   assert.doesNotMatch(guide, /Sparkles|StatusBadge/);
+  assert.match(clientGuide, /Client guide/);
+  assert.match(clientGuide, /user\?\.name/);
 });
 
 test('semantic client verification status remains a StatusBadge', () => {

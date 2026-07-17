@@ -57,7 +57,7 @@ test('client shell migration preserves permission, onboarding, notification, and
   assert.match(clientPortal, /setMatchmakerVisible\(!matchmakerVisible\)/);
   assert.match(clientPortal, /onClick=\{onLogout\}/);
   assert.match(clientPortal, /<ClientWorkflowOnboardingModal[\s\S]*open=\{showWorkflowOnboarding\}/);
-  assert.match(onboarding, /<Modal/);
+  assert.match(onboarding, /<PortalGuideModal/);
   assert.doesNotMatch(onboarding, /createPortal|useEffect/);
 });
 

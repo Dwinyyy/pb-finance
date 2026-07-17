@@ -1,96 +1,115 @@
-import { ArrowRight, Bookmark, Calendar, CheckCircle, FileText, Search } from 'lucide-react';
+import { Bookmark, CalendarCheck2, FileText, Search, UserRoundCheck } from 'lucide-react';
 
-import { Button } from './ui/Button';
-import { Modal } from './ui/Modal';
-import { Eyebrow } from './ui/Eyebrow';
-import { SurfaceCard } from './ui/SurfaceCard';
+import { PortalGuideModal } from './PortalGuideModal.jsx';
 
 const CLIENT_WORKFLOW_STEPS = [
   {
+    id: 'profile-verification',
+    icon: UserRoundCheck,
+    title: 'Profile and verification',
+    build: ({ isBasicClient }) => ({
+      available: true,
+      destination: { tab: 'profile', section: isBasicClient ? 'verification' : 'account' },
+      statusLabel: isBasicClient ? 'Start here' : 'Available',
+      description: isBasicClient
+        ? 'Complete your profile and submit identity and regulated business evidence. PB Finance admin approval unlocks interviews, contracts, and expanded portal access.'
+        : 'Review your active account details and verification record. Your approved business identity remains separate from editable display information.',
+    }),
+  },
+  {
     id: 'discover',
     icon: Search,
-    label: 'Discover',
-    text: 'Filter available talent',
-    detail: 'Find vetted accountants and finance specialists with clear filters for role, skills, software, rate, and availability.',
+    title: 'Discover talent',
+    build: () => ({
+      available: true,
+      destination: { tab: 'discover' },
+      statusLabel: 'Available',
+      description: 'Search vetted finance professionals by role, skills, software, availability, and rate so the first comparison starts with relevant candidates.',
+    }),
   },
   {
     id: 'shortlist',
     icon: Bookmark,
-    label: 'Shortlist',
-    text: 'Compare the best fits',
-    detail: 'Save the best matches in one place so choosing who to interview feels focused, not scattered.',
+    title: 'Shortlist',
+    build: ({ shortlistLimit }) => ({
+      available: true,
+      destination: { tab: 'shortlist' },
+      statusLabel: shortlistLimit == null ? 'Unlimited' : `${shortlistLimit} places`,
+      description: shortlistLimit == null
+        ? 'Save and compare as many promising professionals as needed before moving the best fits into interviews.'
+        : `Save up to ${shortlistLimit} professionals in one comparison list. Remove a saved profile whenever you want to make room for another candidate.`,
+    }),
   },
   {
-    id: 'interviews',
-    icon: Calendar,
-    label: 'Interview',
-    text: 'Confirm fit and timing',
-    detail: 'Request a preferred time and keep the scheduling flow organized without long back-and-forth.',
+    id: 'interview',
+    icon: CalendarCheck2,
+    title: 'Interview',
+    build: ({ canScheduleInterviews }) => ({
+      available: Boolean(canScheduleInterviews),
+      destination: { tab: 'interviews' },
+      statusLabel: canScheduleInterviews ? 'Available' : 'Verification required',
+      description: canScheduleInterviews
+        ? 'Request interview times from shortlisted professionals and track confirmations, changes, and cancellations in one place.'
+        : 'Interview scheduling unlocks after PB Finance verifies the client account. Finish the Profile and verification step to gain access.',
+    }),
   },
   {
     id: 'billing',
     icon: FileText,
-    label: 'Contract',
-    text: 'Track terms and invoices',
-    detail: 'Move approved hires into terms and billing with the next steps laid out clearly.',
+    title: 'Contracts and billing',
+    build: ({ canViewFullDocuments }) => ({
+      available: Boolean(canViewFullDocuments),
+      destination: { tab: 'billing' },
+      statusLabel: canViewFullDocuments ? 'Available' : 'Verification required',
+      description: canViewFullDocuments
+        ? 'Review contracts, invoices, and payment methods after a hiring decision, with every financial handoff kept inside the portal.'
+        : 'Contracts and billing unlock after PB Finance verifies the client account, keeping protected documents limited to approved clients.',
+    }),
   },
 ];
 
-export function ClientWorkflowOnboardingModal({ user, open, onClose, onStart }) {
+export function ClientWorkflowOnboardingModal({
+  clientPermissions = {},
+  user,
+  open,
+  onClose,
+  onNavigate,
+}) {
+  const tier = String(
+    clientPermissions.tier || user?.clientTier || user?.client_tier || 'basic'
+  ).toLowerCase();
+  const isBasicClient = tier === 'basic';
+  const context = {
+    canScheduleInterviews: Boolean(clientPermissions.canScheduleInterviews),
+    canViewFullDocuments: Boolean(clientPermissions.canViewFullDocuments),
+    isBasicClient,
+    shortlistLimit: Object.hasOwn(clientPermissions, 'shortlistLimit')
+      ? clientPermissions.shortlistLimit
+      : 5,
+  };
+  const steps = CLIENT_WORKFLOW_STEPS.map(({ build, ...definition }) => ({
+    ...definition,
+    ...build(context),
+  }));
+  const handleStepNavigate = (step) => {
+    if (!step.available || !step.destination) return;
+    if (typeof onNavigate !== 'function') return;
+    onNavigate?.(step.destination);
+    onClose?.();
+  };
+  const actionableSteps = steps.map((step) => ({
+    ...step,
+    onSelect: step.available ? () => handleStepNavigate(step) : undefined,
+  }));
+
   return (
-    <Modal
+    <PortalGuideModal
       open={open}
       onClose={onClose}
-      size="onboarding"
-      title="Getting the right accountant should feel simple."
-      description="PB Finance turns hiring into a clean guided flow: discover vetted talent, shortlist the strongest matches, interview, then move into contract without messy handoffs."
-      footer={(
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-control bg-verified-surface text-verified">
-              <CheckCircle size={18} aria-hidden="true" />
-            </div>
-            <div>
-              <div className="text-sm font-black text-text-primary">You are always in control.</div>
-              <div className="mt-0.5 text-sm font-medium leading-relaxed text-text-muted">
-                Move at your pace while the portal keeps each step clear, organized, and easy to finish.
-              </div>
-            </div>
-          </div>
-          <Button type="button" onClick={onStart} className="shrink-0">
-            Start discovering <ArrowRight size={16} className="ml-2" aria-hidden="true" />
-          </Button>
-        </div>
-      )}
-    >
-      <div className="space-y-6">
-        <Eyebrow className="text-xs font-bold text-info">
-          {`Client guide${user?.name ? ` for ${user.name}` : ''}`}
-        </Eyebrow>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {CLIENT_WORKFLOW_STEPS.map((step, index) => {
-            const Icon = step.icon;
-
-            return (
-              <SurfaceCard key={step.id} as="article" className="relative p-4 shadow-none">
-                {index < CLIENT_WORKFLOW_STEPS.length - 1 && (
-                  <div className="absolute -right-3 top-10 hidden h-px w-3 bg-border-subtle xl:block" aria-hidden="true" />
-                )}
-                <div className="mb-5 flex items-center justify-between">
-                  <div className="grid size-11 place-items-center rounded-control bg-pb-midnight text-white shadow-card">
-                    <Icon size={20} aria-hidden="true" />
-                  </div>
-                  <span className="text-xs font-black text-text-muted/50">0{index + 1}</span>
-                </div>
-                <h3 className="text-base font-black text-text-primary">{step.label}</h3>
-                <div className="mt-1 text-sm font-bold text-action">{step.text}</div>
-                <p className="mt-4 text-sm font-medium leading-relaxed text-text-muted">{step.detail}</p>
-              </SurfaceCard>
-            );
-          })}
-        </div>
-      </div>
-    </Modal>
+      eyebrow={`Client guide${user?.name ? ` for ${user.name}` : ''}`}
+      title="Your PB Finance client workflow"
+      description="Follow the stages in order or open any available destination. Locked stages stay visible so you always know what verification unlocks next."
+      steps={actionableSteps}
+    />
   );
 }
