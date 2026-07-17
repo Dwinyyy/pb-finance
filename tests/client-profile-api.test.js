@@ -114,6 +114,18 @@ test('avatar routes share the strict parser, random server object names, and cle
   assert.doesNotMatch(clientPhoto, /path:\s*upload\.path/);
 });
 
+test('avatar routes require one represented profile row so zero-row updates clean up the new object', () => {
+  for (const route of ['POST /client/profile-photo', 'POST /talent/profile-photo']) {
+    const block = routeBlock(route);
+
+    assert.match(block, /const updatedProfiles\s*=\s*asList\(await patchRows\(/);
+    assert.match(block, /prefer:\s*'return=representation'/);
+    assert.doesNotMatch(block, /prefer:\s*'return=minimal'/);
+    assert.match(block, /if\s*\(updatedProfiles\.length\s*!==\s*1\)[\s\S]*throw error/);
+    assert.match(block, /catch \(error\)[\s\S]*upload\?\.path[\s\S]*deleteProfilePhotoFile\(upload\.path\)/);
+  }
+});
+
 test('admin name-change handlers require admin identity and use only the decision RPC', () => {
   for (const route of ['GET /admin/client-name-changes', 'POST /admin/client-name-changes/decision']) {
     assert.match(routeBlock(route), /requireAdmin\(req, res\)/);
@@ -134,6 +146,20 @@ test('admin name-change handlers require admin identity and use only the decisio
   assert.match(apiSource, /requests\.sort\(compareClientNameRequests\)/);
   assert.match(apiSource, /pendingCount:\s*requests\.filter\(\(request\)\s*=>\s*request\.status\s*===\s*'pending'\)\.length/);
   assert.match(queue, /loadAdminClientNameChangeQueue\(req\)/);
+});
+
+test('admin name-change queue fetches every pending request independently of limited decision history', () => {
+  const start = apiSource.indexOf('const loadAdminClientNameChangeQueue = async (req) => {');
+  const end = apiSource.indexOf('\nconst loadAdminClientNameChange = async', start);
+  assert.notEqual(start, -1, 'missing loadAdminClientNameChangeQueue');
+  assert.notEqual(end, -1, 'missing loadAdminClientNameChange boundary');
+  const block = apiSource.slice(start, end);
+
+  assert.match(block, /Promise\.all\(/);
+  assert.match(block, /client_name_change_requests\?status=eq\.pending[^`\n]*order=created_at\.desc/);
+  assert.match(block, /client_name_change_requests\?status=neq\.pending[^`\n]*order=created_at\.desc[^`\n]*limit=250/);
+  assert.doesNotMatch(block, /status=eq\.pending[^`\n]*limit=/);
+  assert.match(block, /pendingCount:\s*requests\.filter\(\(request\)\s*=>\s*request\.status\s*===\s*'pending'\)\.length/);
 });
 
 test('structured PostgREST errors preserve status and database diagnostics for 409 classification', async () => {

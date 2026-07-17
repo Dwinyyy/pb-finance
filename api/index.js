@@ -2833,11 +2833,19 @@ const mapAdminClientNameChangeRows = async (req, requestRows) => {
 };
 
 const loadAdminClientNameChangeQueue = async (req) => {
-  const requestRows = asList(await readRows(
-    req,
-    `/client_name_change_requests?select=${CLIENT_NAME_REQUEST_SELECT}&order=created_at.desc&limit=250`,
-    { useServiceRole: true }
-  ));
+  const [pendingRows, decidedRows] = await Promise.all([
+    readRows(
+      req,
+      `/client_name_change_requests?status=eq.pending&select=${CLIENT_NAME_REQUEST_SELECT}&order=created_at.desc`,
+      { useServiceRole: true }
+    ),
+    readRows(
+      req,
+      `/client_name_change_requests?status=neq.pending&select=${CLIENT_NAME_REQUEST_SELECT}&order=created_at.desc&limit=250`,
+      { useServiceRole: true }
+    ),
+  ]);
+  const requestRows = [...asList(pendingRows), ...asList(decidedRows)];
   const requests = await mapAdminClientNameChangeRows(req, requestRows);
   requests.sort(compareClientNameRequests);
 
@@ -4247,12 +4255,18 @@ const handlers = {
     try {
       const body = await readJson(req);
       upload = await uploadProfilePhotoFile({ body, userId: user.id });
-      await patchRows(
+      const updatedProfiles = asList(await patchRows(
         req,
         `/profiles?id=eq.${user.id}`,
         { avatar_url: upload.avatarUrl },
-        { prefer: 'return=minimal', useServiceRole: true }
-      );
+        { prefer: 'return=representation', useServiceRole: true }
+      ));
+
+      if (updatedProfiles.length !== 1) {
+        const error = new Error('Client profile not found.');
+        error.status = 404;
+        throw error;
+      }
     } catch (error) {
       if (upload?.path) {
         await deleteProfilePhotoFile(upload.path).catch(() => {});
@@ -5129,12 +5143,18 @@ const handlers = {
       const body = await readJson(req);
       upload = await uploadProfilePhotoFile({ body, userId: user.id });
 
-      await patchRows(
+      const updatedProfiles = asList(await patchRows(
         req,
         `/profiles?id=eq.${user.id}`,
         { avatar_url: upload.avatarUrl },
-        { prefer: 'return=minimal', useServiceRole: true }
-      );
+        { prefer: 'return=representation', useServiceRole: true }
+      ));
+
+      if (updatedProfiles.length !== 1) {
+        const error = new Error('Professional profile not found.');
+        error.status = 404;
+        throw error;
+      }
 
       sendJson(res, 201, upload);
     } catch (error) {
@@ -5142,7 +5162,7 @@ const handlers = {
         await deleteProfilePhotoFile(upload.path).catch(() => {});
       }
 
-      sendError(res, 400, error.message || 'Unable to upload profile photo.');
+      sendError(res, error.status || 400, error.message || 'Unable to upload profile photo.');
     }
   },
 
