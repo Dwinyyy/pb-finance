@@ -288,7 +288,7 @@ function ReviewForm({ record, busyAction, onDecide, onReset }) {
   );
 }
 
-export function ClientVerificationReview() {
+export function ClientVerificationReview({ showHeading = true }) {
   const { data, error, isLoading, mutate } = useBackendResource(
     backendApi.admin.listClientVerifications,
     EMPTY_LIST,
@@ -370,18 +370,20 @@ export function ClientVerificationReview() {
         />
       )}
 
-      <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <Eyebrow className="mb-2 text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">PB Finance admins only</Eyebrow>
-          <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">Client Verification</h1>
-          <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500 dark:text-slate-400">
-            Review identity and regulated business evidence, then establish the protected legal business name used by future payment middleware.
-          </p>
+      {showHeading && (
+        <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <Eyebrow className="mb-2 text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">PB Finance admins only</Eyebrow>
+            <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">Client Verification</h1>
+            <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500 dark:text-slate-400">
+              Review identity and regulated business evidence, then establish the protected legal business name used by future payment middleware.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+            {records.filter((record) => record.status === 'pending_review').length} awaiting review
+          </div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-          {records.filter((record) => record.status === 'pending_review').length} awaiting review
-        </div>
-      </div>
+      )}
 
       {(error || actionError) && (
         <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">

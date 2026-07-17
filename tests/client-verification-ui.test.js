@@ -179,7 +179,7 @@ test('client dashboard requires all four evidence categories and regulated busin
 
 test('admin console exposes the client verification review queue', () => {
   assert.match(adminPage, /id: 'client-verifications', label: 'Client Verification'/);
-  assert.match(adminPage, /activeTab === 'client-verifications'[\s\S]*ClientVerificationReview/);
+  assert.match(adminPage, /activeTab === 'client-verifications'[\s\S]*ClientVerificationWorkspace/);
   assert.match(adminReview, /verifiedBusinessNameConfirmation/);
   assert.match(adminReview, /businessProofAccepted/);
   assert.match(adminReview, /profilePhotoMatches/);

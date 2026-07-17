@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Building,
@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 import FadeIn from '../components/FadeIn';
-import { ClientVerificationReview } from '../components/ClientVerificationReview';
+import { ClientVerificationWorkspace } from '../components/ClientVerificationWorkspace';
 import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { NotificationBell } from '../components/NotificationBell';
 import { useBackendResource } from '../hooks/useBackendResource';
@@ -51,8 +51,12 @@ const DOCUMENT_REJECTION_MESSAGES = [
 const ADMIN_TABS = ['overview', 'client-verifications', 'talent', 'agencies'];
 const ADMIN_NOTIFICATION_TAB_FALLBACKS = {
   agency_submitted: 'agencies',
+  client_name_change_requested: 'client-verifications',
   client_verification_submitted: 'client-verifications',
   talent_profile_submitted: 'talent',
+};
+const ADMIN_NOTIFICATION_ACTION_FALLBACKS = {
+  client_name_change_requested: '/?tab=client-verifications&section=name-changes',
 };
 
 const asList = (value) => {
@@ -585,7 +589,14 @@ function CredentialReviewPanel({
 
 function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, toggleDarkMode }) {
   const notificationState = useNotifications(user?.id);
-  const { notifications } = notificationState;
+  const notifications = useMemo(() => notificationState.notifications.map((notification) => ({
+    ...notification,
+    actionUrl: notification.actionUrl || ADMIN_NOTIFICATION_ACTION_FALLBACKS[notification.type],
+  })), [notificationState.notifications]);
+  const notificationStateWithFallbacks = {
+    ...notificationState,
+    notifications,
+  };
   const tabUnreadCounts = useTabNotificationIndicators({
     activeTab,
     fallbackByType: ADMIN_NOTIFICATION_TAB_FALLBACKS,
@@ -608,7 +619,7 @@ function AdminHeader({ user, activeTab, setActiveTab, onLogout, isDarkMode, togg
         </div>
 
         <div className="flex shrink-0 items-center gap-4">
-          <NotificationBell notificationState={notificationState} unreadClassName="bg-cyan-500" userId={user.id} />
+          <NotificationBell notificationState={notificationStateWithFallbacks} unreadClassName="bg-cyan-500" userId={user.id} />
           <button onClick={toggleDarkMode} className="text-slate-400 transition-colors hover:text-white" title="Toggle Dark Mode">
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -1572,8 +1583,39 @@ function AgenciesAdmin() {
 export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'overview';
-  const activeTab = ['overview', 'client-verifications', 'talent', 'agencies'].includes(requestedTab) ? requestedTab : 'overview';
-  const setActiveTab = (tab) => setSearchParams({ tab });
+  const requestedSection = searchParams.get('section');
+  const activeTab = ADMIN_TABS.includes(requestedTab) ? requestedTab : 'overview';
+  const activeVerificationSection = ['cases', 'name-changes'].includes(requestedSection)
+    ? requestedSection
+    : 'cases';
+
+  useEffect(() => {
+    if (activeTab !== 'client-verifications' || requestedSection === activeVerificationSection) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('section', 'cases');
+    setSearchParams(nextParams, { replace: true });
+  }, [activeTab, activeVerificationSection, requestedSection, searchParams, setSearchParams]);
+
+  const setActiveTab = (tab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', tab);
+
+    if (tab === 'client-verifications' && !['cases', 'name-changes'].includes(requestedSection)) {
+      nextParams.set('section', 'cases');
+    }
+
+    setSearchParams(nextParams);
+  };
+
+  const setVerificationSection = (section) => {
+    const nextParams = new URLSearchParams(searchParams);
+    const normalizedSection = ['cases', 'name-changes'].includes(section) ? section : 'cases';
+
+    nextParams.set('tab', 'client-verifications');
+    nextParams.set('section', normalizedSection);
+    setSearchParams(nextParams);
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans dark:bg-slate-950">
@@ -1587,7 +1629,12 @@ export function AdminPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
       />
       <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
         {activeTab === 'overview' && <AdminOverview setActiveTab={setActiveTab} />}
-        {activeTab === 'client-verifications' && <ClientVerificationReview />}
+        {activeTab === 'client-verifications' && (
+          <ClientVerificationWorkspace
+            section={activeVerificationSection}
+            onSectionChange={setVerificationSection}
+          />
+        )}
         {activeTab === 'talent' && <TalentReview />}
         {activeTab === 'agencies' && <AgenciesAdmin />}
       </main>
