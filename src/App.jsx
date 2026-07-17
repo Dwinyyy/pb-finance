@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { ShieldCheck, Loader2, Eye, EyeOff, MailCheck } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { FormField } from './components/ui/FormField';
@@ -10,6 +10,7 @@ const ProfessionalPortal = lazy(() => import('./pages/ProfessionalPages').then(m
 const AdminPortal = lazy(() => import('./pages/AdminPages').then(m => ({ default: m.AdminPortal })));
 
 import { backendApi, clearAuthSession, isBackendConfigured, storeAuthSession } from './services/api';
+import { mergeSessionSummary } from './utils/sessionSummary';
 
 const GOOGLE_OAUTH_POPUP_NAME = 'pb-google-signin';
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -771,6 +772,9 @@ export default function App() {
       return saved ? JSON.parse(saved) : null;
     } catch { return null; }
   });
+  const userRef = useRef(user);
+  const sessionRefreshPromiseRef = useRef(null);
+  userRef.current = user;
   const [authModal, setAuthModal] = useState({ isOpen: false, view: 'login' });
   const [authError, setAuthError] = useState('');
   const [authNotice, setAuthNotice] = useState('');
@@ -791,6 +795,43 @@ export default function App() {
     return document.documentElement.classList.contains('dark');
   });
   const currentUserId = user?.id;
+
+  const handleUserUpdated = useCallback((summary) => {
+    const nextUser = mergeSessionSummary(userRef.current, summary);
+
+    if (nextUser === userRef.current) return nextUser;
+
+    userRef.current = nextUser;
+    setUser(nextUser);
+    localStorage.setItem('pb_user', JSON.stringify(nextUser));
+    return nextUser;
+  }, []);
+
+  const refreshSessionUser = useCallback(() => {
+    if (
+      sessionRefreshPromiseRef.current
+      || !userRef.current?.id
+      || !isBackendConfigured()
+      || !localStorage.getItem('pb_auth_token')
+    ) {
+      return sessionRefreshPromiseRef.current || Promise.resolve(userRef.current);
+    }
+
+    let refreshPromise;
+    refreshPromise = backendApi.auth.me()
+      .then((result) => {
+        if (result?.user) handleUserUpdated(result.user);
+        return userRef.current;
+      })
+      .catch(() => userRef.current)
+      .finally(() => {
+        if (sessionRefreshPromiseRef.current === refreshPromise) {
+          sessionRefreshPromiseRef.current = null;
+        }
+      });
+    sessionRefreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
+  }, [handleUserUpdated]);
 
   const toggleDarkMode = () => {
     const newMode = !isDarkMode;
@@ -929,36 +970,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!currentUserId || !isBackendConfigured()) {
+    if (!currentUserId) return;
+    refreshSessionUser();
+  }, [currentUserId, refreshSessionUser]);
+
+  useEffect(() => {
+    if (!currentUserId || !isBackendConfigured() || !localStorage.getItem('pb_auth_token')) {
       return undefined;
     }
 
-    let isMounted = true;
-
-    backendApi.auth.me()
-      .then((result) => {
-        if (!isMounted || !result?.user) return;
-
-        setUser((currentUser) => {
-          const nextUser = {
-            ...(currentUser || {}),
-            ...result.user,
-          };
-
-          localStorage.setItem('pb_user', JSON.stringify(nextUser));
-          return nextUser;
-        });
-      })
-      .catch(() => {});
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUserId]);
+    window.addEventListener('focus', refreshSessionUser);
+    return () => window.removeEventListener('focus', refreshSessionUser);
+  }, [currentUserId, refreshSessionUser]);
 
   useEffect(() => {
     const handleAuthUpdate = () => {
       if (!localStorage.getItem('pb_auth_token')) {
+        userRef.current = null;
+        sessionRefreshPromiseRef.current = null;
         setUser(null);
         localStorage.removeItem('pb_user');
       }
@@ -1675,6 +1704,8 @@ export default function App() {
       backendApi.auth.logout().catch(() => {});
     }
 
+    userRef.current = null;
+    sessionRefreshPromiseRef.current = null;
     setUser(null);
     localStorage.removeItem('pb_user');
     clearAuthSession();
@@ -1689,9 +1720,23 @@ export default function App() {
           user.role === 'admin' ? (
             <AdminPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
           ) : user.role === 'professional' ? (
-            <ProfessionalPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+            <ProfessionalPortal
+              user={user}
+              onLogout={handleLogout}
+              isDarkMode={isDarkMode}
+              toggleDarkMode={toggleDarkMode}
+              onUserUpdated={handleUserUpdated}
+              refreshSessionUser={refreshSessionUser}
+            />
           ) : (
-            <ClientPortal user={user} onLogout={handleLogout} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+            <ClientPortal
+              user={user}
+              onLogout={handleLogout}
+              isDarkMode={isDarkMode}
+              toggleDarkMode={toggleDarkMode}
+              onUserUpdated={handleUserUpdated}
+              refreshSessionUser={refreshSessionUser}
+            />
           )
         ) : (
           <PublicSite openAuth={openAuth} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />

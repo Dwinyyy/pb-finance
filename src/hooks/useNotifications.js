@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { backendApi, isBackendConfigured } from '../services/api';
 import { isRealtimeConfigured, subscribeToDatabaseChanges } from '../services/realtime';
@@ -6,8 +6,9 @@ import { isRealtimeConfigured, subscribeToDatabaseChanges } from '../services/re
 const EMPTY_LIST = Object.freeze([]);
 const asList = (value) => (Array.isArray(value) ? value : EMPTY_LIST);
 
-export function useNotifications(userId, { enabled = true } = {}) {
+export function useNotifications(userId, { enabled = true, onRealtimeNotification } = {}) {
   const shouldLoad = enabled && Boolean(userId) && isBackendConfigured();
+  const onRealtimeNotificationRef = useRef(onRealtimeNotification);
   const [isLoading, setIsLoading] = useState(shouldLoad);
   const [notifications, setNotifications] = useState(EMPTY_LIST);
   const [error, setError] = useState('');
@@ -15,6 +16,7 @@ export function useNotifications(userId, { enabled = true } = {}) {
     () => notifications.filter((notification) => !notification.isRead).length,
     [notifications]
   );
+  onRealtimeNotificationRef.current = onRealtimeNotification;
 
   const loadNotifications = useCallback(async ({ showLoading = false } = {}) => {
     if (!shouldLoad) {
@@ -85,7 +87,10 @@ export function useNotifications(userId, { enabled = true } = {}) {
           table: 'notifications',
         },
       ],
-      onChange: () => loadNotifications(),
+      onChange: (payload) => {
+        onRealtimeNotificationRef.current?.(payload.new);
+        loadNotifications();
+      },
     });
   }, [loadNotifications, shouldLoad, userId]);
 

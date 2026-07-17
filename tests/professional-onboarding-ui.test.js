@@ -16,6 +16,13 @@ const pushService = readFileSync(new URL('../src/services/pushNotifications.js',
 const serviceWorker = readFileSync(new URL('../public/pb-push-sw.js', import.meta.url), 'utf8');
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const sourceBetween = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+const routeBlock = (route) => {
+  const marker = `'${route}': async (req, res) => {`;
+  const start = apiSource.indexOf(marker);
+  assert.notEqual(start, -1, `missing ${route}`);
+  const next = apiSource.indexOf("\n  '", start + marker.length);
+  return apiSource.slice(start, next === -1 ? apiSource.length : next);
+};
 const professionalPortal = sourceBetween(professionalPage, 'export function ProfessionalPortal', 'function AppTalentProfileView');
 const profileView = sourceBetween(professionalPage, 'function AppTalentProfileView', 'function ProfileSettingsModal');
 const profileSettings = sourceBetween(professionalPage, 'function ProfileSettingsModal', 'function ProfessionalProfilePreviewModal');
@@ -160,6 +167,42 @@ test('professional migration preserves admin approval and dashboard permission l
   assert.match(professionalPortal, /const availableTabs = professionalPermissions\.canAccessDashboard \? PROFESSIONAL_TABS : \['profile'\]/);
   assert.match(professionalPortal, /availableTabs\.includes\(requestedTab\) \? requestedTab : 'profile'/);
   assert.match(professionalPortal, /!professionalPermissions\.canAccessDashboard[\s\S]*admin approves your identity, resume, and required documents/i);
+});
+
+test('professional profile drafts never write pending identity into active profiles', () => {
+  const talentPatch = routeBlock('PATCH /talent/me');
+  const ownerPatchStart = talentPatch.indexOf('const ownerProfilePatch =');
+  const ownerPatchEnd = talentPatch.indexOf('const currentTitles', ownerPatchStart);
+  assert.notEqual(ownerPatchStart, -1, 'missing active profile patch boundary');
+  assert.notEqual(ownerPatchEnd, -1, 'missing active profile patch end');
+  const ownerPatch = talentPatch.slice(ownerPatchStart, ownerPatchEnd);
+
+  assert.doesNotMatch(ownerPatch, /\bfull_name\b/);
+  assert.doesNotMatch(ownerPatch, /\btitle\s*:/);
+  assert.match(ownerPatch, /manual_triage_domain/);
+  assert.doesNotMatch(talentPatch, /\/profiles\?id=eq\.\$\{user\.id\}[\s\S]{0,300}\bfull_name\b/);
+  assert.doesNotMatch(talentPatch, /\/profiles\?id=eq\.\$\{user\.id\}[\s\S]{0,300}\btitle\s*:/);
+});
+
+test('professional approval copies the reviewed source into the active identity', () => {
+  const adminTalentPatch = routeBlock('PATCH /admin/talent');
+
+  assert.match(adminTalentPatch, /const approvedProfileSource\s*=\s*hasPendingChanges/);
+  assert.match(adminTalentPatch, /status === 'approved'[\s\S]*\/profiles\?id=eq\.\$\{professionalId\}/);
+  assert.match(adminTalentPatch, /full_name:\s*approvedFullName/);
+  assert.match(adminTalentPatch, /title:\s*approvedTitles\[0\]\s*\|\|\s*null/);
+});
+
+test('professional profile and photo mutations return only an active session summary', () => {
+  assert.match(apiSource, /import \{ getSessionUser, toActiveSessionSummary \} from ['"]\.\.\/server\/session\.js['"]/);
+
+  for (const route of ['PATCH /talent/me', 'POST /talent/profile-photo']) {
+    const block = routeBlock(route);
+    assert.match(block, /getSessionUser\(req\)/);
+    assert.match(block, /toActiveSessionSummary\(/);
+    assert.match(block, /sessionSummary/);
+    assert.doesNotMatch(block, /sessionSummary:\s*(?:profilePayload|pendingProfile|savedProfile)/);
+  }
 });
 
 test('profile visibility and audience preview preserve separate state and API paths', () => {

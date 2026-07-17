@@ -13,7 +13,7 @@ import { finalizeOAuthAccount, flagGoogleProfessionalAccount, getAuthProviders }
 import { notifyAdmins, notifyUser } from '../server/notifications.js';
 import { getWebPushConfig, normalizePushSubscription } from '../server/pushNotifications.js';
 import { requestRegistrationVerification, verifyRegistrationOtp } from '../server/registrationVerification.js';
-import { getSessionUser } from '../server/session.js';
+import { getSessionUser, toActiveSessionSummary } from '../server/session.js';
 import {
   mapClientVerification,
   parseClientVerificationUpload,
@@ -2744,6 +2744,10 @@ const toClientAccountSessionSummary = (account) => mapClientSessionSummary(withC
   name: account.fullName,
   role: account.role,
 }));
+const pickSessionSummaryFields = (summary, fields) => fields.reduce((picked, field) => {
+  if (Object.hasOwn(summary, field)) picked[field] = summary[field];
+  return picked;
+}, {});
 
 const loadClientAccountProfile = async (req, clientId) => {
   const [profileRows, verificationRows, pendingRequestRows, latestRequestRows] = await Promise.all([
@@ -3954,6 +3958,22 @@ const handlers = {
     }
 
     const now = new Date().toISOString();
+    const approvedProfileSource = hasPendingChanges
+      ? { ...existingProfile, ...pendingProfile }
+      : existingProfile;
+    const approvedFullName = cleanString(approvedProfileSource.full_name, 160);
+    const approvedTitles = cleanProfessionalTitles(
+      approvedProfileSource.titles ?? approvedProfileSource.title,
+      cleanProfessionalTitles(existingProfile.titles)
+    );
+
+    if (status === 'approved') {
+      await patchRows(req, `/profiles?id=eq.${professionalId}`, {
+        ...(approvedFullName ? { full_name: approvedFullName } : {}),
+        title: approvedTitles[0] || null,
+      }, { prefer: 'return=minimal' });
+    }
+
     let payload = {
       ...(status ? { status } : {}),
       ...(status === 'approved'
@@ -3968,15 +3988,6 @@ const handlers = {
     };
 
     if (status === 'approved' && hasPendingChanges) {
-      const pendingTitles = cleanProfessionalTitles(pendingProfile.titles ?? pendingProfile.title);
-
-      await patchRows(req, `/profiles?id=eq.${professionalId}`, {
-        ...(pendingProfile.full_name ? { full_name: pendingProfile.full_name } : {}),
-        ...(Object.hasOwn(pendingProfile, 'titles') || Object.hasOwn(pendingProfile, 'title')
-          ? { title: pendingTitles[0] || null }
-          : {}),
-      }, { prefer: 'return=minimal' });
-
       payload = {
         ...toProfilePatch(pendingProfile, existingProfile),
         pending_profile: {},
@@ -4238,7 +4249,10 @@ const handlers = {
       sendJson(res, 200, {
         ...updated,
         nameOutcome,
-        sessionSummary: toClientAccountSessionSummary(updated.account),
+        sessionSummary: pickSessionSummaryFields(
+          toClientAccountSessionSummary(updated.account),
+          ['id', 'name', 'company']
+        ),
       });
     } catch (error) {
       const classified = classifyClientProfileDatabaseError(error);
@@ -4282,7 +4296,10 @@ const handlers = {
       contentType: upload.contentType,
       fileName: upload.fileName,
       fileSize: upload.fileSize,
-      sessionSummary: toClientAccountSessionSummary(updated.account),
+      sessionSummary: pickSessionSummaryFields(
+        toClientAccountSessionSummary(updated.account),
+        ['id', 'avatarUrl']
+      ),
     });
   },
 
@@ -5156,7 +5173,11 @@ const handlers = {
         throw error;
       }
 
-      sendJson(res, 201, upload);
+      const activeSessionUser = await getSessionUser(req);
+      sendJson(res, 201, {
+        ...upload,
+        sessionSummary: toActiveSessionSummary(activeSessionUser || user),
+      });
     } catch (error) {
       if (upload?.path) {
         await deleteProfilePhotoFile(upload.path).catch(() => {});
@@ -5317,27 +5338,23 @@ const handlers = {
       }
     }
     
-    const ownerProfilePatch = {
-      full_name: fullName,
-      title: primaryTitle || null,
-      ...(titles.includes('Certified Public Accountant')
-        ? {
-          manual_triage_domain: 'Credentials',
-          manual_triage_reason: 'PRC License Verification Required (https://online.prc.gov.ph/Verification)',
-          manual_triage_required: true,
-          manual_triage_status: 'required',
-        }
-        : {}),
-    };
+    const ownerProfilePatch = titles.includes('Certified Public Accountant')
+      ? {
+        manual_triage_domain: 'Credentials',
+        manual_triage_reason: 'PRC License Verification Required (https://online.prc.gov.ph/Verification)',
+        manual_triage_required: true,
+        manual_triage_status: 'required',
+      }
+      : {};
     const currentTitles = cleanProfessionalTitles(currentProfile?.titles, cleanProfessionalTitles(user.title));
     const titlesChanged = currentTitles.join('|') !== titles.join('|');
     let rows;
 
-    if (currentProfile?.status === 'approved') {
-      if (titlesChanged || submitForReview) {
-        await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, { prefer: 'return=minimal' });
-      }
+    if (Object.keys(ownerProfilePatch).length > 0 && (submitForReview || (currentProfile?.status === 'approved' && titlesChanged))) {
+      await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, { prefer: 'return=minimal' });
+    }
 
+    if (currentProfile?.status === 'approved') {
       rows = await patchRows(
         req,
         `/professional_profiles?user_id=eq.${user.id}`,
@@ -5365,10 +5382,6 @@ const handlers = {
             }
       );
     } else {
-      if (submitForReview) {
-        await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, { prefer: 'return=minimal' });
-      }
-
       rows = await writeRows(
         req,
         '/professional_profiles?on_conflict=user_id',
@@ -5440,12 +5453,18 @@ const handlers = {
       }).catch(() => {});
     }
 
-    sendJson(res, 200, mapTalentProfile(savedProfile, {
+    const activeSessionUser = await getSessionUser(req);
+    const mappedProfile = mapTalentProfile(savedProfile, {
       avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: fullName,
       title: primaryTitle,
-    }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
+    }, { includeDraftPending: true, usePending: true, visibility: 'owner' });
+
+    sendJson(res, 200, {
+      ...mappedProfile,
+      sessionSummary: toActiveSessionSummary(activeSessionUser || user),
+    });
   },
 
   'GET /talent/opportunities': async (req, res) => {

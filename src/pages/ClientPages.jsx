@@ -76,6 +76,13 @@ const CLIENT_NOTIFICATION_TAB_FALLBACKS = {
   interview_declined: 'interviews',
   interview_requested: 'interviews',
 };
+const CLIENT_IDENTITY_NOTIFICATION_TYPES = new Set([
+  'client_name_change_approved',
+  'client_name_change_rejected',
+  'client_verification_approved',
+  'client_verification_rejected',
+  'client_verification_reset',
+]);
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 const normalizeClientTier = (value) => {
@@ -404,7 +411,14 @@ function InterviewDateTimePicker({ value, onChange }) {
 // ==========================================
 // 2. CLIENT PORTAL (LOGGED IN EXPERIENCE)
 // ==========================================
-export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode, onUserUpdated }) {
+export function ClientPortal({
+  user,
+  onLogout,
+  isDarkMode,
+  toggleDarkMode,
+  onUserUpdated = () => {},
+  refreshSessionUser = () => {},
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'discover';
   const section = searchParams.get('section') === 'verification' ? 'verification' : 'account';
@@ -439,7 +453,13 @@ export function ClientPortal({ user, onLogout, isDarkMode, toggleDarkMode, onUse
   const [matchmakerVisible, setMatchmakerVisible] = useState(() => clientPermissions.canUseMatchmaker);
   const onboardingStorageKey = getClientOnboardingStorageKey(user);
   const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
-  const notificationState = useNotifications(user?.id);
+  const notificationState = useNotifications(user?.id, {
+    onRealtimeNotification: (notification) => {
+      if (CLIENT_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
+        refreshSessionUser();
+      }
+    },
+  });
   const { notifications } = notificationState;
   const tabUnreadCounts = useTabNotificationIndicators({
     activeTab: appView,

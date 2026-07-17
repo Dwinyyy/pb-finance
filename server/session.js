@@ -1,6 +1,8 @@
 import { getBearerToken, getSupabaseUser, publicUser, supabaseRestRequest } from './supabase.js';
+import { normalizeSessionSummary } from '../src/utils/sessionSummary.js';
 
 const asList = (value) => (Array.isArray(value) ? value : []);
+export const toActiveSessionSummary = (user) => normalizeSessionSummary(user);
 const normalizeClientTier = (value) => {
   const tier = String(value || '').trim().toLowerCase();
 

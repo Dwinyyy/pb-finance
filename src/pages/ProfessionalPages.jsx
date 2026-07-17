@@ -68,6 +68,12 @@ const PROFESSIONAL_NOTIFICATION_TAB_FALLBACKS = {
   profile_status_updated: 'profile',
   resume_status_updated: 'profile',
 };
+const PROFESSIONAL_IDENTITY_NOTIFICATION_TYPES = new Set([
+  'profile_status_updated',
+  'identity_verification_updated',
+  'document_status_updated',
+  'resume_status_updated',
+]);
 const MAX_CREDENTIAL_UPLOAD_BYTES = 3 * 1024 * 1024;
 const DOCUMENT_ACCEPTS = {
   certification: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png',
@@ -659,14 +665,27 @@ function DashboardMetric({ detail, icon, label, value, variant = 'slate' }) {
 // ==========================================
 // 3. PROFESSIONAL PORTAL (TALENT EXPERIENCE)
 // ==========================================
-export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode }) {
+export function ProfessionalPortal({
+  user,
+  onLogout,
+  isDarkMode,
+  toggleDarkMode,
+  onUserUpdated = () => {},
+  refreshSessionUser = () => {},
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'profile';
   const professionalPermissions = getProfessionalPortalPermissions(user);
   const availableTabs = professionalPermissions.canAccessDashboard ? PROFESSIONAL_TABS : ['profile'];
   const appView = availableTabs.includes(requestedTab) ? requestedTab : 'profile';
   const setAppView = (tab) => setSearchParams({ tab });
-  const notificationState = useNotifications(user?.id);
+  const notificationState = useNotifications(user?.id, {
+    onRealtimeNotification: (notification) => {
+      if (PROFESSIONAL_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
+        refreshSessionUser();
+      }
+    },
+  });
   const { notifications } = notificationState;
   const tabUnreadCounts = useTabNotificationIndicators({
     activeTab: appView,
@@ -773,7 +792,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
               Professional dashboard access unlocks after admin approves your identity, resume, and required documents. Your profile stays hidden from clients until then.
             </SurfaceCard>
           )}
-          {appView === 'profile' && <AppTalentProfileView user={user} />}
+          {appView === 'profile' && <AppTalentProfileView user={user} onUserUpdated={onUserUpdated} />}
           {appView === 'opportunities' && <AppTalentOpportunitiesView user={user} />}
           {appView === 'earnings' && <AppTalentEarningsView />}
         </div>
@@ -782,7 +801,7 @@ export function ProfessionalPortal({ user, onLogout, isDarkMode, toggleDarkMode 
   );
 }
 
-function AppTalentProfileView({ user }) {
+function AppTalentProfileView({ user, onUserUpdated = () => {} }) {
   const { data: profile, isLoading: isProfileLoading } = useBackendResource(
     backendApi.talent.getMyProfile,
     EMPTY_PROFILE,
@@ -814,6 +833,11 @@ function AppTalentProfileView({ user }) {
   useEffect(() => {
     setSavedProfile(profile || EMPTY_PROFILE);
   }, [profile]);
+
+  const applyProfileUpdate = (updated) => {
+    setSavedProfile(updated || EMPTY_PROFILE);
+    if (updated?.sessionSummary) onUserUpdated(updated.sessionSummary);
+  };
 
   const displayProfile = {
     ...user,
@@ -913,7 +937,7 @@ function AppTalentProfileView({ user }) {
         tools: textToList(profileForm.tools),
         yearsExperience: profileForm.yearsExperience === '' ? null : Number(profileForm.yearsExperience),
       });
-      setSavedProfile(updated);
+      applyProfileUpdate(updated);
       setIsEditing(false);
       setProfileMessage('Profile saved.');
     } catch (saveError) {
@@ -947,6 +971,7 @@ function AppTalentProfileView({ user }) {
       avatarUrl: upload.avatarUrl,
     }));
     setProfileMessage('Profile photo uploaded.');
+    if (upload.sessionSummary) onUserUpdated(upload.sessionSummary);
 
     return upload;
   };
@@ -1213,7 +1238,7 @@ function AppTalentProfileView({ user }) {
 
         <FadeIn delay={200}>
           <ProfessionalIdentityVerificationPanel
-            onProfileUpdated={setSavedProfile}
+            onProfileUpdated={applyProfileUpdate}
             profile={savedProfile}
           />
         </FadeIn>
@@ -1221,7 +1246,7 @@ function AppTalentProfileView({ user }) {
         <FadeIn delay={250}>
           <AppTalentCredentialsSection
             isLoading={isProfileLoading}
-            onProfileUpdated={setSavedProfile}
+            onProfileUpdated={applyProfileUpdate}
             profile={savedProfile}
             selectedTitles={activeCredentialTitles}
             user={user}
