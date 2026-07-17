@@ -54,3 +54,58 @@ test('decision RPCs are service-role only', () => {
     assert.match(schema, new RegExp(`grant execute on function public\\.${fn}[\\s\\S]*to service_role`, 'i'));
   }
 });
+
+test('verification rejection and reset replace pending protected-name requests atomically', () => {
+  const getLatestFunction = (name) => {
+    const pattern = new RegExp(
+      `create or replace function public\\.${name}\\([\\s\\S]*?\\$\\$;`,
+      'gi'
+    );
+    const matches = [...schema.matchAll(pattern)];
+    assert.ok(matches.length > 0, `${name} function is missing`);
+    return matches.at(-1)[0];
+  };
+
+  for (const fn of ['reject_client_verification', 'reset_client_verification']) {
+    const source = getLatestFunction(fn);
+    const profileLock = source.search(
+      /select[^;]*from public\.profiles as profile[^;]*where profile\.id = p_client_id[^;]*for update/i
+    );
+    const verificationLock = source.search(
+      /select[^;]*from public\.client_verifications as verification[^;]*where verification\.client_id = p_client_id[^;]*for update/i
+    );
+    const requestLock = source.search(
+      /select[^;]*from public\.client_name_change_requests as pending_request[^;]*where pending_request\.client_id = p_client_id[^;]*pending_request\.status = 'pending'[^;]*for update/i
+    );
+
+    assert.ok(profileLock >= 0);
+    assert.ok(verificationLock > profileLock);
+    assert.ok(requestLock > verificationLock);
+    assert.match(source, /status = 'cancelled'/i);
+    assert.match(source, /'request_cancelled'/i);
+    assert.match(source, /reviewed_by = p_reviewer_id/i);
+    const transition = fn === 'reject_client_verification' ? 'rejected' : 'reset';
+    assert.match(
+      source,
+      new RegExp(`Cancelled because client verification was ${transition}\\.`, 'i')
+    );
+  }
+});
+
+test('verification approval follows the global profile then verification lock order', () => {
+  const pattern = /create or replace function public\.approve_client_verification\([\s\S]*?\$\$;/gi;
+  const matches = [...schema.matchAll(pattern)];
+  assert.ok(matches.length > 0, 'approve_client_verification function is missing');
+  const source = matches.at(-1)[0];
+  const profileLock = source.search(
+    /select[^;]*from public\.profiles as profile[^;]*where profile\.id = p_client_id[^;]*for update/i
+  );
+  const verificationLock = source.search(
+    /select[^;]*from public\.client_verifications as verification[^;]*where verification\.client_id = p_client_id[^;]*for update/i
+  );
+
+  assert.ok(profileLock >= 0);
+  assert.ok(verificationLock > profileLock);
+  assert.match(source, /'verification_approved'/i);
+  assert.doesNotMatch(source, /request_cancelled/i);
+});
