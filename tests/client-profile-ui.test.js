@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const profile = readFileSync(
   new URL('../src/components/ClientProfileDashboard.jsx', import.meta.url),
@@ -47,6 +48,54 @@ test('account loading and mutations preserve a dirty draft on failures', () => {
   assert.match(photoHandler, /onUserUpdated\(result\.sessionSummary\)/);
   assert.doesNotMatch(photoHandler, /verification|uploadVerificationDocument/);
   assert.doesNotMatch(photoHandler, /catch[\s\S]*setDraft\(/);
+});
+
+test('account refreshes on every return and same-user identity change without replacing dirty input', () => {
+  assert.doesNotMatch(profile, /loadAttemptedRef/);
+
+  const loader = between(profile, 'const loadProfile', 'const account =');
+  assert.match(loader, /const requestId\s*=\s*\+\+loadRequestRef\.current/);
+  assert.match(loader, /const mutationRevision\s*=\s*mutationRevisionRef\.current/);
+  assert.match(loader, /requestId\s*!==\s*loadRequestRef\.current/);
+  assert.match(loader, /mutationRevision\s*!==\s*mutationRevisionRef\.current/);
+  assert.match(loader, /if\s*\(!dirtyRef\.current\)\s*setDraft\(createClientProfileDraft\(result\.account\)\)/);
+  assert.match(loader, /if\s*\(normalizedSection\s*!==\s*'account'\)\s*return/);
+  assert.match(loader, /\[loadProfile, normalizedSection, user\]/);
+
+  assert.match(profile, /verificationStatus:\s*verification\.status/);
+});
+
+test('canonical reconciliation preserves the avatar when save and photo finish out of order', () => {
+  const helperSource = between(profile, 'const applyClientProfileAvatarResult', 'const formatDate')
+    .replaceAll('export const ', 'const ');
+  const {
+    applyClientProfileAvatarResult,
+    reconcileClientProfileSaveResult,
+  } = runInNewContext(`(() => {
+    ${helperSource}
+    return {
+      applyClientProfileAvatarResult,
+      reconcileClientProfileSaveResult,
+    };
+  })()`);
+
+  const initial = {
+    account: { avatarUrl: 'old-avatar', company: 'Old Co', fullName: 'Old Name', id: 'client-1' },
+    pendingNameRequest: { id: 'pending-old', status: 'pending' },
+    verification: { status: 'pending_review' },
+  };
+  const staleSaveResult = {
+    account: { avatarUrl: 'old-avatar', company: 'New Co', fullName: 'New Name', id: 'client-1' },
+    pendingNameRequest: null,
+    verification: { status: 'rejected' },
+  };
+  const avatarFirst = applyClientProfileAvatarResult(initial, 'new-avatar');
+  const saveSecond = reconcileClientProfileSaveResult(avatarFirst, staleSaveResult);
+
+  assert.equal(saveSecond.account.avatarUrl, 'new-avatar');
+  assert.equal(saveSecond.account.company, 'New Co');
+  assert.equal(saveSecond.pendingNameRequest, null);
+  assert.equal(saveSecond.verification.status, 'rejected');
 });
 
 test('protected names and account-only avatar behavior remain explicit', () => {

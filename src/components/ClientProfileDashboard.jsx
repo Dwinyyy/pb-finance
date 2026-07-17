@@ -36,6 +36,29 @@ const accountFromUser = (user = {}) => ({
   role: user.role || 'client',
 });
 
+const applyClientProfileAvatarResult = (current, avatarUrl) => {
+  if (!current?.account) return current;
+
+  return {
+    ...current,
+    account: { ...current.account, avatarUrl },
+  };
+};
+
+const reconcileClientProfileSaveResult = (current, result) => {
+  if (!result?.account) return result;
+
+  const currentHasAvatar = Boolean(current?.account) && Object.hasOwn(current.account, 'avatarUrl');
+
+  return {
+    ...result,
+    account: {
+      ...result.account,
+      ...(currentHasAvatar ? { avatarUrl: current.account.avatarUrl } : {}),
+    },
+  };
+};
+
 const formatDate = (value) => {
   if (!value) return '';
   const date = new Date(value);
@@ -76,12 +99,14 @@ export function ClientProfileDashboard({
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
   const dirtyRef = useRef(false);
-  const loadAttemptedRef = useRef(false);
+  const loadRequestRef = useRef(0);
+  const mutationRevisionRef = useRef(0);
   const userRef = useRef(user);
   userRef.current = user;
 
   useEffect(() => {
-    loadAttemptedRef.current = false;
+    loadRequestRef.current += 1;
+    mutationRevisionRef.current += 1;
     dirtyRef.current = false;
     setCanonical(null);
     setDraft(createClientProfileDraft(accountFromUser(userRef.current)));
@@ -94,25 +119,37 @@ export function ClientProfileDashboard({
   }, [user?.id]);
 
   const loadProfile = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+    const mutationRevision = mutationRevisionRef.current;
     setLoading(true);
     setLoadError('');
 
     try {
       const result = await backendApi.client.getMyProfile();
+
+      if (
+        requestId !== loadRequestRef.current
+        || mutationRevision !== mutationRevisionRef.current
+      ) return;
+
       setCanonical(result);
       if (!dirtyRef.current) setDraft(createClientProfileDraft(result.account));
     } catch (error) {
-      setLoadError(error.message || 'Unable to load your account profile.');
+      if (
+        requestId === loadRequestRef.current
+        && mutationRevision === mutationRevisionRef.current
+      ) {
+        setLoadError(error.message || 'Unable to load your account profile.');
+      }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (normalizedSection !== 'account' || loadAttemptedRef.current) return;
-    loadAttemptedRef.current = true;
+    if (normalizedSection !== 'account') return;
     loadProfile();
-  }, [loadProfile, normalizedSection]);
+  }, [loadProfile, normalizedSection, user]);
 
   const account = canonical?.account || fallbackAccount;
   const verification = canonical?.verification || { status: 'draft', verifiedBusinessName: null };
@@ -156,7 +193,8 @@ export function ClientProfileDashboard({
         fullName: draft.fullName,
         requestReason: requiresProtectedNameReason ? draft.requestReason : null,
       });
-      setCanonical(result);
+      mutationRevisionRef.current += 1;
+      setCanonical((current) => reconcileClientProfileSaveResult(current, result));
       setDraft(createClientProfileDraft(result.account));
       setFieldErrors({});
       dirtyRef.current = false;
@@ -187,10 +225,8 @@ export function ClientProfileDashboard({
         fileData: await fileToDataUrl(file),
         fileName: file.name,
       });
-      setCanonical((current) => current ? {
-        ...current,
-        account: { ...current.account, avatarUrl: result.avatarUrl },
-      } : current);
+      mutationRevisionRef.current += 1;
+      setCanonical((current) => applyClientProfileAvatarResult(current, result.avatarUrl));
       setUploadSuccess('Display avatar updated.');
       if (result.sessionSummary) onUserUpdated(result.sessionSummary);
     } catch (error) {
