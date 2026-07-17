@@ -2611,6 +2611,8 @@ grant select on table public.profiles to pb_finance_profile_executor;
 grant update (full_name, company) on table public.profiles
   to pb_finance_profile_executor;
 grant select on table public.client_verifications to pb_finance_profile_executor;
+grant update (updated_at) on table public.client_verifications
+  to pb_finance_profile_executor;
 grant select on table public.client_companies to pb_finance_profile_executor;
 grant insert (owner_id, name, billing_email) on table public.client_companies
   to pb_finance_profile_executor;
@@ -2657,6 +2659,14 @@ create policy "Profile executor selects client verification"
   for select
   to pb_finance_profile_executor
   using (true);
+
+drop policy if exists "Profile executor locks client verification" on public.client_verifications;
+create policy "Profile executor locks client verification"
+  on public.client_verifications
+  for update
+  to pb_finance_profile_executor
+  using (true)
+  with check (true);
 
 drop policy if exists "Profile executor selects client companies" on public.client_companies;
 create policy "Profile executor selects client companies"

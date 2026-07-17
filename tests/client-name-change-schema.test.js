@@ -127,6 +127,7 @@ for (const [label, source] of [['canonical schema', schema], ['generated migrati
       'Profile executor selects profiles',
       'Profile executor updates client profiles',
       'Profile executor selects client verification',
+      'Profile executor locks client verification',
       'Profile executor selects client companies',
       'Profile executor inserts client companies',
       'Profile executor updates client companies',
@@ -158,6 +159,10 @@ for (const [label, source] of [['canonical schema', schema], ['generated migrati
     );
     assert.match(
       source,
+      /grant update \(updated_at\) on table public\.client_verifications\s+to pb_finance_profile_executor/i
+    );
+    assert.match(
+      source,
       /grant select on table public\.client_companies to pb_finance_profile_executor/i
     );
     assert.match(
@@ -183,6 +188,10 @@ for (const [label, source] of [['canonical schema', schema], ['generated migrati
     assert.doesNotMatch(
       source,
       /grant (?:select, )?update on table public\.profiles to pb_finance_profile_executor/i
+    );
+    assert.doesNotMatch(
+      source,
+      /grant (?:select, )?update on table public\.client_verifications to pb_finance_profile_executor/i
     );
     assert.doesNotMatch(
       source,
