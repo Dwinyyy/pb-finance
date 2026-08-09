@@ -836,7 +836,9 @@ export function ProfessionalPortal({
         <div className="relative mx-auto w-full max-w-[1600px] scroll-smooth px-3 py-6 sm:px-6 sm:py-8 lg:px-8">
           {!professionalPermissions.canAccessDashboard && (
             <SurfaceCard className="mb-6 border-warning-border bg-warning-surface p-5 text-sm font-semibold leading-relaxed text-warning" role="status">
-              Professional dashboard access unlocks after admin approves your identity, resume, and required documents. Your profile stays hidden from clients until then.
+              {professionalPermissions.tier === 'verified'
+                ? 'Your professional verification remains approved, but dashboard access is restricted for this account. Contact PB Finance if you believe this access is missing.'
+                : 'Professional dashboard access unlocks after admin approves your identity, resume, and required documents. Your profile stays hidden from clients until then.'}
             </SurfaceCard>
           )}
           {appView === 'profile' && (

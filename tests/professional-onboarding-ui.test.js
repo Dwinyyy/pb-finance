@@ -400,3 +400,61 @@ test('professional portal server-renders accessible signature state at 320px-saf
     await vite.close();
   }
 });
+
+test('professional portal distinguishes verified access restriction from approval-required access', async () => {
+  const vite = await createServer({
+    root: projectRoot,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+
+  try {
+    const { ProfessionalPortal } = await vite.ssrLoadModule('/src/pages/ProfessionalPages.jsx');
+    const renderPortal = (user) => renderToStaticMarkup(createElement(
+      MemoryRouter,
+      { initialEntries: ['/?tab=profile'] },
+      createElement(ProfessionalPortal, {
+        isDarkMode: false,
+        onLogout: () => {},
+        toggleDarkMode: () => {},
+        user,
+      }),
+    ));
+    const verifiedRestrictedHtml = renderPortal({
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'Verified Restricted Professional',
+      professionalPermissions: {
+        canAccessDashboard: false,
+        canAppearInTalentPool: false,
+        canCommentOnJobPosts: false,
+        canContactClientsFromJobs: false,
+        canToggleProfileVisibility: false,
+        canViewFullClientProfiles: false,
+        label: 'Verified',
+        tier: 'verified',
+      },
+      professionalTier: 'verified',
+      title: 'Controller',
+    });
+    const unverifiedHtml = renderPortal({
+      id: '44444444-4444-4444-8444-444444444444',
+      name: 'Pending Professional',
+      professionalTier: 'unverified',
+      title: 'Finance Professional',
+    });
+
+    assert.match(
+      verifiedRestrictedHtml,
+      /Your professional verification remains approved, but dashboard access is restricted for this account\./,
+    );
+    assert.doesNotMatch(verifiedRestrictedHtml, /access unlocks after admin approves/i);
+    assert.match(
+      unverifiedHtml,
+      /Professional dashboard access unlocks after admin approves your identity, resume, and required documents\./,
+    );
+    assert.doesNotMatch(unverifiedHtml, /verification remains approved/i);
+  } finally {
+    await vite.close();
+  }
+});
