@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FileCheck2, UserRoundCog } from 'lucide-react';
 
 import { useBackendResource } from '../hooks/useBackendResource.js';
@@ -18,6 +19,7 @@ const WORKSPACE_OPTIONS = Object.freeze([
 ]);
 
 export function ClientVerificationWorkspace({ section = 'cases', onSectionChange }) {
+  const [isNameChangeSubmitting, setIsNameChangeSubmitting] = useState(false);
   const nameChangeResource = useBackendResource(
     backendApi.admin.listClientNameChanges,
     EMPTY_NAME_CHANGE_DATA
@@ -48,6 +50,7 @@ export function ClientVerificationWorkspace({ section = 'cases', onSectionChange
                 size="sm"
                 variant={section === option.value ? 'primary' : 'secondary'}
                 aria-current={section === option.value ? 'page' : undefined}
+                disabled={isNameChangeSubmitting}
                 onClick={() => onSectionChange?.(option.value)}
               >
                 <Icon className="mr-2 size-4" aria-hidden="true" />
@@ -65,7 +68,10 @@ export function ClientVerificationWorkspace({ section = 'cases', onSectionChange
       </div>
 
       {section === 'name-changes' ? (
-        <ClientNameChangeReview nameChangeResource={nameChangeResource} />
+        <ClientNameChangeReview
+          nameChangeResource={nameChangeResource}
+          onBusyChange={setIsNameChangeSubmitting}
+        />
       ) : (
         <ClientVerificationReview showHeading={false} />
       )}

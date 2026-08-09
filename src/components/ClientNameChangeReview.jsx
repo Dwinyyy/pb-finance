@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -59,6 +59,35 @@ const pendingFirst = (requests) => [...requests].sort((left, right) => {
   return leftPending - rightPending || timestampFor(right.createdAt) - timestampFor(left.createdAt);
 });
 
+const focusNameChangeReviewElement = (element) => {
+  if (typeof element?.focus === 'function') {
+    element.focus();
+  }
+};
+
+const restoreNameChangeRequestFocus = (element) => {
+  focusNameChangeReviewElement(element);
+};
+
+const canChangeNameReviewContext = (isSubmitting) => !isSubmitting;
+
+const getNameChangeDecisionOutcome = (decision) => (
+  decision === 'approved'
+    ? {
+        message: 'Name change approved. The canonical queue is being refreshed.',
+        tone: 'verified',
+      }
+    : {
+        message: 'Name change rejected. The canonical queue is being refreshed.',
+        tone: 'danger',
+      }
+);
+
+const getStaleNameChangeDecisionOutcome = () => ({
+  message: 'Another administrator already decided this request. Refreshing the latest queue.',
+  tone: 'warning',
+});
+
 function FeedbackMessage({ children, tone = 'info' }) {
   const toneClasses = {
     danger: 'border-danger-border bg-danger-surface text-danger',
@@ -89,7 +118,7 @@ function NameComparison({ currentFullName, requestedFullName }) {
   );
 }
 
-export function ClientNameChangeReview({ nameChangeResource }) {
+export function ClientNameChangeReview({ nameChangeResource, onBusyChange }) {
   const {
     data = EMPTY_NAME_CHANGE_DATA,
     error = null,
@@ -104,36 +133,57 @@ export function ClientNameChangeReview({ nameChangeResource }) {
   const [reviewNoteError, setReviewNoteError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
-  const [staleMessage, setStaleMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [decisionOutcome, setDecisionOutcome] = useState(null);
+  const decisionRegionRef = useRef(null);
+  const requestButtonRefs = useRef(new Map());
+  const originatingRequestIdRef = useRef('');
   const selectedRequest = requests.find((request) => request.id === selectedRequestId) || null;
+
+  useEffect(() => {
+    if (selectedRequestId) {
+      focusNameChangeReviewElement(decisionRegionRef.current);
+    }
+  }, [selectedRequestId]);
+
+  useEffect(() => {
+    if (!isSubmitting && selectedRequestId && (decisionOutcome || actionError)) {
+      focusNameChangeReviewElement(decisionRegionRef.current);
+    }
+  }, [actionError, decisionOutcome, isSubmitting, selectedRequestId]);
 
   const resetDecisionDraft = () => {
     setDecision('');
     setReviewNote('');
     setReviewNoteError('');
     setActionError('');
-    setStaleMessage('');
-    setSuccessMessage('');
+    setDecisionOutcome(null);
   };
 
   const selectRequest = (requestId) => {
+    if (!canChangeNameReviewContext(isSubmitting)) return;
+
+    originatingRequestIdRef.current = requestId;
     setSelectedRequestId(requestId);
     resetDecisionDraft();
   };
 
   const closeDecisionRegion = () => {
+    if (!canChangeNameReviewContext(isSubmitting)) return;
+
+    const originatingRequestButton = requestButtonRefs.current.get(originatingRequestIdRef.current);
+    restoreNameChangeRequestFocus(originatingRequestButton);
     setSelectedRequestId('');
     resetDecisionDraft();
   };
 
   const startDecision = (nextDecision) => {
+    if (!canChangeNameReviewContext(isSubmitting)) return;
+
     setDecision(nextDecision);
     setReviewNote('');
     setReviewNoteError('');
     setActionError('');
-    setStaleMessage('');
-    setSuccessMessage('');
+    setDecisionOutcome(null);
   };
 
   const submitDecision = async (event) => {
@@ -147,11 +197,12 @@ export function ClientNameChangeReview({ nameChangeResource }) {
 
     if (!['approved', 'rejected'].includes(decision)) return;
 
+    focusNameChangeReviewElement(decisionRegionRef.current);
     setIsSubmitting(true);
     setReviewNoteError('');
     setActionError('');
-    setStaleMessage('');
-    setSuccessMessage('');
+    setDecisionOutcome(null);
+    onBusyChange?.(true);
 
     try {
       await backendApi.admin.decideClientNameChange({
@@ -159,79 +210,44 @@ export function ClientNameChangeReview({ nameChangeResource }) {
         decision,
         reviewNote: reviewNote.trim(),
       });
-      await refetch();
-      setSuccessMessage(
-        decision === 'approved'
-          ? 'Name change approved. The canonical queue has been refreshed.'
-          : 'Name change rejected. The canonical queue has been refreshed.'
-      );
+      setDecisionOutcome(getNameChangeDecisionOutcome(decision));
       setDecision('');
       setReviewNote('');
+
+      try {
+        await refetch();
+      } catch (refreshError) {
+        setActionError(
+          refreshError.message
+            || 'The decision was saved, but the canonical queue could not refresh. Retry the queue.'
+        );
+      }
     } catch (decisionError) {
       if (decisionError.status === 409) {
-        setStaleMessage('Another administrator already decided this request. The latest queue is shown below.');
-        await refetch();
+        setDecisionOutcome(getStaleNameChangeDecisionOutcome());
+
+        try {
+          await refetch();
+        } catch (refreshError) {
+          setActionError(
+            refreshError.message
+              || 'This request was already decided, but the canonical queue could not refresh. Retry the queue.'
+          );
+        }
       } else {
         setActionError(decisionError.message || 'Unable to save this name-change decision.');
       }
     } finally {
       setIsSubmitting(false);
+      onBusyChange?.(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div role="status" aria-live="polite">
-        <SurfaceCard className="flex min-h-48 items-center justify-center gap-3 p-8 text-sm font-semibold text-text-muted">
-          <Loader2 className="size-5 animate-spin text-processing" aria-hidden="true" />
-          Loading name change requests
-        </SurfaceCard>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div role="alert">
-        <SurfaceCard className="space-y-4 border-danger-border bg-danger-surface p-6 text-danger">
-          <div className="flex items-start gap-3">
-            <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-            <div>
-              <h2 className="font-bold">Unable to load name change requests</h2>
-              <p className="mt-1 text-sm font-medium">{error.message || 'Try loading the queue again.'}</p>
-            </div>
-          </div>
-          <Button type="button" variant="secondary" onClick={() => refetch()}>
-            <RefreshCcw className="mr-2 size-4" aria-hidden="true" />
-            Retry
-          </Button>
-        </SurfaceCard>
-      </div>
-    );
-  }
-
-  if (sortedRequests.length === 0) {
-    return (
-      <SurfaceCard className="border-dashed p-10 text-center">
-        <CheckCircle2 className="mx-auto size-8 text-verified" aria-hidden="true" />
-        <h2 className="mt-4 text-lg font-bold text-text-primary">No name change requests</h2>
-        <p className="mx-auto mt-2 max-w-xl text-sm font-medium text-text-muted">
-          New protected-name requests and completed review history will appear here.
-        </p>
-      </SurfaceCard>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {successMessage && (
+  const persistentFeedback = (
+    <>
+      {decisionOutcome && (
         <div role="status" aria-live="polite">
-          <FeedbackMessage tone="verified">{successMessage}</FeedbackMessage>
-        </div>
-      )}
-      {staleMessage && (
-        <div role="status" aria-live="polite">
-          <FeedbackMessage tone="warning">{staleMessage}</FeedbackMessage>
+          <FeedbackMessage tone={decisionOutcome.tone}>{decisionOutcome.message}</FeedbackMessage>
         </div>
       )}
       {actionError && (
@@ -239,6 +255,64 @@ export function ClientNameChangeReview({ nameChangeResource }) {
           <FeedbackMessage tone="danger">{actionError}</FeedbackMessage>
         </div>
       )}
+    </>
+  );
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        {persistentFeedback}
+        <div role="status" aria-live="polite">
+          <SurfaceCard className="flex min-h-48 items-center justify-center gap-3 p-8 text-sm font-semibold text-text-muted">
+            <Loader2 className="size-5 animate-spin text-processing" aria-hidden="true" />
+            Loading name change requests
+          </SurfaceCard>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        {persistentFeedback}
+        <div role="alert">
+          <SurfaceCard className="space-y-4 border-danger-border bg-danger-surface p-6 text-danger">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+              <div>
+                <h2 className="font-bold">Unable to load name change requests</h2>
+                <p className="mt-1 text-sm font-medium">{error.message || 'Try loading the queue again.'}</p>
+              </div>
+            </div>
+            <Button type="button" variant="secondary" onClick={() => refetch()}>
+              <RefreshCcw className="mr-2 size-4" aria-hidden="true" />
+              Retry
+            </Button>
+          </SurfaceCard>
+        </div>
+      </div>
+    );
+  }
+
+  if (sortedRequests.length === 0) {
+    return (
+      <div className="space-y-6">
+        {persistentFeedback}
+        <SurfaceCard className="border-dashed p-10 text-center">
+          <CheckCircle2 className="mx-auto size-8 text-verified" aria-hidden="true" />
+          <h2 className="mt-4 text-lg font-bold text-text-primary">No name change requests</h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm font-medium text-text-muted">
+            New protected-name requests and completed review history will appear here.
+          </p>
+        </SurfaceCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {persistentFeedback}
 
       <div className="grid gap-4 xl:grid-cols-2">
         {sortedRequests.map((request) => (
@@ -257,7 +331,21 @@ export function ClientNameChangeReview({ nameChangeResource }) {
                   Requested {formatRequestAge(request.createdAt)} · {formatRequestDate(request.createdAt)}
                 </p>
               </div>
-              <Button type="button" size="sm" variant="secondary" onClick={() => selectRequest(request.id)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                ref={(node) => {
+                  if (node) {
+                    requestButtonRefs.current.set(request.id, node);
+                  } else {
+                    requestButtonRefs.current.delete(request.id);
+                  }
+                }}
+                disabled={isSubmitting}
+                aria-controls={selectedRequestId === request.id ? 'name-change-decision-region' : undefined}
+                onClick={() => selectRequest(request.id)}
+              >
                 {request.status === 'pending' ? 'Review request' : 'View history'}
               </Button>
             </div>
@@ -284,9 +372,12 @@ export function ClientNameChangeReview({ nameChangeResource }) {
 
       {selectedRequest && (
         <section
+          id="name-change-decision-region"
           role="region"
+          ref={decisionRegionRef}
+          tabIndex={-1}
           aria-labelledby={`name-change-decision-${selectedRequest.id}`}
-          className="scroll-mt-24"
+          className="scroll-mt-24 rounded-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/25"
         >
           <SurfaceCard className="space-y-5 border-border-control p-5 sm:p-7">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -301,7 +392,13 @@ export function ClientNameChangeReview({ nameChangeResource }) {
                   Confirm both names below before submitting an irreversible admin decision.
                 </p>
               </div>
-              <Button type="button" size="sm" variant="ghost" onClick={closeDecisionRegion}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={isSubmitting}
+                onClick={closeDecisionRegion}
+              >
                 <X className="mr-2 size-4" aria-hidden="true" />
                 Close
               </Button>
@@ -399,3 +496,11 @@ export function ClientNameChangeReview({ nameChangeResource }) {
     </div>
   );
 }
+
+ClientNameChangeReview.interactionHelpers = Object.freeze({
+  canChangeNameReviewContext,
+  focusNameChangeReviewElement,
+  getNameChangeDecisionOutcome,
+  getStaleNameChangeDecisionOutcome,
+  restoreNameChangeRequestFocus,
+});
