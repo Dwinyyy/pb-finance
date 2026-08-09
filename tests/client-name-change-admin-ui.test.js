@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer as createNetServer } from 'node:net';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -24,7 +23,12 @@ const verificationWorkspace = readSource('../src/components/ClientVerificationWo
 const verificationReview = readSource('../src/components/ClientVerificationReview.jsx');
 const adminPage = readSource('../src/pages/AdminPages.jsx');
 
-const waitFor = async (assertion, timeout = 5000, signal) => {
+const BROWSER_STARTUP_TIMEOUT_MS = 15000;
+const BROWSER_STATE_TIMEOUT_MS = 15000;
+const TEMPORARY_DIRECTORY_CLEANUP_TIMEOUT_MS = 10000;
+const TRANSIENT_CLEANUP_ERROR_CODES = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM']);
+
+const waitFor = async (assertion, timeout = BROWSER_STATE_TIMEOUT_MS, signal) => {
   const deadline = Date.now() + timeout;
   let lastError;
 
@@ -42,15 +46,6 @@ const waitFor = async (assertion, timeout = 5000, signal) => {
 
   throw lastError || new Error('Timed out waiting for browser state.');
 };
-
-const getAvailablePort = () => new Promise((resolve, reject) => {
-  const server = createNetServer();
-  server.once('error', reject);
-  server.listen(0, '127.0.0.1', () => {
-    const { port } = server.address();
-    server.close((error) => (error ? reject(error) : resolve(port)));
-  });
-});
 
 const connectToCdp = async (webSocketDebuggerUrl) => {
   const socket = new WebSocket(webSocketDebuggerUrl);
@@ -163,40 +158,98 @@ const waitForChildExit = (child, timeout = 5000) => new Promise((resolve) => {
   child.once('error', onExit);
 });
 
+const isProcessAlive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+};
+
 const terminateChromeProcessTree = async (child) => {
   if (!child || child.exitCode !== null || child.signalCode !== null) return true;
+  const pid = child.pid;
 
   if (process.platform === 'win32') {
-    const taskkill = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    await waitForChildExit(taskkill, 5000);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const taskkill = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      const taskkillExited = await waitForChildExit(taskkill, 10000);
+      if (!taskkillExited) {
+        taskkill.kill('SIGKILL');
+        await waitForChildExit(taskkill, 1000);
+      }
+
+      const childExited = await waitForChildExit(child, 5000);
+      if (childExited || !isProcessAlive(pid)) return true;
+    }
+
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // The process may have exited between the liveness check and direct fallback.
+    }
   } else {
     try {
-      process.kill(-child.pid, 'SIGKILL');
+      process.kill(-pid, 'SIGKILL');
     } catch {
       child.kill('SIGKILL');
     }
   }
 
-  return waitForChildExit(child, 5000);
+  return await waitForChildExit(child, 5000) || !isProcessAlive(pid);
 };
 
 const removeTemporaryDirectory = async (directory) => {
-  let lastError;
+  if (!directory) return;
 
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  const deadline = Date.now() + TEMPORARY_DIRECTORY_CLEANUP_TIMEOUT_MS;
+  let attempt = 0;
+
+  while (true) {
     try {
-      await rm(directory, { force: true, recursive: true, maxRetries: 1, retryDelay: 50 });
+      await rm(directory, { force: true, recursive: true, maxRetries: 2, retryDelay: 50 });
       return;
     } catch (error) {
-      lastError = error;
-      await pause(50 * (attempt + 1));
+      if (!TRANSIENT_CLEANUP_ERROR_CODES.has(error?.code) || Date.now() >= deadline) {
+        throw error;
+      }
+
+      attempt += 1;
+      await pause(Math.min(50 * attempt, 500));
+    }
+  }
+};
+
+const readChromeDebuggerPort = async (userDataDir) => {
+  const activePortFile = await readFile(join(userDataDir, 'DevToolsActivePort'), 'utf8');
+  const [portValue] = activePortFile.split(/\r?\n/);
+  const port = Number.parseInt(portValue, 10);
+  assert.ok(Number.isInteger(port) && port > 0, 'Chrome did not publish a valid debugging port.');
+  return port;
+};
+
+const closeBrowserTestResources = async ({ browser, vite, viteCacheDir }) => {
+  const cleanupFailures = [];
+
+  for (const cleanupOperation of [
+    () => browser?.close(),
+    () => vite?.close(),
+    () => removeTemporaryDirectory(viteCacheDir),
+  ]) {
+    try {
+      await cleanupOperation();
+    } catch (error) {
+      cleanupFailures.push(error);
     }
   }
 
-  throw lastError;
+  if (cleanupFailures.length > 0) throw cleanupFailures[0];
 };
 
 const openHeadlessChrome = async () => {
@@ -208,46 +261,47 @@ const openHeadlessChrome = async () => {
   let cdp;
   let cleanupPromise;
   let spawnError;
+  let startupReady = false;
   const userDataDir = await mkdtemp(join(tmpdir(), 'pb-name-change-focus-'));
 
   const close = () => {
     if (cleanupPromise) return cleanupPromise;
 
     cleanupPromise = (async () => {
-      const browserClose = closeChromeViaCdp(cdp);
-      const processTreeTermination = !spawnError && chromeProcess?.pid
-        ? terminateChromeProcessTree(chromeProcess)
-        : null;
+      let terminationError = null;
 
       try {
-        await browserClose;
+        await closeChromeViaCdp(cdp);
       } catch {
         // The browser may have exited before its debugger accepted the close request.
       } finally {
         cdp?.close();
       }
 
-      if (processTreeTermination) {
-        await processTreeTermination;
-      } else if (!spawnError && chromeProcess?.pid) {
-        const exited = await waitForChildExit(chromeProcess);
-        if (!exited) await terminateChromeProcessTree(chromeProcess);
+      if (!spawnError && chromeProcess?.pid) {
+        const exited = cdp ? await waitForChildExit(chromeProcess) : false;
+        if (!exited) {
+          const terminated = await terminateChromeProcessTree(chromeProcess);
+          if (!terminated) {
+            terminationError = new Error('Headless Chrome did not exit during test cleanup.');
+          }
+        }
       }
-      await pause(250);
+
       await removeTemporaryDirectory(userDataDir);
+      if (terminationError) throw terminationError;
     })();
 
     return cleanupPromise;
   };
 
   try {
-    const port = await getAvailablePort();
     const startupAbortController = new AbortController();
     chromeProcess = spawn(headlessChromeExecutable, [
       '--headless=new',
       '--no-first-run',
       '--no-default-browser-check',
-      `--remote-debugging-port=${port}`,
+      '--remote-debugging-port=0',
       `--user-data-dir=${userDataDir}`,
       'about:blank',
     ], {
@@ -256,16 +310,26 @@ const openHeadlessChrome = async () => {
       windowsHide: true,
     });
 
-    const spawnErrorPromise = new Promise((resolve) => {
+    const startupFailurePromise = new Promise((resolve) => {
       chromeProcess.once('error', (error) => {
+        if (startupReady) return;
         spawnError = error;
+        startupAbortController.abort(error);
+        resolve(error);
+      });
+      chromeProcess.once('exit', (code, signal) => {
+        if (startupReady) return;
+        const error = new Error(
+          `Headless Chrome exited before its debugger was ready (code ${code ?? 'none'}, signal ${signal ?? 'none'}).`,
+        );
         startupAbortController.abort(error);
         resolve(error);
       });
     });
 
-    const debuggerUrl = `http://127.0.0.1:${port}`;
     const targetsPromise = waitFor(async () => {
+      const port = await readChromeDebuggerPort(userDataDir);
+      const debuggerUrl = `http://127.0.0.1:${port}`;
       const response = await fetch(`${debuggerUrl}/json/list`, {
         signal: AbortSignal.any([AbortSignal.timeout(1000), startupAbortController.signal]),
       });
@@ -273,15 +337,16 @@ const openHeadlessChrome = async () => {
       const pages = await response.json();
       assert.ok(pages.some((page) => page.type === 'page' && page.webSocketDebuggerUrl));
       return pages;
-    }, 5000, startupAbortController.signal).then(
+    }, BROWSER_STARTUP_TIMEOUT_MS, startupAbortController.signal).then(
       (targets) => ({ targets }),
       (error) => ({ error })
     );
     const startupResult = await Promise.race([
-      spawnErrorPromise.then((error) => ({ error })),
+      startupFailurePromise.then((error) => ({ error })),
       targetsPromise,
     ]);
     if (startupResult.error) throw startupResult.error;
+    startupReady = true;
     const { targets } = startupResult;
     const page = targets.find((target) => target.type === 'page');
     cdp = await connectToCdp(page.webSocketDebuggerUrl);
@@ -346,6 +411,48 @@ const nameChangeFocusEntrySource = `
     document.body.replaceChildren(document.createElement('div'));
     window.__nameChangeRoot = createRoot(document.body.firstElementChild);
     window.__nameChangeRoot.render(React.createElement(Harness));
+  };
+`;
+
+const ACCOUNT_MENU_FOCUS_ENTRY_PATH = '/__account-menu-focus-test-entry.jsx';
+const ACCOUNT_MENU_FOCUS_ENTRY_ID = '\0pb-account-menu-focus-test-entry';
+const accountMenuFocusEntrySource = `
+  import React from 'react';
+  import { createRoot } from 'react-dom/client';
+  import { MemoryRouter } from 'react-router-dom';
+  import { DashboardAccountMenu } from '/src/components/DashboardAccountMenu.jsx';
+
+  const notificationState = {
+    error: '',
+    isLoading: false,
+    loadNotifications: async () => [],
+    markAllRead: async () => {},
+    markRead: async () => {},
+    notifications: [],
+    unreadCount: 2,
+  };
+
+  window.__mountDashboardAccountMenu = () => {
+    document.body.replaceChildren(document.createElement('div'));
+    window.__accountMenuRoot = createRoot(document.body.firstElementChild);
+    window.__accountMenuRoot.render(React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(DashboardAccountMenu, {
+        accountTypeLabel: 'Verified account',
+        avatarUrl: '',
+        companyOrContext: 'PB Finance',
+        isDarkMode: false,
+        name: 'Aldwin Gotingco',
+        notificationState,
+        onGuide: () => {},
+        onLogout: () => {},
+        onNotificationOpened: () => {},
+        onProfile: () => {},
+        onThemeToggle: () => {},
+        role: 'client',
+      })
+    ));
   };
 `;
 
@@ -543,16 +650,7 @@ test('rendered name-change decisions keep focus in the stable region through pen
   };
 
   const cleanup = async () => {
-    const shutdownResults = await Promise.allSettled([
-      browser?.close(),
-      vite?.close(),
-    ]);
-    const cacheCleanupResults = await Promise.allSettled([
-      viteCacheDir && removeTemporaryDirectory(viteCacheDir),
-    ]);
-    const cleanupFailure = [...shutdownResults, ...cacheCleanupResults]
-      .find((result) => result.status === 'rejected');
-    if (cleanupFailure) throw cleanupFailure.reason;
+    await closeBrowserTestResources({ browser, vite, viteCacheDir });
   };
 
   try {
@@ -594,7 +692,6 @@ test('rendered name-change decisions keep focus in the stable region through pen
     const url = `${vite.resolvedUrls.local[0]}__name-change-focus-test.html`;
     await browser.cdp.send('Page.navigate', { url });
     await waitFor(async () => {
-      assert.equal(await browser.cdp.evaluate('document.readyState'), 'complete');
       assert.equal(await browser.cdp.evaluate('typeof window.__mountNameChangeReview'), 'function');
     });
 
@@ -618,6 +715,102 @@ test('rendered name-change decisions keep focus in the stable region through pen
     await waitFor(async () => {
       assert.equal(await browser.cdp.evaluate(`document.body.textContent.includes('The canonical queue is unavailable.')`), true);
       await assertDecisionFocus();
+    });
+  } finally {
+    await cleanup();
+  }
+});
+
+test('notification subview moves focus to Back and restores the Notifications action', {
+  skip: headlessChromeExecutable ? false : 'Headless Chrome/Chromium was not found. Set PB_TEST_CHROME_EXECUTABLE to its executable path.',
+}, async () => {
+  let vite;
+  let viteCacheDir;
+  let browser;
+
+  const cleanup = async () => {
+    await closeBrowserTestResources({ browser, vite, viteCacheDir });
+  };
+
+  try {
+    viteCacheDir = await mkdtemp(join(tmpdir(), 'pb-account-menu-vite-'));
+    vite = await createServer({
+      appType: 'custom',
+      cacheDir: viteCacheDir,
+      logLevel: 'silent',
+      plugins: [{
+        name: 'account-menu-focus-test-page',
+        resolveId(source) {
+          return source === ACCOUNT_MENU_FOCUS_ENTRY_PATH ? ACCOUNT_MENU_FOCUS_ENTRY_ID : null;
+        },
+        load(id) {
+          return id === ACCOUNT_MENU_FOCUS_ENTRY_ID ? accountMenuFocusEntrySource : null;
+        },
+        configureServer(server) {
+          server.middlewares.use((request, response, next) => {
+            if (request.url !== '/__account-menu-focus-test.html') return next();
+
+            response.setHeader('Content-Type', 'text/html');
+            response.end(`<!doctype html><html><body>
+              <script type="module">
+                import RefreshRuntime from '/@react-refresh';
+                RefreshRuntime.injectIntoGlobalHook(window);
+                window.$RefreshReg$ = () => {};
+                window.$RefreshSig$ = () => (type) => type;
+                window.__vite_plugin_react_preamble_installed__ = true;
+              </script>
+              <script type="module" src="${ACCOUNT_MENU_FOCUS_ENTRY_PATH}"></script>
+            </body></html>`);
+          });
+        },
+      }],
+      server: { port: 0 },
+    });
+    browser = await openHeadlessChrome();
+    await vite.listen();
+    const url = `${vite.resolvedUrls.local[0]}__account-menu-focus-test.html`;
+    await browser.cdp.send('Page.navigate', { url });
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate('typeof window.__mountDashboardAccountMenu'), 'function');
+    });
+
+    await browser.cdp.evaluate('window.__mountDashboardAccountMenu()');
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate(`Boolean(document.querySelector('button[aria-controls]'))`), true);
+    });
+    await browser.cdp.evaluate(`
+      (() => {
+        const trigger = document.querySelector('button[aria-controls]');
+        trigger.click();
+        return true;
+      })()
+    `);
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate(`Boolean(document.querySelector('[aria-label="Account actions"]'))`), true);
+    });
+    await browser.cdp.evaluate(`
+      (() => {
+        const notifications = [...document.querySelectorAll('button')]
+          .find((button) => button.textContent.trim().startsWith('Notifications'));
+        notifications.focus();
+        notifications.click();
+        return true;
+      })()
+    `);
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate(`document.querySelector('h2')?.textContent`), 'Notifications');
+      assert.equal(await browser.cdp.evaluate(`document.activeElement?.getAttribute('aria-label')`), 'Back to account actions');
+    });
+
+    await browser.cdp.evaluate(`
+      (() => {
+        document.activeElement.click();
+        return true;
+      })()
+    `);
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate(`Boolean(document.querySelector('[aria-label="Account actions"]'))`), true);
+      assert.equal(await browser.cdp.evaluate(`document.activeElement?.textContent.trim().startsWith('Notifications')`), true);
     });
   } finally {
     await cleanup();

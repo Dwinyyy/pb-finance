@@ -20,6 +20,14 @@ const functionBlock = (source, name) => {
   return matches.at(-1)[0];
 };
 
+const ownerDataApiHardeningBlock = (source) => {
+  const match = source.match(
+    /-- BEGIN PB FINANCE OWNER DATA API HARDENING([\s\S]*?)-- END PB FINANCE OWNER DATA API HARDENING/i
+  );
+  assert.ok(match, 'owner Data API hardening block is missing');
+  return match[1];
+};
+
 const assertLockOrder = (source, patterns) => {
   let previousIndex = -1;
   for (const pattern of patterns) {
@@ -227,6 +235,77 @@ for (const [label, source] of [['canonical schema', schema], ['generated migrati
     );
   });
 
+  test(`${label} limits authenticated owner writes to safe account columns`, () => {
+    const hardening = ownerDataApiHardeningBlock(source);
+
+    for (const table of [
+      'profiles',
+      'client_companies',
+      'client_tier_permissions',
+      'professional_tier_permissions',
+    ]) {
+      assert.match(
+        hardening,
+        new RegExp(
+          `revoke all privileges on table public\\.${table}\\s+from public, anon, authenticated`,
+          'i'
+        )
+      );
+      assert.match(
+        hardening,
+        new RegExp(`grant select on table public\\.${table}\\s+to authenticated`, 'i')
+      );
+      assert.match(
+        hardening,
+        new RegExp(
+          `grant select, insert, update, delete on table public\\.${table}\\s+to service_role`,
+          'i'
+        )
+      );
+    }
+    assert.match(
+      hardening,
+      /grant update \(full_name, company\) on table public\.profiles\s+to authenticated/i
+    );
+    assert.doesNotMatch(
+      hardening,
+      /grant update \([^)]*\b(?:email|avatar_url|role|client_tier|title|manual_triage_required|manual_triage_status|created_at)\b[^)]*\)\s+on table public\.profiles[\s\S]*?to authenticated/i
+    );
+    assert.match(
+      hardening,
+      /create policy "Profiles are editable by their owners"[\s\S]*?for update\s+to authenticated[\s\S]*?role = 'client'/i
+    );
+
+    assert.match(
+      hardening,
+      /grant update \(name, website, industry, size, billing_email\)\s+on table public\.client_companies\s+to authenticated/i
+    );
+    assert.doesNotMatch(
+      hardening,
+      /grant update \([^)]*\b(?:id|owner_id|created_at|updated_at)\b[^)]*\)\s+on table public\.client_companies[\s\S]*?to authenticated/i
+    );
+    assert.match(
+      hardening,
+      /create policy "Client companies are visible to owners"[\s\S]*?for select\s+to authenticated/i
+    );
+    assert.match(
+      hardening,
+      /create policy "Client company details are editable by owners"[\s\S]*?for update\s+to authenticated/i
+    );
+    assert.doesNotMatch(
+      hardening,
+      /create policy "Client companies are managed by owners"[\s\S]*?for all/i
+    );
+    assert.doesNotMatch(
+      hardening,
+      /create policy [^;]+on public\.client_companies\s+for (?:insert|delete)\s+to authenticated/i
+    );
+    assert.doesNotMatch(
+      hardening,
+      /grant all(?: privileges)? on table public\.(?:profiles|client_companies|client_tier_permissions|professional_tier_permissions)\s+to (?:public|anon|authenticated)/i
+    );
+  });
+
   test(`${label} protects profile identity and the synchronized primary company`, () => {
     for (const fn of [
       'validate_client_profile_identity_fields',
@@ -385,3 +464,10 @@ for (const [label, source] of [['canonical schema', schema], ['generated migrati
     );
   });
 }
+
+test('canonical schema and generated migration use the same owner Data API boundary', () => {
+  assert.equal(
+    ownerDataApiHardeningBlock(schema).trim(),
+    ownerDataApiHardeningBlock(migration).trim()
+  );
+});

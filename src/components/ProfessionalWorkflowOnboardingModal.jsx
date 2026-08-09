@@ -63,6 +63,9 @@ const PROFESSIONAL_WORKFLOW_STEPS = [
       available: Boolean(canAccessDashboard),
       destination: { tab: 'opportunities' },
       statusLabel: canAccessDashboard ? 'Available' : isVerified ? 'Access restricted' : 'Approval required',
+      unavailableText: !canAccessDashboard && isVerified
+        ? 'Opportunities access is restricted for this account.'
+        : undefined,
       description: canAccessDashboard
         ? 'Review matched client opportunities, respond to requests, and keep each engagement decision visible in the portal.'
         : isVerified
@@ -78,6 +81,9 @@ const PROFESSIONAL_WORKFLOW_STEPS = [
       available: Boolean(canAccessDashboard),
       destination: { tab: 'earnings' },
       statusLabel: canAccessDashboard ? 'Available' : isVerified ? 'Access restricted' : 'Approval required',
+      unavailableText: !canAccessDashboard && isVerified
+        ? 'Timesheets and earnings access is restricted for this account.'
+        : undefined,
       description: canAccessDashboard
         ? 'Track submitted time, review pending earnings, and follow withdrawal availability once client work begins.'
         : isVerified

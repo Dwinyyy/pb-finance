@@ -1034,16 +1034,71 @@ create policy "Client profiles are visible to verified professionals"
     and public.professional_can_view_full_client_profiles(auth.uid())
   );
 
+-- BEGIN PB FINANCE OWNER DATA API HARDENING
+revoke all privileges on table public.profiles
+  from public, anon, authenticated;
+grant select on table public.profiles
+  to authenticated;
+grant update (full_name, company) on table public.profiles
+  to authenticated;
+grant select, insert, update, delete on table public.profiles
+  to service_role;
+
 drop policy if exists "Profiles are editable by their owners" on public.profiles;
 create policy "Profiles are editable by their owners"
   on public.profiles
   for update
-  using (auth.uid() = id)
+  to authenticated
+  using (
+    (select auth.uid()) = id
+    and role = 'client'
+  )
   with check (
-    auth.uid() = id
+    (select auth.uid()) = id
+    and role = 'client'
     and role = public.profile_role_for(id)
     and client_tier = public.client_tier_for(id)
   );
+
+revoke all privileges on table public.client_companies
+  from public, anon, authenticated;
+grant select on table public.client_companies
+  to authenticated;
+grant update (name, website, industry, size, billing_email)
+  on table public.client_companies
+  to authenticated;
+grant select, insert, update, delete on table public.client_companies
+  to service_role;
+
+drop policy if exists "Client companies are managed by owners" on public.client_companies;
+drop policy if exists "Client companies are visible to owners" on public.client_companies;
+create policy "Client companies are visible to owners"
+  on public.client_companies
+  for select
+  to authenticated
+  using ((select auth.uid()) = owner_id);
+
+drop policy if exists "Client company details are editable by owners" on public.client_companies;
+create policy "Client company details are editable by owners"
+  on public.client_companies
+  for update
+  to authenticated
+  using ((select auth.uid()) = owner_id)
+  with check ((select auth.uid()) = owner_id);
+
+revoke all privileges on table public.client_tier_permissions
+  from public, anon, authenticated;
+grant select on table public.client_tier_permissions
+  to authenticated;
+grant select, insert, update, delete on table public.client_tier_permissions
+  to service_role;
+revoke all privileges on table public.professional_tier_permissions
+  from public, anon, authenticated;
+grant select on table public.professional_tier_permissions
+  to authenticated;
+grant select, insert, update, delete on table public.professional_tier_permissions
+  to service_role;
+-- END PB FINANCE OWNER DATA API HARDENING
 
 drop policy if exists "Professional profiles are visible to owners and approved clients" on public.professional_profiles;
 drop policy if exists "Professional profiles are visible to owners" on public.professional_profiles;
@@ -1065,13 +1120,6 @@ create policy "Professional profiles are editable by owners"
   for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
-
-drop policy if exists "Client companies are managed by owners" on public.client_companies;
-create policy "Client companies are managed by owners"
-  on public.client_companies
-  for all
-  using (auth.uid() = owner_id)
-  with check (auth.uid() = owner_id);
 
 drop policy if exists "Agencies are visible to owners and when approved" on public.agencies;
 create policy "Agencies are visible to owners and when approved"

@@ -1,46 +1,25 @@
 import { getBearerToken, getSupabaseUser, publicUser, supabaseRestRequest } from './supabase.js';
+import {
+  getProfessionalTierFromProfile,
+  loadProfessionalTierPermissions,
+  mapProfessionalTierPermissions,
+  normalizeProfessionalTier,
+} from './professionalPermissions.js';
 import { normalizeSessionSummary } from '../src/utils/sessionSummary.js';
 
 const asList = (value) => (Array.isArray(value) ? value : []);
+const CANONICAL_ROLES = new Set(['admin', 'client', 'professional']);
 export const toActiveSessionSummary = (user) => normalizeSessionSummary(user);
 const normalizeClientTier = (value) => {
   const tier = String(value || '').trim().toLowerCase();
 
   return ['basic', 'verified', 'vip'].includes(tier) ? tier : 'basic';
 };
-const PROFESSIONAL_TIER_PERMISSIONS = {
-  unverified: {
-    canAccessDashboard: false,
-    canAppearInTalentPool: false,
-    canCommentOnJobPosts: false,
-    canContactClientsFromJobs: false,
-    canToggleProfileVisibility: false,
-    canViewFullClientProfiles: false,
-    label: 'Unverified',
-  },
-  verified: {
-    canAccessDashboard: true,
-    canAppearInTalentPool: true,
-    canCommentOnJobPosts: true,
-    canContactClientsFromJobs: true,
-    canToggleProfileVisibility: true,
-    canViewFullClientProfiles: true,
-    label: 'Verified',
-  },
-};
-const normalizeProfessionalTier = (value) => {
-  const tier = String(value || '').trim().toLowerCase();
-
-  return ['unverified', 'verified'].includes(tier) ? tier : 'unverified';
-};
-const getProfessionalTierFromProfile = (profile) => (
-  profile?.professional_tier === 'verified'
-    && profile?.status === 'approved'
-    && profile?.identity_verification_status === 'approved'
-    ? 'verified'
-    : 'unverified'
-);
-const withProfessionalPermissions = (user, profile) => {
+const withoutCanonicalRole = (user) => ({
+  ...user,
+  role: null,
+});
+const withProfessionalPermissions = (user, profile, permissionRow) => {
   if (!user || user.role !== 'professional') {
     return user;
   }
@@ -48,14 +27,14 @@ const withProfessionalPermissions = (user, profile) => {
   const tier = profile
     ? getProfessionalTierFromProfile(profile)
     : normalizeProfessionalTier(user.professionalTier || user.professional_tier);
-  const permissions = PROFESSIONAL_TIER_PERMISSIONS[tier] || PROFESSIONAL_TIER_PERMISSIONS.unverified;
+  const permissions = mapProfessionalTierPermissions(
+    tier,
+    permissionRow || (!profile ? user.professionalPermissions : null)
+  );
 
   return {
     ...user,
-    professionalPermissions: {
-      ...permissions,
-      tier,
-    },
+    professionalPermissions: permissions,
     professionalTier: tier,
     professionalTierLabel: permissions.label,
     professional_tier: tier,
@@ -76,8 +55,10 @@ const getProfileUser = async (req, user) => {
   const profile = asList(rows)[0];
 
   if (!profile) {
-    return withProfessionalPermissions(user);
+    return withoutCanonicalRole(user);
   }
+
+  const canonicalRole = CANONICAL_ROLES.has(profile.role) ? profile.role : null;
 
   const profileUser = {
     ...user,
@@ -86,7 +67,7 @@ const getProfileUser = async (req, user) => {
     company: profile.company || user.company,
     email: profile.email || user.email,
     name: profile.full_name || user.name,
-    role: profile.role || user.role,
+    role: canonicalRole,
     clientTier: normalizeClientTier(profile.client_tier),
     client_tier: normalizeClientTier(profile.client_tier),
     title: profile.title || user.title,
@@ -96,15 +77,35 @@ const getProfileUser = async (req, user) => {
     return profileUser;
   }
 
-  const professionalRows = await supabaseRestRequest(
-    `/professional_profiles?user_id=eq.${profileUser.id}&select=professional_tier,status,profile_visibility,identity_verification_status&limit=1`,
-    {
+  let professionalProfile = null;
+
+  try {
+    const professionalRows = await supabaseRestRequest(
+      `/professional_profiles?user_id=eq.${profileUser.id}&select=professional_tier,status,profile_visibility,identity_verification_status&limit=1`,
+      {
+        token,
+        useServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      }
+    );
+    professionalProfile = asList(professionalRows)[0] || null;
+  } catch {
+    return withProfessionalPermissions(
+      profileUser,
+      null,
+      mapProfessionalTierPermissions('unverified', null)
+    );
+  }
+
+  const tier = getProfessionalTierFromProfile(professionalProfile);
+  const permissions = await loadProfessionalTierPermissions(
+    tier,
+    (path) => supabaseRestRequest(path, {
       token,
       useServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    }
+    })
   );
 
-  return withProfessionalPermissions(profileUser, asList(professionalRows)[0]);
+  return withProfessionalPermissions(profileUser, professionalProfile, permissions);
 };
 
 export const getSessionUser = async (req) => {
@@ -126,7 +127,7 @@ export const getSessionUser = async (req) => {
     try {
       return await getProfileUser(req, sessionUser);
     } catch {
-      return withProfessionalPermissions(sessionUser);
+      return withoutCanonicalRole(sessionUser);
     }
   } catch {
     return null;

@@ -9,6 +9,7 @@ const clientPage = read('../src/pages/ClientPages.jsx');
 const adminPage = read('../src/pages/AdminPages.jsx');
 const publicPage = read('../src/pages/PublicPages.jsx');
 const dashboardAccountMenu = read('../src/components/DashboardAccountMenu.jsx');
+const dashboardAccountMenuState = read('../src/components/dashboardAccountMenuState.js');
 const notificationPanel = read('../src/components/NotificationPanel.jsx');
 
 test('mixed-content client and professional upload grids align items to intrinsic height', () => {
@@ -49,7 +50,13 @@ test('dashboard account disclosure stays contained from 320px through desktop', 
     'capsule and dropdown must share one width class',
   );
   assert.match(dashboardAccountMenu, /max-sm:right-\[18px\]/);
-  assert.match(dashboardAccountMenu, /max-h-\[calc\(100dvh-var\(--dashboard-account-panel-top\)-18px\)\]/);
+  assert.match(dashboardAccountMenu, /getDashboardAccountMenuPanelMaxHeight\(\{/);
+  assert.match(dashboardAccountMenu, /maxHeight:\s*`\$\{panelLayout\.maxHeight\}px`/);
+  assert.match(dashboardAccountMenuState, /ACCOUNT_MENU_VIEWPORT_INSET_PX\s*=\s*18/);
+  assert.match(
+    dashboardAccountMenuState,
+    /normalizedViewportHeight\s*-\s*normalizedTop\s*-\s*ACCOUNT_MENU_VIEWPORT_INSET_PX/,
+  );
   assert.match(dashboardAccountMenu, /overflow-y-auto/);
   assert.match(dashboardAccountMenu, /overscroll-contain/);
   assert.match(notificationPanel, /max-h-\[min\(32rem,calc\(100dvh-8rem\)\)\]/);

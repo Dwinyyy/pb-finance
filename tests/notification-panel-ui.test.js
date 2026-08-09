@@ -135,6 +135,34 @@ test('shared panel owns refresh, retry, push, read, and viewport-safe presentati
   assert.match(panelSource, /aria-live="polite"/);
 });
 
+test('configured push controls leave the notification list as the bounded scrollport', async () => {
+  const vite = await createServer({
+    root: projectRoot,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+
+  try {
+    const { NotificationPanel } = await vite.ssrLoadModule('/src/components/NotificationPanel.jsx');
+    const html = renderToStaticMarkup(createElement(
+      MemoryRouter,
+      null,
+      createElement(NotificationPanel, { notificationState }),
+    ));
+
+    assert.match(html, /<section[^>]*class="[^"]*flex[^"]*max-h-\[min\(32rem,calc\(100dvh-8rem\)\)\][^"]*flex-col[^"]*overflow-hidden/);
+    assert.match(html, /<header class="[^"]*shrink-0/);
+    assert.match(html, /aria-live="polite" class="[^"]*min-h-0[^"]*flex-1[^"]*overflow-y-auto/);
+    assert.match(
+      panelSource,
+      /pushState\?\.supported && pushState\.configured[\s\S]*?<div className="shrink-0 border-b border-border-subtle bg-surface-muted/,
+    );
+  } finally {
+    await vite.close();
+  }
+});
+
 test('standalone NotificationBell delegates content to the shared panel', () => {
   assert.match(bellSource, /<NotificationPanel/);
   assert.match(bellSource, /aria-expanded=\{isOpen\}/);

@@ -14,6 +14,8 @@ import {
   ACCOUNT_MENU_CLOSE_DELAY_MS,
   createDashboardAccountMenuState,
   dashboardAccountMenuReducer,
+  getDashboardAccountMenuPanelMaxHeight,
+  getDashboardAccountMenuTriggerLabel,
   isDashboardAccountMenuOpen,
   shouldUseHoverPreview,
 } from './dashboardAccountMenuState';
@@ -59,13 +61,16 @@ export function DashboardAccountMenu({
     undefined,
     createDashboardAccountMenuState,
   );
-  const [panelTop, setPanelTop] = useState(null);
+  const [panelLayout, setPanelLayout] = useState(null);
   const prefersReducedMotion = useReducedMotion();
   const generatedId = useId();
   const panelId = `${generatedId}-dashboard-account-panel`;
   const unreadDescriptionId = `${generatedId}-dashboard-account-unread`;
   const wrapperRef = useRef(null);
   const triggerRef = useRef(null);
+  const notificationsActionRef = useRef(null);
+  const notificationBackRef = useRef(null);
+  const previousViewRef = useRef(state.view);
   const closeTimerRef = useRef(null);
   const escapeFrameRef = useRef(null);
   const guideFrameRef = useRef(null);
@@ -83,9 +88,18 @@ export function DashboardAccountMenu({
     closeTimerRef.current = null;
   }, []);
 
-  const updatePanelTop = useCallback(() => {
+  const updatePanelLayout = useCallback(() => {
     const triggerBottom = triggerRef.current?.getBoundingClientRect().bottom;
-    if (Number.isFinite(triggerBottom)) setPanelTop(Math.round(triggerBottom));
+    if (!Number.isFinite(triggerBottom)) return;
+
+    const top = Math.round(triggerBottom);
+    setPanelLayout({
+      maxHeight: getDashboardAccountMenuPanelMaxHeight({
+        panelTop: top,
+        viewportHeight: window.innerHeight,
+      }),
+      top,
+    });
   }, []);
 
   const scheduleHoverClose = useCallback(() => {
@@ -98,7 +112,7 @@ export function DashboardAccountMenu({
 
   const handlePointerEnter = (event) => {
     clearCloseTimer();
-    updatePanelTop();
+    updatePanelLayout();
     const hoverCapable = window.matchMedia(hoverQuery).matches;
 
     if (shouldUseHoverPreview({ hoverCapable, pointerType: event.pointerType })) {
@@ -109,7 +123,7 @@ export function DashboardAccountMenu({
   const handleFocusCapture = () => {
     if (suppressFocusOpenRef.current) return;
 
-    updatePanelTop();
+    updatePanelLayout();
 
     if (preserveGuideInteractionRef.current) {
       preserveGuideInteractionRef.current = false;
@@ -135,16 +149,28 @@ export function DashboardAccountMenu({
   }, []);
 
   useEffect(() => {
+    const previousView = previousViewRef.current;
+    previousViewRef.current = state.view;
+
+    if (!isOpen || previousView === state.view) return;
+
+    const focusTarget = state.view === 'notifications'
+      ? notificationBackRef.current
+      : notificationsActionRef.current;
+    focusTarget?.focus();
+  }, [isOpen, state.view]);
+
+  useEffect(() => {
     if (!isOpen) return undefined;
 
-    window.addEventListener('resize', updatePanelTop);
-    window.addEventListener('scroll', updatePanelTop, true);
+    window.addEventListener('resize', updatePanelLayout);
+    window.addEventListener('scroll', updatePanelLayout, true);
 
     return () => {
-      window.removeEventListener('resize', updatePanelTop);
-      window.removeEventListener('scroll', updatePanelTop, true);
+      window.removeEventListener('resize', updatePanelLayout);
+      window.removeEventListener('scroll', updatePanelLayout, true);
     };
-  }, [isOpen, updatePanelTop]);
+  }, [isOpen, updatePanelLayout]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -181,7 +207,7 @@ export function DashboardAccountMenu({
   };
 
   const handleTriggerClick = () => {
-    updatePanelTop();
+    updatePanelLayout();
     dispatch({ type: 'toggle-pin' });
   };
 
@@ -210,7 +236,7 @@ export function DashboardAccountMenu({
       <button
         ref={triggerRef}
         type="button"
-        aria-label={`${isOpen ? 'Close' : 'Open'} account menu for ${name}`}
+        aria-label={getDashboardAccountMenuTriggerLabel(state, name)}
         aria-describedby={unreadCount > 0 ? unreadDescriptionId : undefined}
         aria-expanded={isOpen}
         aria-controls={panelId}
@@ -264,15 +290,19 @@ export function DashboardAccountMenu({
         )}
       </button>
 
-      {isOpen && panelTop !== null && (
+      {isOpen && panelLayout !== null && (
         <div
           id={panelId}
-          style={{ '--dashboard-account-panel-top': `${panelTop}px` }}
-          className={`absolute right-0 top-full z-[90] pt-2 max-sm:fixed max-sm:right-[18px] max-sm:top-[var(--dashboard-account-panel-top)] ${ACCOUNT_MENU_WIDTH_CLASS}`}
+          style={{
+            '--dashboard-account-panel-top': `${panelLayout.top}px`,
+            maxHeight: `${panelLayout.maxHeight}px`,
+          }}
+          className={`absolute right-0 top-full z-[90] flex max-sm:fixed max-sm:right-[18px] max-sm:top-[var(--dashboard-account-panel-top)] flex-col pt-2 ${ACCOUNT_MENU_WIDTH_CLASS}`}
         >
-          <div className="max-h-[calc(100dvh-var(--dashboard-account-panel-top)-18px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-card border border-border-subtle bg-surface text-text-primary shadow-modal">
+          <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-card border border-border-subtle bg-surface text-text-primary shadow-modal">
             {state.view === 'notifications' ? (
               <NotificationPanel
+                backButtonRef={notificationBackRef}
                 notificationState={notificationState}
                 onBack={() => dispatch({ type: 'show-actions' })}
                 onNotificationOpened={onNotificationOpened}
@@ -290,6 +320,7 @@ export function DashboardAccountMenu({
                 </button>
 
                 <button
+                  ref={notificationsActionRef}
                   type="button"
                   onClick={() => dispatch({ type: 'show-notifications' })}
                   className={`${ACTION_STRUCTURE_CLASS} ${ACTION_TONE_CLASS}`}

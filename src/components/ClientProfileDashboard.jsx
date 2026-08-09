@@ -311,7 +311,7 @@ export function ClientProfileDashboard({
                         className="size-20 rounded-full border border-border-subtle object-cover shadow-card"
                       />
                     ) : (
-                      <div className="grid size-20 place-items-center rounded-full bg-pb-midnight text-xl font-black text-white" aria-hidden="true">
+                      <div className="grid size-20 place-items-center rounded-full bg-action text-xl font-black text-white" aria-hidden="true">
                         {profileInitials(account.fullName)}
                       </div>
                     )}
@@ -440,7 +440,7 @@ export function ClientProfileDashboard({
                   </SurfaceCard>
                 )}
 
-                {latestNameRequest && (
+                {latestNameRequest && !hasPendingNameRequest && (
                   <SurfaceCard as="section" tone="muted" className="p-5 sm:p-6" aria-labelledby="latest-name-decision-title">
                     <div className="flex items-start gap-3">
                       {latestNameRequest.status === 'approved'

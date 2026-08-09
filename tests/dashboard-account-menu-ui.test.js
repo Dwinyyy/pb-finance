@@ -106,7 +106,7 @@ test('account actions use Lucide icons, destination-aware theme labels, and acce
   assert.match(source, /isDarkMode \? \([\s\S]*<Sun[\s\S]*\) : \([\s\S]*<Moon/);
   assert.match(source, /min-h-11 min-w-11/);
   assert.match(source, /focus-visible:ring-4 focus-visible:ring-focus\/25/);
-  assert.match(source, /aria-label=\{`\$\{isOpen \? 'Close' : 'Open'\} account menu for \$\{name\}`\}/);
+  assert.match(source, /aria-label=\{getDashboardAccountMenuTriggerLabel\(state, name\)\}/);
   assert.doesNotMatch(source, /(?:🔔|🌙|☀️|✨|👤|🚪)/u);
 });
 
@@ -122,10 +122,13 @@ test('danger actions have no competing neutral tone and mobile position is seede
   assert.match(source, /const DANGER_ACTION_TONE_CLASS = 'bg-danger-surface text-danger hover:bg-danger-surface\/80'/);
   assert.match(source, /className={`\$\{ACTION_STRUCTURE_CLASS\} \$\{DANGER_ACTION_TONE_CLASS\}`}/);
 
-  assert.match(source, /const updatePanelTop = useCallback/);
-  assert.match(source, /const handleTriggerClick = \(\) => \{[\s\S]*?updatePanelTop\(\);[\s\S]*?dispatch\(\{ type: 'toggle-pin' \}\);/);
-  assert.match(source, /const handlePointerEnter = \(event\) => \{[\s\S]*?updatePanelTop\(\);[\s\S]*?dispatch\(\{ type: 'hover-enter' \}\);/);
-  assert.match(source, /\{isOpen && panelTop !== null && \(/);
+  assert.match(source, /const updatePanelLayout = useCallback/);
+  assert.match(source, /const handleTriggerClick = \(\) => \{[\s\S]*?updatePanelLayout\(\);[\s\S]*?dispatch\(\{ type: 'toggle-pin' \}\);/);
+  assert.match(source, /const handlePointerEnter = \(event\) => \{[\s\S]*?updatePanelLayout\(\);[\s\S]*?dispatch\(\{ type: 'hover-enter' \}\);/);
+  assert.match(source, /\{isOpen && panelLayout !== null && \(/);
+  assert.match(source, /maxHeight: `\$\{panelLayout\.maxHeight\}px`/);
+  assert.match(source, /className={`[^`]*flex max-sm:fixed[\s\S]*flex-col pt-2/);
+  assert.match(source, /className="min-h-0 overflow-x-hidden overflow-y-auto/);
 });
 
 test('both portal shells render one account menu and no standalone account controls', () => {

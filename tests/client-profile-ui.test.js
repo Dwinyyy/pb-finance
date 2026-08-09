@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
-import { createElement } from 'react';
+import React, { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
 
@@ -18,6 +18,41 @@ const between = (source, start, end) => {
   const startIndex = source.indexOf(start);
   const endIndex = source.indexOf(end, startIndex + start.length);
   return source.slice(startIndex, endIndex < 0 ? source.length : endIndex);
+};
+
+const renderClientProfileWithCanonical = (ClientProfileDashboard, canonical) => {
+  const internals = React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+  const previousDispatcher = internals.H;
+  let stateIndex = 0;
+  let tree;
+
+  internals.H = {
+    useCallback: (callback) => callback,
+    useEffect: () => {},
+    useRef: (initialValue) => ({ current: initialValue }),
+    useState: (initialValue) => {
+      const fallback = typeof initialValue === 'function' ? initialValue() : initialValue;
+      const value = stateIndex++ === 0 ? canonical : fallback;
+      return [value, () => {}];
+    },
+  };
+
+  try {
+    tree = ClientProfileDashboard({
+      section: 'account',
+      user: {
+        company: 'Northstar Studio',
+        email: 'client@example.com',
+        id: 'client-1',
+        name: 'Current Client',
+        role: 'client',
+      },
+    });
+  } finally {
+    internals.H = previousDispatcher;
+  }
+
+  return renderToStaticMarkup(tree);
 };
 
 test('client profile composes the account and existing verification workspaces', () => {
@@ -94,6 +129,33 @@ test('client native form controls strip FormField helpers while preserving descr
   } finally {
     await vite.close();
   }
+});
+
+test('client initials avatar server-renders the shared semantic action treatment', async (t) => {
+  const vite = await createServer({
+    root: projectRoot,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+  t.after(() => vite.close());
+
+  const { ClientProfileDashboard } = await vite.ssrLoadModule('/src/components/ClientProfileDashboard.jsx');
+  const html = renderToStaticMarkup(createElement(ClientProfileDashboard, {
+    section: 'account',
+    user: {
+      company: 'Northstar Studio',
+      email: 'client@example.com',
+      id: 'client-1',
+      name: 'Avery Chen',
+      role: 'client',
+    },
+  }));
+  const initialsClassName = html.match(/<div class="([^"]+)" aria-hidden="true">AC<\/div>/)?.[1];
+
+  assert.ok(initialsClassName, 'client initials avatar must render');
+  assert.match(initialsClassName, /(?:^|\s)bg-action(?:\s|$)/);
+  assert.doesNotMatch(initialsClassName, /(?:^|\s)bg-pb-midnight(?:\s|$)/);
 });
 
 test('account loading and mutations preserve a dirty draft on failures', () => {
@@ -176,6 +238,54 @@ test('protected names and account-only avatar behavior remain explicit', () => {
   assert.match(profile, /JPEG or PNG[\s\S]*3 MB/);
   assert.match(profile, /display avatar[\s\S]*not verification evidence/i);
   assert.match(profile, /handleCancel[\s\S]*createClientProfileDraft\(canonical\.account\)/);
+});
+
+test('a current pending name request supersedes older decision history', async (t) => {
+  const vite = await createServer({
+    root: projectRoot,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+  t.after(() => vite.close());
+
+  const { ClientProfileDashboard } = await vite.ssrLoadModule('/src/components/ClientProfileDashboard.jsx');
+  const canonical = {
+    account: {
+      avatarUrl: null,
+      clientTier: 'verified',
+      clientTierLabel: 'Verified',
+      company: 'Northstar Studio',
+      email: 'client@example.com',
+      fullName: 'Current Client',
+      id: 'client-1',
+      role: 'client',
+    },
+    latestNameRequest: {
+      createdAt: '2026-07-01T00:00:00.000Z',
+      decisionReason: 'The prior request did not match the reviewed evidence.',
+      requestedFullName: 'Older Decided Name',
+      reviewedAt: '2026-07-02T00:00:00.000Z',
+      status: 'rejected',
+    },
+    pendingNameRequest: {
+      createdAt: '2026-08-01T00:00:00.000Z',
+      requestReason: 'Updated evidence now supports this name.',
+      requestedFullName: 'New Pending Name',
+      status: 'pending',
+    },
+    verification: {
+      status: 'verified',
+      verifiedBusinessName: 'Northstar Studio LLC',
+    },
+  };
+
+  const html = renderClientProfileWithCanonical(ClientProfileDashboard, canonical);
+
+  assert.match(html, /Name approval pending/);
+  assert.match(html, /New Pending Name/);
+  assert.doesNotMatch(html, /Latest name decision/);
+  assert.doesNotMatch(html, /Older Decided Name/);
 });
 
 test('client profile routing is hidden from primary navigation and preserves search state', () => {

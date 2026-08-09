@@ -65,10 +65,8 @@ export const publicUser = (user) => {
   const metadata = user?.user_metadata || {};
   const email = normalizeEmail(user?.email);
   const fallbackName = email ? email.split('@')[0].replace(/[._-]+/g, ' ') : 'PB Finance User';
-  const role = ['admin', 'professional'].includes(metadata.role) ? metadata.role : 'client';
-  const clientTier = ['basic', 'verified', 'vip'].includes(String(metadata.client_tier || '').toLowerCase())
-    ? String(metadata.client_tier).toLowerCase()
-    : 'basic';
+  const role = 'client';
+  const clientTier = 'basic';
 
   return {
     avatarUrl: metadata.avatar_url || '',

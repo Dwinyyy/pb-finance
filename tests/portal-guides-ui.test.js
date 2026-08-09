@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
 
 import {
@@ -80,6 +82,53 @@ test('shared guide delegates dialog mechanics and keeps unavailable stages visib
   assert.match(sharedGuide, /bg-action/);
 });
 
+test('actionable guide steps expose title-specific accessible button names', async (t) => {
+  const vite = await createServer({
+    appType: 'custom',
+    configFile: false,
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+  t.after(() => vite.close());
+
+  const { PortalGuideModal } = await vite.ssrLoadModule('/src/components/PortalGuideModal.jsx');
+  const TestIcon = (props) => createElement('svg', props);
+  const guide = PortalGuideModal({
+    description: 'Choose a workflow step.',
+    eyebrow: 'Workflow guide',
+    onClose: () => {},
+    open: true,
+    steps: [
+      {
+        available: true,
+        description: 'Complete the profile source.',
+        destination: { tab: 'profile' },
+        icon: TestIcon,
+        id: 'complete-profile',
+        onSelect: () => {},
+        statusLabel: 'Start here',
+        title: 'Complete profile',
+      },
+      {
+        available: true,
+        description: 'Review matched opportunities.',
+        destination: { tab: 'opportunities' },
+        icon: TestIcon,
+        id: 'opportunities',
+        onSelect: () => {},
+        statusLabel: 'Available',
+        title: 'Opportunities',
+      },
+    ],
+    title: 'Professional workflow',
+  });
+  const html = renderToStaticMarkup(guide.props.children);
+  const accessibleNames = [...html.matchAll(/aria-label="(Open [^"]+)"/g)]
+    .map((match) => match[1]);
+
+  assert.deepEqual(accessibleNames, ['Open Complete profile', 'Open Opportunities']);
+});
+
 test('client guide has exactly the approved five status-aware stages and real destinations', () => {
   assert.deepEqual(titlesFrom(clientGuide, 'CLIENT_WORKFLOW_STEPS'), [
     'Profile and verification',
@@ -157,6 +206,53 @@ test('verified professional copy stays approved when dashboard destinations are 
     assert.match(step.description, /verification remains approved/i);
     assert.doesNotMatch(step.description, /unlock(?:s|ed)? after .*approv|approval required/i);
   }
+});
+
+test('unavailable guide footers distinguish account restriction from pending approval', async (t) => {
+  const vite = await createServer({
+    appType: 'custom',
+    configFile: false,
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+  t.after(() => vite.close());
+
+  const [
+    { PortalGuideModal },
+    { ProfessionalWorkflowOnboardingModal },
+  ] = await Promise.all([
+    vite.ssrLoadModule('/src/components/PortalGuideModal.jsx'),
+    vite.ssrLoadModule('/src/components/ProfessionalWorkflowOnboardingModal.jsx'),
+  ]);
+  const renderGuideContent = (professionalPermissions) => {
+    const wrapper = ProfessionalWorkflowOnboardingModal({
+      onClose: () => {},
+      onNavigate: () => {},
+      open: true,
+      professionalPermissions,
+      user: { id: 'professional-1', name: 'Professional' },
+    });
+    const guide = PortalGuideModal(wrapper.props);
+    return renderToStaticMarkup(guide.props.children);
+  };
+
+  const restrictedHtml = renderGuideContent({
+    canAccessDashboard: false,
+    tier: 'verified',
+  });
+  const pendingHtml = renderGuideContent({
+    canAccessDashboard: false,
+    tier: 'unverified',
+  });
+
+  assert.match(restrictedHtml, /Opportunities access is restricted for this account\./);
+  assert.match(restrictedHtml, /Timesheets and earnings access is restricted for this account\./);
+  assert.doesNotMatch(restrictedHtml, /Available after the requirement above is complete/);
+  assert.equal(
+    [...pendingHtml.matchAll(/Available after the requirement above is complete/g)].length,
+    2,
+  );
+  assert.doesNotMatch(pendingHtml, /access is restricted for this account/i);
 });
 
 test('wrappers navigate only available destinations and manual reopening depends only on open', () => {

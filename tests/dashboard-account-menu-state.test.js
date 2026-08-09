@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
+import * as accountMenuState from '../src/components/dashboardAccountMenuState.js';
+
+const {
   ACCOUNT_MENU_CLOSE_DELAY_MS,
+  ACCOUNT_MENU_VIEWPORT_INSET_PX,
   createDashboardAccountMenuState,
   dashboardAccountMenuReducer,
+  getDashboardAccountMenuPanelMaxHeight,
+  getDashboardAccountMenuTriggerLabel,
   isDashboardAccountMenuOpen,
   shouldUseHoverPreview,
-} from '../src/components/dashboardAccountMenuState.js';
+} = accountMenuState;
 
 test('hover preview opens, survives re-entry, and closes only after expiry', () => {
   let state = createDashboardAccountMenuState();
@@ -44,4 +49,24 @@ test('hover preview accepts only hover-capable mouse input', () => {
   assert.equal(shouldUseHoverPreview({ hoverCapable: false, pointerType: 'mouse' }), false);
   assert.equal(shouldUseHoverPreview({ hoverCapable: true, pointerType: 'touch' }), false);
   assert.equal(shouldUseHoverPreview({ hoverCapable: true, pointerType: 'pen' }), false);
+});
+
+test('preview state announces the pin action while pinned state announces close', () => {
+  assert.equal(typeof getDashboardAccountMenuTriggerLabel, 'function');
+  const focused = dashboardAccountMenuReducer(createDashboardAccountMenuState(), { type: 'focus-enter' });
+  const hovered = dashboardAccountMenuReducer(createDashboardAccountMenuState(), { type: 'hover-enter' });
+  const pinned = dashboardAccountMenuReducer(focused, { type: 'toggle-pin' });
+
+  assert.equal(isDashboardAccountMenuOpen(focused), true);
+  assert.equal(getDashboardAccountMenuTriggerLabel(focused, 'Aldwin Gotingco'), 'Open account menu for Aldwin Gotingco');
+  assert.equal(getDashboardAccountMenuTriggerLabel(hovered, 'Aldwin Gotingco'), 'Open account menu for Aldwin Gotingco');
+  assert.equal(getDashboardAccountMenuTriggerLabel(pinned, 'Aldwin Gotingco'), 'Close account menu for Aldwin Gotingco');
+});
+
+test('panel height reserves the full bottom inset outside the pointer bridge', () => {
+  assert.equal(ACCOUNT_MENU_VIEWPORT_INSET_PX, 18);
+  assert.equal(typeof getDashboardAccountMenuPanelMaxHeight, 'function');
+  assert.equal(getDashboardAccountMenuPanelMaxHeight({ panelTop: 55, viewportHeight: 320 }), 247);
+  assert.equal(55 + 247, 320 - ACCOUNT_MENU_VIEWPORT_INSET_PX);
+  assert.equal(getDashboardAccountMenuPanelMaxHeight({ panelTop: 400, viewportHeight: 320 }), 0);
 });

@@ -1,4 +1,5 @@
 export const ACCOUNT_MENU_CLOSE_DELAY_MS = 180;
+export const ACCOUNT_MENU_VIEWPORT_INSET_PX = 18;
 
 export const createDashboardAccountMenuState = () => ({
   focusWithin: false,
@@ -14,6 +15,19 @@ export const isDashboardAccountMenuOpen = (state) => Boolean(
 export const shouldUseHoverPreview = ({ hoverCapable, pointerType }) => (
   hoverCapable === true && pointerType === 'mouse'
 );
+
+export const getDashboardAccountMenuTriggerLabel = (state, name) => (
+  `${state?.pinned ? 'Close' : 'Open'} account menu for ${String(name || '').trim()}`
+);
+
+export const getDashboardAccountMenuPanelMaxHeight = ({ panelTop, viewportHeight }) => {
+  const normalizedTop = Math.round(Number(panelTop));
+  const normalizedViewportHeight = Math.floor(Number(viewportHeight));
+
+  if (!Number.isFinite(normalizedTop) || !Number.isFinite(normalizedViewportHeight)) return 0;
+
+  return Math.max(0, normalizedViewportHeight - normalizedTop - ACCOUNT_MENU_VIEWPORT_INSET_PX);
+};
 
 export const dashboardAccountMenuReducer = (state, action) => {
   switch (action.type) {

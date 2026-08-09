@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
 import {
+  getOwnedProfilePhotoStoragePath,
   MAX_PROFILE_IMAGE_BYTES,
   parseProfileImageUpload,
 } from '../server/profileImageUpload.js';
@@ -83,4 +84,34 @@ test('profile image parser sanitizes the basename while preserving a valid exten
   assert.ok(parsed.fileName.length <= 180);
   assert.match(parsed.fileName, /^[a-z0-9._-]+\.png$/i);
   assert.doesNotMatch(parsed.fileName, /[\\/]/);
+});
+
+test('profile photo cleanup recognizes only canonical objects owned by the authenticated user', () => {
+  const userId = '00000000-0000-4000-8000-000000000001';
+  const objectName = '11111111-1111-4111-8111-111111111111-My%20Avatar.png';
+  const avatarUrl = `https://project.supabase.co/storage/v1/object/public/profile-photos/${userId}/profile/${objectName}`;
+
+  assert.equal(
+    getOwnedProfilePhotoStoragePath(avatarUrl, {
+      baseUrl: 'https://project.supabase.co',
+      bucket: 'profile-photos',
+      userId,
+    }),
+    `${userId}/profile/11111111-1111-4111-8111-111111111111-My Avatar.png`,
+  );
+
+  for (const unownedUrl of [
+    `https://attacker.example/storage/v1/object/public/profile-photos/${userId}/profile/${objectName}`,
+    `https://project.supabase.co/storage/v1/object/public/profile-photos/00000000-0000-4000-8000-000000000002/profile/${objectName}`,
+    `https://project.supabase.co/storage/v1/object/public/profile-photos/${userId}/credentials/${objectName}`,
+    `https://project.supabase.co/storage/v1/object/public/profile-photos/${userId}/profile/not-a-server-object.png`,
+    `https://project.supabase.co/storage/v1/object/public/other-bucket/${userId}/profile/${objectName}`,
+    `https://project.supabase.co/storage/v1/object/public/profile-photos/${userId}/profile/11111111-1111-4111-8111-111111111111-%2Fescape.png`,
+  ]) {
+    assert.equal(getOwnedProfilePhotoStoragePath(unownedUrl, {
+      baseUrl: 'https://project.supabase.co',
+      bucket: 'profile-photos',
+      userId,
+    }), '');
+  }
 });

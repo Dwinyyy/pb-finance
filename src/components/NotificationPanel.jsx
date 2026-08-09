@@ -23,6 +23,7 @@ const formatTime = (value) => {
 };
 
 export function NotificationPanel({
+  backButtonRef = null,
   notificationState,
   onBack = null,
   onNotificationOpened = null,
@@ -81,12 +82,13 @@ export function NotificationPanel({
   return (
     <section
       aria-labelledby={headingId}
-      className="max-h-[min(32rem,calc(100dvh-8rem))] overflow-hidden bg-surface text-text-primary"
+      className="flex max-h-[min(32rem,calc(100dvh-8rem))] flex-col overflow-hidden bg-surface text-text-primary"
     >
-      <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           {onBack && (
             <Button
+              ref={backButtonRef}
               variant="ghost"
               onClick={onBack}
               aria-label="Back to account actions"
@@ -112,7 +114,7 @@ export function NotificationPanel({
       </header>
 
       {pushState?.supported && pushState.configured && (
-        <div className="border-b border-border-subtle bg-surface-muted px-4 py-3">
+        <div className="shrink-0 border-b border-border-subtle bg-surface-muted px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 text-xs font-black text-text-primary">
@@ -152,7 +154,7 @@ export function NotificationPanel({
 
       <div
         aria-live="polite"
-        className="max-h-[min(27rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         {isLoading && (
           <div className="flex items-center gap-2 px-4 py-5 text-sm font-semibold text-text-muted">

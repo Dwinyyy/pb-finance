@@ -15,6 +15,12 @@ import { getWebPushConfig, normalizePushSubscription } from '../server/pushNotif
 import { requestRegistrationVerification, verifyRegistrationOtp } from '../server/registrationVerification.js';
 import { getSessionUser, toActiveSessionSummary } from '../server/session.js';
 import {
+  getProfessionalTierFromProfile,
+  loadProfessionalTierPermissions,
+  mapProfessionalTierPermissions,
+  normalizeProfessionalTier,
+} from '../server/professionalPermissions.js';
+import {
   mapClientVerification,
   parseClientVerificationUpload,
   validateClientVerificationDecision,
@@ -30,7 +36,10 @@ import {
   validateClientNameDecision,
   validateClientProfilePatch,
 } from '../server/clientProfile.js';
-import { parseProfileImageUpload } from '../server/profileImageUpload.js';
+import {
+  getOwnedProfilePhotoStoragePath,
+  parseProfileImageUpload,
+} from '../server/profileImageUpload.js';
 import {
   getBearerToken,
   getOAuthSignInUrl,
@@ -55,6 +64,7 @@ const getDataOptions = (req, { useServiceRole = false } = {}) => ({
 });
 
 const asList = (value) => (Array.isArray(value) ? value : []);
+const CANONICAL_ROLES = new Set(['admin', 'client', 'professional']);
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 const CREDENTIAL_UPLOAD_BUCKET = 'professional-documents';
 const CLIENT_VERIFICATION_UPLOAD_BUCKET = 'client-verification-documents';
@@ -200,28 +210,6 @@ const CLIENT_TIER_PERMISSIONS = Object.freeze({
     shortlistLimit: null,
   }),
 });
-const PROFESSIONAL_TIERS = new Set(['unverified', 'verified']);
-const PROFESSIONAL_TIER_PERMISSIONS = Object.freeze({
-  unverified: Object.freeze({
-    canAccessDashboard: false,
-    canAppearInTalentPool: false,
-    canCommentOnJobPosts: false,
-    canContactClientsFromJobs: false,
-    canToggleProfileVisibility: false,
-    canViewFullClientProfiles: false,
-    label: 'Unverified',
-  }),
-  verified: Object.freeze({
-    canAccessDashboard: true,
-    canAppearInTalentPool: true,
-    canCommentOnJobPosts: true,
-    canContactClientsFromJobs: true,
-    canToggleProfileVisibility: true,
-    canViewFullClientProfiles: true,
-    label: 'Verified',
-  }),
-});
-
 const cleanString = (value, maxLength = 500) => String(value || '').trim().slice(0, maxLength);
 const cleanBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
 const normalizeClientTier = (value) => {
@@ -229,18 +217,6 @@ const normalizeClientTier = (value) => {
 
   return CLIENT_TIERS.has(tier) ? tier : 'basic';
 };
-const normalizeProfessionalTier = (value) => {
-  const tier = cleanString(value, 40).toLowerCase();
-
-  return PROFESSIONAL_TIERS.has(tier) ? tier : 'unverified';
-};
-const getProfessionalTierFromProfile = (profile) => (
-  profile?.professional_tier === 'verified'
-    && profile?.status === 'approved'
-    && profile?.identity_verification_status === 'approved'
-    ? 'verified'
-    : 'unverified'
-);
 const getClientTier = (user) => (user?.role === 'client' ? normalizeClientTier(user.clientTier || user.client_tier) : 'basic');
 const getClientPermissions = (user) => {
   const tier = getClientTier(user);
@@ -266,23 +242,27 @@ const withClientPermissions = (user) => {
     client_tier: permissions.tier,
   };
 };
-const getProfessionalPermissions = (userOrProfile) => {
+const getProfessionalPermissions = (userOrProfile, permissionRow) => {
   const tier = userOrProfile?.user_id
     ? getProfessionalTierFromProfile(userOrProfile)
     : normalizeProfessionalTier(userOrProfile?.professionalTier || userOrProfile?.professional_tier);
-  const permissions = PROFESSIONAL_TIER_PERMISSIONS[tier] || PROFESSIONAL_TIER_PERMISSIONS.unverified;
-
-  return {
-    ...permissions,
+  return mapProfessionalTierPermissions(
     tier,
-  };
+    permissionRow || userOrProfile?.professionalPermissions
+  );
 };
-const withProfessionalPermissions = (user, profile) => {
+const withProfessionalPermissions = (user, profile, permissionRow) => {
   if (!user || user.role !== 'professional') {
     return user;
   }
 
-  const permissions = getProfessionalPermissions(profile || user);
+  const tier = profile
+    ? getProfessionalTierFromProfile(profile)
+    : normalizeProfessionalTier(user.professionalTier || user.professional_tier);
+  const permissions = mapProfessionalTierPermissions(
+    tier,
+    permissionRow || (!profile ? user.professionalPermissions : null)
+  );
 
   return {
     ...user,
@@ -294,7 +274,11 @@ const withProfessionalPermissions = (user, profile) => {
     profile_visibility: profile?.profile_visibility || user.profileVisibility || user.profile_visibility || 'hidden',
   };
 };
-const withRolePermissions = (user, professionalProfile) => withProfessionalPermissions(withClientPermissions(user), professionalProfile);
+const withRolePermissions = (user, professionalProfile, professionalPermissions) => withProfessionalPermissions(
+  withClientPermissions(user),
+  professionalProfile,
+  professionalPermissions
+);
 const placeholderTitles = new Set(['Complete your profile', 'Finance Professional']);
 const cleanProfileTitle = (value) => {
   const title = cleanString(value, 160);
@@ -491,12 +475,16 @@ const cleanProfessionalTitles = (value, fallback = []) => {
     .slice(0, 8);
 };
 const formatProfessionalTitles = (titles) => cleanProfessionalTitles(titles).join(', ');
+const withoutCanonicalRole = (user) => ({
+  ...user,
+  role: null,
+});
 
 const getProfileUserForSession = async (session) => {
   const user = publicUser(session.user);
 
   if (!user.id) {
-    return withRolePermissions(user);
+    return withoutCanonicalRole(user);
   }
 
   try {
@@ -510,8 +498,10 @@ const getProfileUserForSession = async (session) => {
     const profile = asList(rows)[0];
 
     if (!profile) {
-      return withRolePermissions(user);
+      return withoutCanonicalRole(user);
     }
+
+    const canonicalRole = CANONICAL_ROLES.has(profile.role) ? profile.role : null;
 
     const baseUser = {
       ...user,
@@ -520,13 +510,17 @@ const getProfileUserForSession = async (session) => {
       avatarUrl: profile.avatar_url || user.avatarUrl,
       avatar_url: profile.avatar_url || user.avatar_url,
       name: profile.full_name || user.name,
-      role: profile.role || user.role,
+      role: canonicalRole,
       clientTier: normalizeClientTier(profile.client_tier),
       title: profile.title || user.title,
     };
+    if (baseUser.role !== 'professional') {
+      return withRolePermissions(baseUser);
+    }
+
     let professionalProfile = null;
 
-    if (baseUser.role === 'professional') {
+    try {
       const professionalRows = await supabaseRestRequest(
         `/professional_profiles?user_id=eq.${baseUser.id}&select=professional_tier,status,profile_visibility,identity_verification_status&limit=1`,
         {
@@ -535,11 +529,26 @@ const getProfileUserForSession = async (session) => {
         }
       );
       professionalProfile = asList(professionalRows)[0] || null;
+    } catch {
+      return withRolePermissions(
+        baseUser,
+        null,
+        mapProfessionalTierPermissions('unverified', null)
+      );
     }
 
-    return withRolePermissions(baseUser, professionalProfile);
+    const tier = getProfessionalTierFromProfile(professionalProfile);
+    const permissions = await loadProfessionalTierPermissions(
+      tier,
+      (path) => supabaseRestRequest(path, {
+        token: session.access_token,
+        useServiceRole: false,
+      })
+    );
+
+    return withRolePermissions(baseUser, professionalProfile, permissions);
   } catch {
-    return withRolePermissions(user);
+    return withoutCanonicalRole(user);
   }
 };
 
@@ -1051,6 +1060,7 @@ const toClientVisibleWorkPreferences = (workPreferences) => {
 
 const mapTalentProfile = (profile, owner = {}, {
   includeDraftPending = false,
+  professionalPermissions: configuredProfessionalPermissions,
   usePending = false,
   visibility = 'directory',
 } = {}) => {
@@ -1083,7 +1093,10 @@ const mapTalentProfile = (profile, owner = {}, {
   const visibleWorkPreferences = includeClientCredentialData
     ? toClientVisibleWorkPreferences(workPreferences)
     : workPreferences;
-  const professionalPermissions = getProfessionalPermissions(profile);
+  const professionalPermissions = getProfessionalPermissions(
+    profile,
+    configuredProfessionalPermissions
+  );
 
   const mapped = {
     available: viewProfile.availability || 'Immediate Start',
@@ -1148,6 +1161,19 @@ const mapTalentProfile = (profile, owner = {}, {
   }
 
   return mapped;
+};
+
+const mapTalentProfileWithConfiguredPermissions = async (req, profile, owner = {}, options = {}) => {
+  const professionalPermissions = options.professionalPermissions
+    || await loadProfessionalTierPermissions(
+      getProfessionalTierFromProfile(profile),
+      (path) => readRows(req, path, { useServiceRole: options.visibility !== 'owner' })
+    );
+
+  return mapTalentProfile(profile, owner, {
+    ...options,
+    professionalPermissions,
+  });
 };
 
 const getTalentProfileVisibilityForViewer = (viewer, fallback = 'directory') => {
@@ -1249,7 +1275,32 @@ const loadTalentProfiles = async (req, {
     useServiceRole,
   });
 
-  return profileRows.map((profile) => mapTalentProfile(profile, owners.get(profile.user_id), { usePending, visibility }));
+  if (!includePrivateProfileData) {
+    return profileRows.map((profile) => mapTalentProfile(
+      profile,
+      owners.get(profile.user_id),
+      { usePending, visibility }
+    ));
+  }
+
+  const permissionsByTier = new Map();
+
+  return Promise.all(profileRows.map(async (profile) => {
+    const tier = getProfessionalTierFromProfile(profile);
+
+    if (!permissionsByTier.has(tier)) {
+      permissionsByTier.set(tier, loadProfessionalTierPermissions(
+        tier,
+        (path) => readRows(req, path, { useServiceRole })
+      ));
+    }
+
+    return mapTalentProfile(profile, owners.get(profile.user_id), {
+      professionalPermissions: await permissionsByTier.get(tier),
+      usePending,
+      visibility,
+    });
+  }));
 };
 
 const loadTalentProfilesForViewer = async (req, viewer, options = {}) => {
@@ -1329,7 +1380,13 @@ const requireProfessionalCapability = async (req, res, user, capability, message
     includeSensitive: true,
     useServiceRole: true,
   });
-  const permissions = getProfessionalPermissions(profile || user);
+  const tier = profile
+    ? getProfessionalTierFromProfile(profile)
+    : normalizeProfessionalTier(user?.professionalTier || user?.professional_tier);
+  const permissions = await loadProfessionalTierPermissions(
+    tier,
+    (path) => readRows(req, path, { useServiceRole: true })
+  );
 
   if (!profile || !permissions[capability]) {
     sendError(res, 403, message || 'Your professional verification status does not include this feature.');
@@ -3488,10 +3545,20 @@ const handlers = {
     }
 
     const decisionValue = validation.value.decision;
-    let decidedRequest;
+    let decisionContext;
 
     try {
-      await writeRows(
+      decisionContext = await loadAdminClientNameChange(req, requestId);
+    } catch (error) {
+      const classified = classifyClientProfileDatabaseError(error);
+      sendError(res, classified.status, classified.message);
+      return;
+    }
+
+    let decidedRows;
+
+    try {
+      decidedRows = asList(await writeRows(
         req,
         '/rpc/decide_client_name_change',
         {
@@ -3501,13 +3568,36 @@ const handlers = {
           p_reviewer_id: user.id,
         },
         { useServiceRole: true }
-      );
-      decidedRequest = await loadAdminClientNameChange(req, requestId);
+      ));
     } catch (error) {
       const classified = classifyClientProfileDatabaseError(error);
       sendError(res, classified.status, classified.message);
       return;
     }
+
+    const fallbackDecisionRow = {
+      client_id: decisionContext.clientId,
+      created_at: decisionContext.createdAt,
+      current_full_name: decisionContext.currentFullName,
+      decision_reason: validation.value.decisionReason,
+      id: decisionContext.id,
+      request_reason: decisionContext.requestReason,
+      requested_full_name: decisionContext.requestedFullName,
+      reviewed_at: new Date().toISOString(),
+      status: decisionValue,
+    };
+    const decidedRequest = mapAdminClientNameRequest(
+      decidedRows[0] || fallbackDecisionRow,
+      {
+        client: decisionContext.client,
+        verificationStatus: decisionContext.verificationStatus,
+      }
+    ) || {
+      ...decisionContext,
+      decisionReason: validation.value.decisionReason,
+      reviewedAt: fallbackDecisionRow.reviewed_at,
+      status: decisionValue,
+    };
 
     notifyUser({
       actionUrl: '/?tab=profile&section=account',
@@ -3818,7 +3908,12 @@ const handlers = {
         useServiceRole: true,
       });
       const owner = owners.get(professionalId) || {};
-      const mappedProfile = mapTalentProfile(saved, owner, { usePending: true, visibility: 'admin' });
+      const mappedProfile = await mapTalentProfileWithConfiguredPermissions(
+        req,
+        saved,
+        owner,
+        { usePending: true, visibility: 'admin' }
+      );
 
       notifyUser({
         actionUrl: '/?tab=profile',
@@ -3896,7 +3991,12 @@ const handlers = {
         useServiceRole: true,
       });
       const owner = owners.get(professionalId) || {};
-      const mappedProfile = mapTalentProfile(saved, owner, { usePending: true, visibility: 'admin' });
+      const mappedProfile = await mapTalentProfileWithConfiguredPermissions(
+        req,
+        saved,
+        owner,
+        { usePending: true, visibility: 'admin' }
+      );
 
       const reviewedDocumentLabel = reviewResult.credential.label || reviewResult.credential.fileName || 'Your document';
 
@@ -4110,7 +4210,12 @@ const handlers = {
       useServiceRole: true,
     });
     const owner = owners.get(professionalId) || {};
-    const mappedProfile = mapTalentProfile(saved, owner, { usePending: true, visibility: 'admin' });
+    const mappedProfile = await mapTalentProfileWithConfiguredPermissions(
+      req,
+      saved,
+      owner,
+      { usePending: true, visibility: 'admin' }
+    );
 
     if (['approved', 'rejected'].includes(status)) {
       const verificationReopened = status === 'rejected' && existingProfile.status === 'approved';
@@ -4314,6 +4419,14 @@ const handlers = {
     const user = await requireClientServiceSession(req, res);
     if (!user) return;
 
+    const previousPhotoPath = getOwnedProfilePhotoStoragePath(
+      user.avatar_url || user.avatarUrl,
+      {
+        baseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+        bucket: PROFILE_PHOTO_BUCKET,
+        userId: user.id,
+      }
+    );
     let upload;
 
     try {
@@ -4330,6 +4443,10 @@ const handlers = {
         const error = new Error('Client profile not found.');
         error.status = 404;
         throw error;
+      }
+
+      if (previousPhotoPath && previousPhotoPath !== upload.path) {
+        await deleteProfilePhotoFile(previousPhotoPath).catch(() => {});
       }
     } catch (error) {
       if (upload?.path) {
@@ -5189,7 +5306,7 @@ const handlers = {
       );
       const savedProfile = asList(rows)[0];
 
-      sendJson(res, 201, mapTalentProfile(savedProfile, {
+      sendJson(res, 201, await mapTalentProfileWithConfiguredPermissions(req, savedProfile, {
         avatar_url: user.avatar_url || user.avatarUrl,
         email: user.email,
         full_name: user.name,
@@ -5204,6 +5321,14 @@ const handlers = {
     const user = await requireSession(req, res, ['professional']);
     if (!user) return;
 
+    const previousPhotoPath = getOwnedProfilePhotoStoragePath(
+      user.avatar_url || user.avatarUrl,
+      {
+        baseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+        bucket: PROFILE_PHOTO_BUCKET,
+        userId: user.id,
+      }
+    );
     let upload;
 
     try {
@@ -5221,6 +5346,10 @@ const handlers = {
         const error = new Error('Professional profile not found.');
         error.status = 404;
         throw error;
+      }
+
+      if (previousPhotoPath && previousPhotoPath !== upload.path) {
+        await deleteProfilePhotoFile(previousPhotoPath).catch(() => {});
       }
 
       const activeSessionUser = await getSessionUser(req);
@@ -5248,12 +5377,17 @@ const handlers = {
     const professionalProfile = asList(profiles)[0];
 
     sendJson(res, 200, professionalProfile
-      ? mapTalentProfile(professionalProfile, {
+      ? await mapTalentProfileWithConfiguredPermissions(req, professionalProfile, {
         avatar_url: user.avatar_url || user.avatarUrl,
         email: user.email,
         full_name: user.name,
         title: user.title,
-      }, { includeDraftPending: true, usePending: true, visibility: 'owner' })
+      }, {
+        includeDraftPending: true,
+        professionalPermissions: user.professionalPermissions,
+        usePending: true,
+        visibility: 'owner',
+      })
       : user);
   },
 
@@ -5496,12 +5630,17 @@ const handlers = {
     }
 
     const activeSessionUser = await getSessionUser(req);
-    const mappedProfile = mapTalentProfile(savedProfile, {
+    const mappedProfile = await mapTalentProfileWithConfiguredPermissions(req, savedProfile, {
       avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: fullName,
       title: primaryTitle,
-    }, { includeDraftPending: true, usePending: true, visibility: 'owner' });
+    }, {
+      includeDraftPending: true,
+      professionalPermissions: activeSessionUser?.professionalPermissions || user.professionalPermissions,
+      usePending: true,
+      visibility: 'owner',
+    });
 
     sendJson(res, 200, {
       ...mappedProfile,
@@ -6007,12 +6146,17 @@ const handlers = {
     );
     const savedProfile = asList(rows)[0];
 
-    sendJson(res, 200, mapTalentProfile(savedProfile, {
+    sendJson(res, 200, await mapTalentProfileWithConfiguredPermissions(req, savedProfile, {
       avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: user.name,
       title: user.title,
-    }, { includeDraftPending: true, usePending: true, visibility: 'owner' }));
+    }, {
+      includeDraftPending: true,
+      professionalPermissions: access.permissions,
+      usePending: true,
+      visibility: 'owner',
+    }));
   },
 
   'GET /talent/profiles': async (req, res) => {
@@ -6129,7 +6273,7 @@ const handlers = {
         type: 'talent_profile_submitted',
       }).catch(() => {});
 
-      sendJson(res, 200, mapTalentProfile(savedProfile, {
+      sendJson(res, 200, await mapTalentProfileWithConfiguredPermissions(req, savedProfile, {
         avatar_url: user.avatar_url || user.avatarUrl,
         email: user.email,
         full_name: user.name,
@@ -6201,7 +6345,7 @@ const handlers = {
       type: 'talent_profile_submitted',
     }).catch(() => {});
     
-    sendJson(res, 200, mapTalentProfile(savedProfile, {
+    sendJson(res, 200, await mapTalentProfileWithConfiguredPermissions(req, savedProfile, {
       avatar_url: user.avatar_url || user.avatarUrl,
       email: user.email,
       full_name: user.name,

@@ -66,14 +66,21 @@ export function PortalGuideModal({
                   </p>
 
                   {canNavigate ? (
-                    <Button type="button" size="sm" variant="secondary" className="mt-5 self-start" onClick={step.onSelect}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="mt-5 self-start"
+                      aria-label={`Open ${step.title}`}
+                      onClick={step.onSelect}
+                    >
                       Open step
                       <ArrowRight className="ml-2 size-4" aria-hidden="true" />
                     </Button>
                   ) : (
                     <div className="mt-5 flex items-center gap-2 text-xs font-bold text-warning">
                       <LockKeyhole className="size-4" aria-hidden="true" />
-                      Available after the requirement above is complete
+                      {step.unavailableText || 'Available after the requirement above is complete'}
                     </div>
                   )}
                 </SurfaceCard>
