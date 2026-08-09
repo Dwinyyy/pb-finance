@@ -122,4 +122,6 @@ test('client profile routing is hidden from primary navigation and preserves sea
   assert.match(clientPage, /nextParams\.set\('tab', 'profile'\)/);
   assert.match(clientPage, /nextParams\.set\('section', 'verification'\)/);
   assert.match(clientPage, /setSearchParams\(nextParams, \{ replace: true \}\)/);
+  assert.match(clientPage, /onProfile=\{\(\) => setProfileSection\('account'\)\}/);
+  assert.match(clientPage, /onNotificationOpened=\{handleNotificationOpened\}/);
 });

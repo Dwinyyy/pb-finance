@@ -8,6 +8,8 @@ const professionalPage = read('../src/pages/ProfessionalPages.jsx');
 const clientPage = read('../src/pages/ClientPages.jsx');
 const adminPage = read('../src/pages/AdminPages.jsx');
 const publicPage = read('../src/pages/PublicPages.jsx');
+const dashboardAccountMenu = read('../src/components/DashboardAccountMenu.jsx');
+const notificationPanel = read('../src/components/NotificationPanel.jsx');
 
 test('mixed-content client and professional upload grids align items to intrinsic height', () => {
   assert.match(clientVerification, /className="grid items-start gap-5 lg:grid-cols-2"/);
@@ -38,4 +40,28 @@ test('public mobile navigation remains reachable on short viewports', () => {
   assert.match(menuTag, /md:max-h-\[calc\(100dvh-5rem\)\]/);
   assert.match(menuTag, /overflow-y-auto/);
   assert.match(menuTag, /overscroll-contain/);
+});
+
+test('dashboard account disclosure stays contained from 320px through desktop', () => {
+  assert.match(dashboardAccountMenu, /w-\[min\(286px,calc\(100vw-36px\)\)\]/);
+  assert.ok(
+    [...dashboardAccountMenu.matchAll(/\$\{ACCOUNT_MENU_WIDTH_CLASS\}/g)].length >= 2,
+    'capsule and dropdown must share one width class',
+  );
+  assert.match(dashboardAccountMenu, /max-sm:right-\[18px\]/);
+  assert.match(dashboardAccountMenu, /max-h-\[calc\(100dvh-var\(--dashboard-account-panel-top\)-18px\)\]/);
+  assert.match(dashboardAccountMenu, /overflow-y-auto/);
+  assert.match(dashboardAccountMenu, /overscroll-contain/);
+  assert.match(notificationPanel, /max-h-\[min\(32rem,calc\(100dvh-8rem\)\)\]/);
+
+  for (const page of [clientPage, professionalPage]) {
+    assert.match(page, /px-\[18px\] sm:px-6 lg:px-8/);
+  }
+});
+
+test('long portal identity text truncates inside the shared disclosure width', () => {
+  assert.match(dashboardAccountMenu, /block truncate text-sm font-black/);
+  assert.match(dashboardAccountMenu, /block truncate text-xs text-text-muted/);
+  assert.match(dashboardAccountMenu, /max-w-24 truncate rounded-full/);
+  assert.match(dashboardAccountMenu, /min-w-0 flex-1/);
 });

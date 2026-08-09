@@ -20,17 +20,14 @@ const matchmaker = sourceBetween(clientPage, 'function AITalentMatchmaker', 'fun
 
 test('client shell and tiers use shared signature primitives and semantic states', () => {
   assert.match(clientPage, /<BrandMark/);
-  assert.match(clientPage, /<StatusBadge/);
-  assert.match(clientPage, /toneForTier/);
+  assert.match(clientPage, /<DashboardAccountMenu/);
   assert.match(clientPage, /vip:[\s\S]*label: 'VIP'/);
-  assert.match(clientPortal, /<SurfaceCard/);
-  assert.match(clientPortal, /<Button/);
+  assert.match(clientPortal, /accountTypeLabel=\{clientPermissions\.label\}/);
   assert.match(clientPortal, /bg-canvas/);
-  assert.match(clientPortal, /text-premium-detail/);
   assert.match(clientPortal, /aria-current=\{appView === tab\.id \? 'page' : undefined\}/);
   assert.match(clientPortal, /aria-label="Client workspace navigation"/);
   assert.match(clientPortal, /min-h-11/);
-  assert.match(clientPortal, /\[&>div>button\]:min-h-11/);
+  assert.match(clientPortal, /px-\[18px\] sm:px-6 lg:px-8/);
 });
 
 test('client shell migration preserves permission, onboarding, notification, and matchmaker wiring', () => {
@@ -49,13 +46,15 @@ test('client shell migration preserves permission, onboarding, notification, and
 
   assert.match(clientPortal, /const availableTabs = useMemo/);
   assert.match(clientPortal, /CLIENT_ROUTE_TABS\.includes\(normalizedRequestedTab\)[\s\S]*routeTabIds\.includes\(normalizedRequestedTab\)/);
-  assert.match(clientPortal, /localStorage\.setItem\(onboardingStorageKey, 'true'\)/);
+  assert.match(clientPortal, /shouldShowPortalGuide\('client', user, guideStorage\)/);
+  assert.match(clientPortal, /markPortalGuideSeen\('client', user, guideStorage\)/);
   assert.match(clientPortal, /setShowWorkflowOnboarding\(true\)/);
   assert.match(clientPortal, /useTabNotificationIndicators/);
   assert.match(clientPortal, /tabUnreadCounts\[tab\.id\]/);
-  assert.match(clientPortal, /clientPermissions\.canUseMatchmaker && matchmakerVisible/);
-  assert.match(clientPortal, /setMatchmakerVisible\(!matchmakerVisible\)/);
-  assert.match(clientPortal, /onClick=\{onLogout\}/);
+  assert.match(clientPortal, /matchmakerAction=\{clientPermissions\.canUseMatchmaker\s*\?/);
+  assert.match(clientPortal, /setMatchmakerVisible\(\(current\) => !current\)/);
+  assert.match(clientPortal, /pressed:\s*matchmakerVisible/);
+  assert.match(clientPortal, /onLogout=\{onLogout\}/);
   assert.match(clientPortal, /<ClientWorkflowOnboardingModal[\s\S]*open=\{showWorkflowOnboarding\}/);
   assert.match(onboarding, /<PortalGuideModal/);
   assert.doesNotMatch(onboarding, /createPortal|useEffect/);
@@ -84,23 +83,11 @@ test('shared and native client controls meet the 44px target contract', () => {
 });
 
 test('client notification trigger and panel stay semantic and viewport-safe', () => {
-  for (const className of [
-    '[&>div>button:hover]:!text-action',
-    '[&>div>button:focus-visible]:!text-action',
-    '[&>div>div]:!fixed',
-    '[&>div>div]:!inset-x-4',
-    '[&>div>div]:!top-32',
-    '[&>div>div]:!w-auto',
-    'sm:[&>div>div]:!absolute',
-    'sm:[&>div>div]:!inset-x-auto',
-    'sm:[&>div>div]:!right-0',
-    'sm:[&>div>div]:!top-12',
-    'sm:[&>div>div]:!w-[min(22rem,calc(100vw-2rem))]',
-  ]) {
-    assert.ok(clientPortal.includes(className), `missing notification shell class: ${className}`);
-  }
-
-  assert.match(clientPortal, /<NotificationBell notificationState=\{notificationState\} unreadClassName="bg-action" userId=\{user\.id\} \/>/);
+  assert.match(clientPortal, /<DashboardAccountMenu/);
+  assert.match(clientPortal, /notificationState=\{notificationState\}/);
+  assert.match(clientPortal, /onNotificationOpened=\{handleNotificationOpened\}/);
+  assert.doesNotMatch(clientPortal, /<NotificationBell/);
+  assert.match(notificationPanel, /max-h-\[min\(32rem,calc\(100dvh-8rem\)\)\]/);
 });
 
 test('all four client modal bodies use shared semantic presentation and accessible controls', () => {

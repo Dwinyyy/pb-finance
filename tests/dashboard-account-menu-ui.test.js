@@ -8,7 +8,18 @@ import { MemoryRouter } from 'react-router-dom';
 import { createServer } from 'vite';
 
 const source = readFileSync(new URL('../src/components/DashboardAccountMenu.jsx', import.meta.url), 'utf8');
+const clientPage = readFileSync(new URL('../src/pages/ClientPages.jsx', import.meta.url), 'utf8');
+const professionalPage = readFileSync(new URL('../src/pages/ProfessionalPages.jsx', import.meta.url), 'utf8');
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+
+const sourceBetween = (value, start, end) => {
+  const startIndex = value.indexOf(start);
+  const endIndex = value.indexOf(end, startIndex + start.length);
+  return value.slice(startIndex, endIndex < 0 ? value.length : endIndex);
+};
+
+const clientPortal = sourceBetween(clientPage, 'export function ClientPortal', 'function ClientHome');
+const professionalPortal = sourceBetween(professionalPage, 'export function ProfessionalPortal', 'function AppTalentProfileView');
 
 const notificationState = {
   error: '',
@@ -83,6 +94,22 @@ test('account menu source preserves the interaction and design contracts', () =>
   assert.doesNotMatch(source, /#[0-9a-f]{3,8}/i);
 });
 
+test('account actions use Lucide icons, destination-aware theme labels, and accessible targets', () => {
+  const imports = source.slice(source.indexOf("from 'lucide-react'") - 180, source.indexOf("from 'lucide-react'") + 20);
+
+  for (const icon of ['Bell', 'BookOpen', 'LogOut', 'Moon', 'Sparkles', 'Sun', 'UserRound']) {
+    assert.match(imports, new RegExp(`\\b${icon}\\b`));
+    assert.match(source, new RegExp(`<${icon}\\b`));
+  }
+
+  assert.match(source, /isDarkMode \? 'Switch to light mode' : 'Switch to dark mode'/);
+  assert.match(source, /isDarkMode \? \([\s\S]*<Sun[\s\S]*\) : \([\s\S]*<Moon/);
+  assert.match(source, /min-h-11 min-w-11/);
+  assert.match(source, /focus-visible:ring-4 focus-visible:ring-focus\/25/);
+  assert.match(source, /aria-label=\{`\$\{isOpen \? 'Close' : 'Open'\} account menu for \$\{name\}`\}/);
+  assert.doesNotMatch(source, /(?:🔔|🌙|☀️|✨|👤|🚪)/u);
+});
+
 test('danger actions have no competing neutral tone and mobile position is seeded before open', () => {
   const structureClass = source.match(/const ACTION_STRUCTURE_CLASS = '([^']+)'/)?.[1] || '';
 
@@ -99,4 +126,54 @@ test('danger actions have no competing neutral tone and mobile position is seede
   assert.match(source, /const handleTriggerClick = \(\) => \{[\s\S]*?updatePanelTop\(\);[\s\S]*?dispatch\(\{ type: 'toggle-pin' \}\);/);
   assert.match(source, /const handlePointerEnter = \(event\) => \{[\s\S]*?updatePanelTop\(\);[\s\S]*?dispatch\(\{ type: 'hover-enter' \}\);/);
   assert.match(source, /\{isOpen && panelTop !== null && \(/);
+});
+
+test('both portal shells render one account menu and no standalone account controls', () => {
+  for (const [page, portal, role] of [
+    [clientPage, clientPortal, 'client'],
+    [professionalPage, professionalPortal, 'professional'],
+  ]) {
+    assert.match(page, /import \{ DashboardAccountMenu \} from ['"]\.\.\/components\/DashboardAccountMenu['"]/);
+    assert.equal([...portal.matchAll(/<DashboardAccountMenu\b/g)].length, 1);
+    assert.match(portal, new RegExp(`role="${role}"`));
+    assert.match(portal, /px-\[18px\] sm:px-6 lg:px-8/);
+    assert.doesNotMatch(portal, /<NotificationBell\b/);
+    assert.doesNotMatch(portal, /aria-label="(?:Client|Professional) account controls"/);
+    assert.doesNotMatch(portal, /aria-label="Toggle dark mode"/);
+    assert.doesNotMatch(portal, /aria-label="Log out"/);
+  }
+
+  assert.doesNotMatch(clientPage, /import \{ NotificationBell \}/);
+  assert.doesNotMatch(professionalPage, /import \{ NotificationBell \}/);
+});
+
+test('portal account menu callbacks preserve role-specific identity and destinations', () => {
+  assert.match(clientPortal, /onProfile=\{\(\) => setProfileSection\('account'\)\}/);
+  assert.match(
+    clientPortal,
+    /matchmakerAction=\{clientPermissions\.canUseMatchmaker\s*\?\s*\{/,
+  );
+  assert.match(clientPortal, /label:\s*matchmakerVisible\s*\?\s*'Hide AI Matchmaker'\s*:\s*'Open AI Matchmaker'/);
+  assert.match(clientPortal, /onToggle:\s*\(\) => setMatchmakerVisible\(\(current\) => !current\)/);
+  assert.match(clientPortal, /pressed:\s*matchmakerVisible/);
+  assert.doesNotMatch(clientPortal, /clientPermissions\.canUseMatchmaker && matchmakerVisible\s*\?\s*\{/);
+  assert.match(clientPortal, /companyOrContext=\{user\.company \|\| 'Client account'\}/);
+  assert.match(clientPortal, /onLogout=\{onLogout\}/);
+
+  assert.match(professionalPortal, /const professionalAccountContext = user\?\.company\s*\|\|\s*cleanProfileTitle\(user\?\.title\)\s*\|\|\s*'Independent professional'/);
+  assert.match(professionalPortal, /onProfile=\{\(\) => setAppView\('profile'\)\}/);
+  assert.match(professionalPortal, /companyOrContext=\{professionalAccountContext\}/);
+  assert.match(professionalPortal, /onLogout=\{onLogout\}/);
+  assert.doesNotMatch(professionalPortal, /matchmakerAction=/);
+});
+
+test('each portal owns one memoized notification source and refreshes identity before navigation', () => {
+  for (const portal of [clientPortal, professionalPortal]) {
+    assert.equal([...portal.matchAll(/useNotifications\(/g)].length, 1);
+    assert.match(portal, /const handleRealtimeNotification = useCallback/);
+    assert.match(portal, /const handleNotificationOpened = useCallback/);
+    assert.match(portal, /onRealtimeNotification:\s*handleRealtimeNotification/);
+    assert.match(portal, /onNotificationOpened=\{handleNotificationOpened\}/);
+    assert.match(portal, /await refreshSessionUser\(\)/);
+  }
 });

@@ -59,12 +59,14 @@ const PROFESSIONAL_WORKFLOW_STEPS = [
     id: 'opportunities',
     icon: BriefcaseBusiness,
     title: 'Opportunities',
-    build: ({ canAccessDashboard }) => ({
+    build: ({ canAccessDashboard, isVerified }) => ({
       available: Boolean(canAccessDashboard),
       destination: { tab: 'opportunities' },
-      statusLabel: canAccessDashboard ? 'Available' : 'Approval required',
+      statusLabel: canAccessDashboard ? 'Available' : isVerified ? 'Access restricted' : 'Approval required',
       description: canAccessDashboard
         ? 'Review matched client opportunities, respond to requests, and keep each engagement decision visible in the portal.'
+        : isVerified
+          ? 'Your professional verification remains approved, but Opportunities is not enabled for this account. Contact PB Finance if you believe this access is missing.'
         : 'Opportunities unlock after PB Finance approves your professional profile, identity, resume, and required credentials.',
     }),
   },
@@ -72,12 +74,14 @@ const PROFESSIONAL_WORKFLOW_STEPS = [
     id: 'earnings',
     icon: Landmark,
     title: 'Timesheets and earnings',
-    build: ({ canAccessDashboard }) => ({
+    build: ({ canAccessDashboard, isVerified }) => ({
       available: Boolean(canAccessDashboard),
       destination: { tab: 'earnings' },
-      statusLabel: canAccessDashboard ? 'Available' : 'Approval required',
+      statusLabel: canAccessDashboard ? 'Available' : isVerified ? 'Access restricted' : 'Approval required',
       description: canAccessDashboard
         ? 'Track submitted time, review pending earnings, and follow withdrawal availability once client work begins.'
+        : isVerified
+          ? 'Your professional verification remains approved, but Timesheets and earnings is not enabled for this account. Contact PB Finance if you believe this access is missing.'
         : 'Timesheets and earnings unlock with professional dashboard access and become useful after an approved client engagement starts.',
     }),
   },
@@ -94,7 +98,7 @@ export function ProfessionalWorkflowOnboardingModal({
   const tier = professionalPermissions.tier || user?.professionalTier || user?.professional_tier;
   const context = {
     canAccessDashboard,
-    isVerified: tier === 'verified' && canAccessDashboard,
+    isVerified: tier === 'verified',
   };
   const steps = PROFESSIONAL_WORKFLOW_STEPS.map(({ build, ...definition }) => ({
     ...definition,

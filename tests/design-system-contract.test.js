@@ -91,6 +91,8 @@ test('shared account and notification surfaces use semantic design tokens', () =
   for (const semanticClass of ['bg-action', 'border-focus', 'ring-focus', 'text-danger', 'bg-danger-surface']) {
     assert.match(dashboardAccountMenu, new RegExp(semanticClass));
   }
+
+  assert.doesNotMatch(dashboardAccountMenu, /(?:bg|text|border|ring)-pb-/);
 });
 
 test('document preview uses semantic presentation without weakening read-only fallbacks', () => {
@@ -157,4 +159,8 @@ test('global and reveal motion honor the reduced-motion preference', () => {
   assert.match(css, /animation-duration:\s*0\.01ms\s*!important/);
   assert.match(css, /transition-duration:\s*0\.01ms\s*!important/);
   assert.match(css, /\.verified-document-watermark\s*\{[\s\S]*animation:\s*none\s*!important/);
+  assert.match(dashboardAccountMenu, /useReducedMotion/);
+  assert.match(dashboardAccountMenu, /prefersReducedMotion\s*\?\s*'transition-none'/);
+  assert.match(dashboardAccountMenu, /motion-reduce:transition-none/);
+  assert.doesNotMatch(dashboardAccountMenu, /(?:translate|scale)[XYZ]?:/);
 });

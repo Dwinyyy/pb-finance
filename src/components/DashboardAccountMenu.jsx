@@ -270,7 +270,7 @@ export function DashboardAccountMenu({
           style={{ '--dashboard-account-panel-top': `${panelTop}px` }}
           className={`absolute right-0 top-full z-[90] pt-2 max-sm:fixed max-sm:right-[18px] max-sm:top-[var(--dashboard-account-panel-top)] ${ACCOUNT_MENU_WIDTH_CLASS}`}
         >
-          <div className="overflow-hidden rounded-card border border-border-subtle bg-surface text-text-primary shadow-modal">
+          <div className="max-h-[calc(100dvh-var(--dashboard-account-panel-top)-18px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-card border border-border-subtle bg-surface text-text-primary shadow-modal">
             {state.view === 'notifications' ? (
               <NotificationPanel
                 notificationState={notificationState}

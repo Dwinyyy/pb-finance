@@ -1,22 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   Search, MapPin, Building, Star, Filter, 
   CheckCircle, ArrowRight, User, Briefcase, 
   Menu, X, Calculator, PieChart, ShieldCheck, 
-  Mail, Lock, LogOut, Sparkles, Layers3, 
+  Mail, Lock, Sparkles, Layers3,
   BarChart3, BadgeCheck, Clock3, Handshake, 
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Camera, Eye, EyeOff,
   Bookmark, SlidersHorizontal,
   ChevronRight, FileText, Video, Download, CreditCard, Receipt,
-  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Sun, Moon, Trash2, Plus,
+  DollarSign, CheckSquare, Settings, Bot, Send, Loader2, Trash2, Plus,
   Upload, Link2, ExternalLink
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
+import { DashboardAccountMenu } from '../components/DashboardAccountMenu';
 import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
-import { NotificationBell } from '../components/NotificationBell';
 import { EmptyState } from '../components/EmptyState';
+import { ProfessionalWorkflowOnboardingModal } from '../components/ProfessionalWorkflowOnboardingModal';
 import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
 import { Eyebrow } from '../components/ui/Eyebrow';
@@ -40,6 +41,11 @@ import {
 } from '../utils/documentPreview';
 import { warmDocumentPreviewRenderer } from '../utils/pdfPreview';
 import { mergeRealtimeTalentProfile } from '../utils/profileRealtime';
+import {
+  getPortalGuideStorageKey,
+  markPortalGuideSeen,
+  shouldShowPortalGuide,
+} from '../utils/portalGuideStorage';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_PROFILE = Object.freeze({});
@@ -675,16 +681,52 @@ export function ProfessionalPortal({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'profile';
-  const professionalPermissions = getProfessionalPortalPermissions(user);
-  const availableTabs = professionalPermissions.canAccessDashboard ? PROFESSIONAL_TABS : ['profile'];
+  const section = searchParams.get('section');
+  const professionalPermissions = useMemo(() => getProfessionalPortalPermissions(user), [user]);
+  const availableTabs = useMemo(() => (
+    professionalPermissions.canAccessDashboard ? PROFESSIONAL_TABS : ['profile']
+  ), [professionalPermissions.canAccessDashboard]);
   const appView = availableTabs.includes(requestedTab) ? requestedTab : 'profile';
-  const setAppView = (tab) => setSearchParams({ tab });
+  const setAppView = useCallback((tab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', tab);
+    nextParams.delete('section');
+    setSearchParams(nextParams);
+  }, [searchParams, setSearchParams]);
+  const guideStorage = typeof window === 'undefined' ? null : window.localStorage;
+  const guideStorageKey = getPortalGuideStorageKey('professional', user);
+  const initialWorkflowOnboarding = useMemo(
+    () => shouldShowPortalGuide('professional', user, guideStorage),
+    [guideStorage, user],
+  );
+  const [workflowOnboardingState, setWorkflowOnboardingState] = useState(() => ({
+    key: guideStorageKey,
+    open: initialWorkflowOnboarding,
+  }));
+  const showWorkflowOnboarding = workflowOnboardingState.key === guideStorageKey
+    ? workflowOnboardingState.open
+    : initialWorkflowOnboarding;
+  const setShowWorkflowOnboarding = useCallback((nextOpen) => {
+    setWorkflowOnboardingState((current) => {
+      const currentOpen = current.key === guideStorageKey ? current.open : initialWorkflowOnboarding;
+      return {
+        key: guideStorageKey,
+        open: typeof nextOpen === 'function' ? nextOpen(currentOpen) : nextOpen,
+      };
+    });
+  }, [guideStorageKey, initialWorkflowOnboarding]);
+  const handleRealtimeNotification = useCallback((notification) => {
+    if (PROFESSIONAL_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
+      Promise.resolve(refreshSessionUser()).catch(() => {});
+    }
+  }, [refreshSessionUser]);
+  const handleNotificationOpened = useCallback(async (notification) => {
+    if (PROFESSIONAL_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
+      await refreshSessionUser();
+    }
+  }, [refreshSessionUser]);
   const notificationState = useNotifications(user?.id, {
-    onRealtimeNotification: (notification) => {
-      if (PROFESSIONAL_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
-        refreshSessionUser();
-      }
-    },
+    onRealtimeNotification: handleRealtimeNotification,
   });
   const { notifications } = notificationState;
   const tabUnreadCounts = useTabNotificationIndicators({
@@ -694,59 +736,64 @@ export function ProfessionalPortal({
     storageKey: `pb_professional_page_notification_indicators:${user?.id || user?.email || 'unknown'}`,
     tabIds: availableTabs,
   });
+  const professionalAccountContext = user?.company
+    || cleanProfileTitle(user?.title)
+    || 'Independent professional';
+
+  const dismissWorkflowOnboarding = useCallback(() => {
+    markPortalGuideSeen('professional', user, guideStorage);
+    setShowWorkflowOnboarding(false);
+  }, [guideStorage, setShowWorkflowOnboarding, user]);
+
+  const navigateFromGuide = useCallback((destination) => {
+    if (!destination?.tab || !availableTabs.includes(destination.tab)) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', destination.tab);
+    if (destination.tab === 'profile' && ['identity', 'credentials'].includes(destination.section)) {
+      nextParams.set('section', destination.section);
+    } else {
+      nextParams.delete('section');
+    }
+    setSearchParams(nextParams);
+    markPortalGuideSeen('professional', user, guideStorage);
+    setShowWorkflowOnboarding(false);
+  }, [availableTabs, guideStorage, searchParams, setSearchParams, setShowWorkflowOnboarding, user]);
 
   return (
     <div className="relative flex min-h-screen flex-col bg-canvas font-sans text-text-primary">
+      <ProfessionalWorkflowOnboardingModal
+        open={showWorkflowOnboarding}
+        onClose={dismissWorkflowOnboarding}
+        onNavigate={navigateFromGuide}
+        professionalPermissions={professionalPermissions}
+        user={user}
+      />
+
       {/* App Header */}
       <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 shadow-card backdrop-blur-xl">
-        <div className="mx-auto max-w-[1600px] px-3 sm:px-6 lg:px-8">
-          <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 py-2">
-            <div className="order-1 flex min-w-0 items-center gap-3">
+        <div className="mx-auto max-w-[1600px] px-[18px] sm:px-6 lg:px-8">
+          <div className="flex min-h-16 items-center gap-3 py-2">
+            <div className="flex min-w-0 items-center gap-3">
               <BrandMark compact className="shrink-0" />
               <span className="hidden text-sm font-bold tracking-tight text-text-primary sm:inline">Professional Portal</span>
             </div>
 
-            <SurfaceCard
-              as="div"
-              tone="muted"
-              className="order-2 ml-auto flex min-w-0 items-center gap-2 px-2.5 py-1.5 shadow-none lg:order-3"
-            >
-              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-pb-midnight text-sm font-black text-white" aria-hidden="true">
-                {(user.name || '?').charAt(0)}
-              </div>
-              <div className="min-w-0 text-right">
-                <div className="max-w-20 truncate text-xs font-bold leading-tight text-text-primary sm:max-w-40 sm:text-sm">{user.name || 'Profile pending'}</div>
-                <div className="hidden max-w-40 truncate text-xs font-medium text-text-muted md:block">{cleanProfileTitle(user.title) || 'Complete your profile'}</div>
-              </div>
-              <StatusBadge label={professionalPermissions.label} tone={toneForTier(professionalPermissions.tier)} />
-            </SurfaceCard>
-
-            <div className="order-3 flex w-full items-center justify-end gap-1 border-t border-border-subtle pt-2 lg:order-2 lg:ml-auto lg:w-auto lg:border-0 lg:pt-0" aria-label="Professional account controls">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={toggleDarkMode}
-                className="min-h-11 min-w-11 !p-2 text-text-muted"
-                title="Toggle Dark Mode"
-                aria-label="Toggle dark mode"
-              >
-                {isDarkMode ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
-              </Button>
-              <div className="[&>div]:h-11 [&>div]:w-11 [&>div>button]:min-h-11 [&>div>button]:min-w-11 [&>div>button]:rounded-control [&>div>button]:text-text-muted [&>div>button:hover]:!text-action [&>div>button:focus-visible]:!text-action [&>div>button]:focus-visible:outline-none [&>div>button]:focus-visible:ring-4 [&>div>button]:focus-visible:ring-focus/25 [&>div>div]:!fixed [&>div>div]:!inset-x-4 [&>div>div]:!top-32 [&>div>div]:!w-auto sm:[&>div>div]:!absolute sm:[&>div>div]:!inset-x-auto sm:[&>div>div]:!right-0 sm:[&>div>div]:!top-12 sm:[&>div>div]:!w-[min(22rem,calc(100vw-2rem))]">
-                <NotificationBell notificationState={notificationState} unreadClassName="bg-action" userId={user.id} />
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onLogout}
-                className="min-h-11 min-w-11 !p-2 text-danger"
-                aria-label="Log out"
-                title="Log out"
-              >
-                <LogOut size={18} aria-hidden="true" />
-              </Button>
+            <div className="ml-auto shrink-0">
+              <DashboardAccountMenu
+                accountTypeLabel={professionalPermissions.label}
+                avatarUrl={user.avatarUrl || user.avatar_url || ''}
+                companyOrContext={professionalAccountContext}
+                isDarkMode={isDarkMode}
+                name={user.name || 'Professional account'}
+                notificationState={notificationState}
+                onGuide={() => setShowWorkflowOnboarding(true)}
+                onLogout={onLogout}
+                onNotificationOpened={handleNotificationOpened}
+                onProfile={() => setAppView('profile')}
+                onThemeToggle={toggleDarkMode}
+                role="professional"
+              />
             </div>
           </div>
         </div>
@@ -792,7 +839,9 @@ export function ProfessionalPortal({
               Professional dashboard access unlocks after admin approves your identity, resume, and required documents. Your profile stays hidden from clients until then.
             </SurfaceCard>
           )}
-          {appView === 'profile' && <AppTalentProfileView user={user} onUserUpdated={onUserUpdated} />}
+          {appView === 'profile' && (
+            <AppTalentProfileView section={section} user={user} onUserUpdated={onUserUpdated} />
+          )}
           {appView === 'opportunities' && <AppTalentOpportunitiesView user={user} />}
           {appView === 'earnings' && <AppTalentEarningsView />}
         </div>
@@ -801,7 +850,7 @@ export function ProfessionalPortal({
   );
 }
 
-function AppTalentProfileView({ user, onUserUpdated = () => {} }) {
+function AppTalentProfileView({ section, user, onUserUpdated = () => {} }) {
   const { data: profile, isLoading: isProfileLoading } = useBackendResource(
     backendApi.talent.getMyProfile,
     EMPTY_PROFILE,
@@ -833,6 +882,24 @@ function AppTalentProfileView({ user, onUserUpdated = () => {} }) {
   useEffect(() => {
     setSavedProfile(profile || EMPTY_PROFILE);
   }, [profile]);
+
+  useEffect(() => {
+    const targetId = section === 'identity'
+      ? 'professional-identity-verification'
+      : section === 'credentials'
+        ? 'professional-credentials'
+        : '';
+    if (!targetId || isProfileLoading) return undefined;
+
+    const frame = window.requestAnimationFrame(() => {
+      const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      document.getElementById(targetId)?.scrollIntoView({ behavior, block: 'start' });
+    });
+
+    return function cancelSectionScroll() {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [isProfileLoading, section]);
 
   const applyProfileUpdate = (updated) => {
     setSavedProfile(updated || EMPTY_PROFILE);
@@ -1237,20 +1304,24 @@ function AppTalentProfileView({ user, onUserUpdated = () => {} }) {
         </FadeIn>
 
         <FadeIn delay={200}>
-          <ProfessionalIdentityVerificationPanel
-            onProfileUpdated={applyProfileUpdate}
-            profile={savedProfile}
-          />
+          <div id="professional-identity-verification" className="scroll-mt-24">
+            <ProfessionalIdentityVerificationPanel
+              onProfileUpdated={applyProfileUpdate}
+              profile={savedProfile}
+            />
+          </div>
         </FadeIn>
 
         <FadeIn delay={250}>
-          <AppTalentCredentialsSection
-            isLoading={isProfileLoading}
-            onProfileUpdated={applyProfileUpdate}
-            profile={savedProfile}
-            selectedTitles={activeCredentialTitles}
-            user={user}
-          />
+          <div id="professional-credentials" className="scroll-mt-24">
+            <AppTalentCredentialsSection
+              isLoading={isProfileLoading}
+              onProfileUpdated={applyProfileUpdate}
+              profile={savedProfile}
+              selectedTitles={activeCredentialTitles}
+              user={user}
+            />
+          </div>
         </FadeIn>
       </div>
       </div>

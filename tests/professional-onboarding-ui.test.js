@@ -142,15 +142,24 @@ test('professional shell and dashboard use shared signature primitives and seman
   }
 
   assert.match(professionalPortal, /<BrandMark/);
-  assert.match(professionalPortal, /<StatusBadge/);
-  assert.match(professionalPortal, /toneForTier\(professionalPermissions\.tier\)/);
+  assert.match(professionalPortal, /<DashboardAccountMenu/);
+  assert.match(professionalPortal, /accountTypeLabel=\{professionalPermissions\.label\}/);
   assert.match(professionalPortal, /<SurfaceCard/);
-  assert.match(professionalPortal, /<Button/);
   assert.match(professionalPortal, /bg-canvas/);
   assert.match(professionalPortal, /aria-label="Professional workspace navigation"/);
   assert.match(professionalPortal, /aria-current=\{appView === tab\.id \? 'page' : undefined\}/);
   assert.match(professionalPortal, /min-h-11/);
-  assert.match(professionalPortal, /unreadClassName="bg-action"/);
+  assert.doesNotMatch(professionalPortal, /<NotificationBell/);
+  assert.match(professionalPortal, /onNotificationOpened=\{handleNotificationOpened\}/);
+  assert.match(professionalPortal, /onGuide=\{\(\) => setShowWorkflowOnboarding\(true\)\}/);
+});
+
+test('professional guide destinations reach the profile, identity, and credential sections', () => {
+  assert.match(professionalPortal, /const section = searchParams\.get\('section'\)/);
+  assert.match(professionalPortal, /<AppTalentProfileView[\s\S]*section=\{section\}/);
+  assert.match(profileView, /professional-identity-verification/);
+  assert.match(profileView, /professional-credentials/);
+  assert.match(profileView, /scrollIntoView/);
 });
 
 test('professional migration preserves admin approval and dashboard permission locking', () => {
@@ -165,7 +174,7 @@ test('professional migration preserves admin approval and dashboard permission l
     assert.match(professionalPage, new RegExp(permission.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 
-  assert.match(professionalPortal, /const availableTabs = professionalPermissions\.canAccessDashboard \? PROFESSIONAL_TABS : \['profile'\]/);
+  assert.match(professionalPortal, /professionalPermissions\.canAccessDashboard \? PROFESSIONAL_TABS : \['profile'\]/);
   assert.match(professionalPortal, /availableTabs\.includes\(requestedTab\) \? requestedTab : 'profile'/);
   assert.match(professionalPortal, /!professionalPermissions\.canAccessDashboard[\s\S]*admin approves your identity, resume, and required documents/i);
 });
@@ -200,7 +209,7 @@ test('professional profile drafts never write pending identity into active profi
 test('professional approval copies the reviewed source into the active identity', () => {
   const adminTalentPatch = routeBlock('PATCH /admin/talent');
 
-  assert.match(adminTalentPatch, /const approvedProfileSource\s*=\s*hasPendingChanges/);
+  assert.match(adminTalentPatch, /getApprovedProfessionalIdentity\(existingProfile\)/);
   assert.match(adminTalentPatch, /status === 'approved'[\s\S]*\/profiles\?id=eq\.\$\{professionalId\}/);
   assert.match(adminTalentPatch, /full_name:\s*approvedFullName/);
   assert.match(adminTalentPatch, /title:\s*approvedTitles\[0\]\s*\|\|\s*null/);

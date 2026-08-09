@@ -1,33 +1,36 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search, MapPin, Building, Star, Filter,
   CheckCircle, User, Briefcase,
   Menu, X, Calculator, PieChart, ShieldCheck,
-  Mail, Lock, LogOut, Sparkles, Layers3,
+  Mail, Lock, Sparkles, Layers3,
   BarChart3, BadgeCheck, Clock3, Handshake,
   Globe2, TrendingDown, ChevronDown, ChevronUp,
   Bookmark, MessageSquare, SlidersHorizontal,
   ChevronLeft, ChevronRight, FileText, Calendar, Video, Download, CreditCard, Receipt,
-  DollarSign, Settings, Bot, Send, Loader2, Sun, Moon
+  DollarSign, Settings, Bot, Send, Loader2
 } from 'lucide-react';
 import FadeIn from '../components/FadeIn';
 import { ClientProfileDashboard } from '../components/ClientProfileDashboard';
 import { ClientWorkflowOnboardingModal } from '../components/ClientWorkflowOnboardingModal';
-import { NotificationBell } from '../components/NotificationBell';
+import { DashboardAccountMenu } from '../components/DashboardAccountMenu';
 import { EmptyState } from '../components/EmptyState';
 import { BrandMark } from '../components/ui/BrandMark';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { StatusBadge } from '../components/ui/StatusBadge';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
-import { toneForTier } from '../components/ui/statusTone';
 import { useNotifications } from '../hooks/useNotifications';
 import { useTabNotificationIndicators } from '../hooks/useTabNotificationIndicators';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useBackendResource } from '../hooks/useBackendResource';
 import { backendApi, isBackendConfigured } from '../services/api';
 import { AVAILABILITY_OPTIONS, SOFTWARE_OPTIONS, SKILLS_OPTIONS } from '../data/constants';
+import {
+  getPortalGuideStorageKey,
+  markPortalGuideSeen,
+  shouldShowPortalGuide,
+} from '../utils/portalGuideStorage';
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_BILLING = Object.freeze({
@@ -141,21 +144,6 @@ const scheduleTimeOptions = Array.from({ length: 23 }, (_, index) => {
   const minutes = index % 2 === 0 ? '00' : '30';
   return `${padTimePart(hour)}:${minutes}`;
 });
-const CLIENT_ONBOARDING_STORAGE_PREFIX = 'pb_client_workflow_onboarding_seen_v1';
-
-const getClientOnboardingStorageKey = (user) => {
-  const identifier = user?.id || user?.email || user?.company || 'local-client';
-  return `${CLIENT_ONBOARDING_STORAGE_PREFIX}:${identifier}`;
-};
-
-const shouldShowClientWorkflowOnboarding = (storageKey) => {
-  try {
-    return !localStorage.getItem(storageKey);
-  } catch {
-    return true;
-  }
-};
-
 function DocumentPreviewer({ url, type }) {
   const isImage = type?.includes('image') || url?.match(/\.(jpeg|jpg|gif|png)$/i);
   return (
@@ -451,14 +439,40 @@ export function ClientPortal({
     setSearchParams(nextParams);
   };
   const [matchmakerVisible, setMatchmakerVisible] = useState(() => clientPermissions.canUseMatchmaker);
-  const onboardingStorageKey = getClientOnboardingStorageKey(user);
-  const [showWorkflowOnboarding, setShowWorkflowOnboarding] = useState(() => shouldShowClientWorkflowOnboarding(onboardingStorageKey));
+  const guideStorage = typeof window === 'undefined' ? null : window.localStorage;
+  const guideStorageKey = getPortalGuideStorageKey('client', user);
+  const initialWorkflowOnboarding = useMemo(
+    () => shouldShowPortalGuide('client', user, guideStorage),
+    [guideStorage, user],
+  );
+  const [workflowOnboardingState, setWorkflowOnboardingState] = useState(() => ({
+    key: guideStorageKey,
+    open: initialWorkflowOnboarding,
+  }));
+  const showWorkflowOnboarding = workflowOnboardingState.key === guideStorageKey
+    ? workflowOnboardingState.open
+    : initialWorkflowOnboarding;
+  const setShowWorkflowOnboarding = useCallback((nextOpen) => {
+    setWorkflowOnboardingState((current) => {
+      const currentOpen = current.key === guideStorageKey ? current.open : initialWorkflowOnboarding;
+      return {
+        key: guideStorageKey,
+        open: typeof nextOpen === 'function' ? nextOpen(currentOpen) : nextOpen,
+      };
+    });
+  }, [guideStorageKey, initialWorkflowOnboarding]);
+  const handleRealtimeNotification = useCallback((notification) => {
+    if (CLIENT_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
+      Promise.resolve(refreshSessionUser()).catch(() => {});
+    }
+  }, [refreshSessionUser]);
+  const handleNotificationOpened = useCallback(async (notification) => {
+    if (CLIENT_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
+      await refreshSessionUser();
+    }
+  }, [refreshSessionUser]);
   const notificationState = useNotifications(user?.id, {
-    onRealtimeNotification: (notification) => {
-      if (CLIENT_IDENTITY_NOTIFICATION_TYPES.has(notification?.type)) {
-        refreshSessionUser();
-      }
-    },
+    onRealtimeNotification: handleRealtimeNotification,
   });
   const { notifications } = notificationState;
   const tabUnreadCounts = useTabNotificationIndicators({
@@ -486,109 +500,65 @@ export function ClientPortal({
     }
   }, [requestedTab, routeTabIds, searchParams, setSearchParams]);
 
-  const dismissWorkflowOnboarding = () => {
-    try {
-      localStorage.setItem(onboardingStorageKey, 'true');
-    } catch {
-      // The modal should still close even if browser storage is unavailable.
-    }
-
+  const dismissWorkflowOnboarding = useCallback(() => {
+    markPortalGuideSeen('client', user, guideStorage);
     setShowWorkflowOnboarding(false);
-  };
+  }, [guideStorage, setShowWorkflowOnboarding, user]);
 
-  const startWorkflowOnboarding = () => {
-    dismissWorkflowOnboarding();
-    setAppView('discover');
-  };
+  const navigateFromGuide = useCallback((destination) => {
+    if (!destination?.tab || !routeTabIds.includes(destination.tab)) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', destination.tab);
+    if (destination.tab === 'profile' && destination.section) {
+      nextParams.set('section', destination.section);
+    } else {
+      nextParams.delete('section');
+    }
+    setSearchParams(nextParams);
+    markPortalGuideSeen('client', user, guideStorage);
+    setShowWorkflowOnboarding(false);
+  }, [guideStorage, routeTabIds, searchParams, setSearchParams, setShowWorkflowOnboarding, user]);
 
   return (
     <div className="relative flex min-h-screen flex-col bg-canvas font-sans text-text-primary">
       <ClientWorkflowOnboardingModal
+        clientPermissions={clientPermissions}
         user={user}
         open={showWorkflowOnboarding}
         onClose={dismissWorkflowOnboarding}
-        onStart={startWorkflowOnboarding}
+        onNavigate={navigateFromGuide}
       />
 
       {/* App Header */}
       <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 shadow-card backdrop-blur-xl">
-        <div className="mx-auto max-w-[1600px] px-3 sm:px-6 lg:px-8">
-          <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 py-2">
-            <div className="order-1 flex min-w-0 items-center gap-3">
+        <div className="mx-auto max-w-[1600px] px-[18px] sm:px-6 lg:px-8">
+          <div className="flex min-h-16 items-center gap-3 py-2">
+            <div className="flex min-w-0 items-center gap-3">
               <BrandMark compact className="shrink-0" />
               <span className="hidden text-sm font-bold tracking-tight text-text-primary sm:inline">Client Portal</span>
             </div>
 
-            <SurfaceCard
-              as="div"
-              tone="muted"
-              className="order-2 ml-auto flex min-w-0 items-center gap-2 px-2.5 py-1.5 shadow-none lg:order-3"
-            >
-              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-pb-midnight text-sm font-black text-white" aria-hidden="true">
-                {user.name.charAt(0)}
-              </div>
-              <div className="min-w-0 text-right">
-                <div className="max-w-20 truncate text-xs font-bold leading-tight text-text-primary sm:max-w-40 sm:text-sm">{user.name}</div>
-                <div className="hidden max-w-40 truncate text-xs font-medium text-text-muted md:block">{user.company}</div>
-              </div>
-              <StatusBadge label={clientPermissions.label} tone={toneForTier(clientPermissions.tier)} />
-              {clientPermissions.tier === 'vip' && (
-                <Sparkles size={14} className="shrink-0 text-premium-detail" aria-hidden="true" />
-              )}
-            </SurfaceCard>
-
-            <div className="order-3 flex w-full items-center justify-end gap-1 border-t border-border-subtle pt-2 lg:order-2 lg:ml-auto lg:w-auto lg:border-0 lg:pt-0" aria-label="Client account controls">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowWorkflowOnboarding(true)}
-                className="min-h-11 min-w-11 !p-2 text-text-muted"
-                title="Open client workflow guide"
-                aria-label="Open client workflow guide"
-              >
-                <Sparkles size={18} className="text-action" aria-hidden="true" />
-                <span className="ml-2 hidden sm:inline">Guide</span>
-              </Button>
-              {clientPermissions.canUseMatchmaker && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setMatchmakerVisible(!matchmakerVisible)}
-                  className={`min-h-11 min-w-11 !p-2 ${matchmakerVisible ? 'text-action' : 'text-text-muted'}`}
-                  title={`${clientPermissions.label} AI Matchmaker`}
-                  aria-label={`${clientPermissions.label} AI Matchmaker`}
-                  aria-pressed={matchmakerVisible}
-                >
-                  <Bot size={20} aria-hidden="true" />
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={toggleDarkMode}
-                className="min-h-11 min-w-11 !p-2 text-text-muted"
-                title="Toggle Dark Mode"
-                aria-label="Toggle dark mode"
-              >
-                {isDarkMode ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
-              </Button>
-              <div className="[&>div]:h-11 [&>div]:w-11 [&>div>button]:min-h-11 [&>div>button]:min-w-11 [&>div>button]:rounded-control [&>div>button]:text-text-muted [&>div>button:hover]:!text-action [&>div>button:focus-visible]:!text-action [&>div>button]:focus-visible:outline-none [&>div>button]:focus-visible:ring-4 [&>div>button]:focus-visible:ring-focus/25 [&>div>div]:!fixed [&>div>div]:!inset-x-4 [&>div>div]:!top-32 [&>div>div]:!w-auto sm:[&>div>div]:!absolute sm:[&>div>div]:!inset-x-auto sm:[&>div>div]:!right-0 sm:[&>div>div]:!top-12 sm:[&>div>div]:!w-[min(22rem,calc(100vw-2rem))]">
-                <NotificationBell notificationState={notificationState} unreadClassName="bg-action" userId={user.id} />
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onLogout}
-                className="min-h-11 min-w-11 !p-2 text-danger"
-                aria-label="Log out"
-                title="Log out"
-              >
-                <LogOut size={18} aria-hidden="true" />
-              </Button>
+            <div className="ml-auto shrink-0">
+              <DashboardAccountMenu
+                accountTypeLabel={clientPermissions.label}
+                avatarUrl={user.avatarUrl || user.avatar_url || ''}
+                companyOrContext={user.company || 'Client account'}
+                isDarkMode={isDarkMode}
+                matchmakerAction={clientPermissions.canUseMatchmaker ? {
+                  label: matchmakerVisible ? 'Hide AI Matchmaker' : 'Open AI Matchmaker',
+                  onToggle: () => setMatchmakerVisible((current) => !current),
+                  pressed: matchmakerVisible,
+                } : null}
+                name={user.name || 'Client account'}
+                notificationState={notificationState}
+                onGuide={() => setShowWorkflowOnboarding(true)}
+                onLogout={onLogout}
+                onNotificationOpened={handleNotificationOpened}
+                onProfile={() => setProfileSection('account')}
+                onThemeToggle={toggleDarkMode}
+                role="client"
+              />
             </div>
           </div>
         </div>

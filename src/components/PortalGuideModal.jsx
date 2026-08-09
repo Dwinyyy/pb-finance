@@ -49,7 +49,7 @@ export function PortalGuideModal({
               <li key={step.id} className="min-w-0">
                 <SurfaceCard as="article" className="flex h-full min-w-0 flex-col p-5 shadow-none">
                   <div className="flex items-start justify-between gap-3">
-                    <div className={`grid size-11 shrink-0 place-items-center rounded-control ${step.available ? 'bg-pb-midnight text-white' : 'bg-warning-surface text-warning'}`}>
+                    <div className={`grid size-11 shrink-0 place-items-center rounded-control ${step.available ? 'bg-action text-white' : 'bg-warning-surface text-warning'}`}>
                       <Icon className="size-5" aria-hidden="true" />
                     </div>
                     <div className="flex items-center gap-2">

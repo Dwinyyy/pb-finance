@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createServer } from 'vite';
 
 import {
   PORTAL_GUIDE_VERSIONS,
@@ -13,6 +14,8 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const sharedGuide = read('../src/components/PortalGuideModal.jsx');
 const clientGuide = read('../src/components/ClientWorkflowOnboardingModal.jsx');
 const professionalGuide = read('../src/components/ProfessionalWorkflowOnboardingModal.jsx');
+const clientPage = read('../src/pages/ClientPages.jsx');
+const professionalPage = read('../src/pages/ProfessionalPages.jsx');
 
 const createStorage = () => {
   const values = new Map();
@@ -73,6 +76,8 @@ test('shared guide delegates dialog mechanics and keeps unavailable stages visib
   assert.match(sharedGuide, /step\.onSelect/);
   assert.match(sharedGuide, /Close guide/);
   assert.doesNotMatch(sharedGuide, /(?:slate|red|emerald|amber|cyan|blue|primary)-|#[0-9a-f]{3,8}/i);
+  assert.doesNotMatch(sharedGuide, /(?:bg|text|border)-pb-[a-z0-9-]+/i);
+  assert.match(sharedGuide, /bg-action/);
 });
 
 test('client guide has exactly the approved five status-aware stages and real destinations', () => {
@@ -111,6 +116,49 @@ test('professional guide has exactly the approved six stages and gates dashboard
   assert.match(professionalGuide, /tab:\s*'earnings'/);
 });
 
+test('verified professional copy stays approved when dashboard destinations are restricted', async (t) => {
+  const vite = await createServer({
+    appType: 'custom',
+    configFile: false,
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+  t.after(() => vite.close());
+
+  const { ProfessionalWorkflowOnboardingModal } = await vite.ssrLoadModule(
+    '/src/components/ProfessionalWorkflowOnboardingModal.jsx'
+  );
+  const guide = ProfessionalWorkflowOnboardingModal({
+    onClose: () => {},
+    onNavigate: () => {},
+    open: true,
+    professionalPermissions: {
+      canAccessDashboard: false,
+      tier: 'verified',
+    },
+    user: { id: 'professional-1', name: 'Verified Professional' },
+  });
+  const steps = guide.props.steps;
+
+  assert.deepEqual(steps.slice(0, 4).map((step) => step.statusLabel), [
+    'Complete',
+    'Approved',
+    'Approved',
+    'Verified',
+  ]);
+  assert.deepEqual(steps.slice(0, 4).map((step) => step.available), [true, true, true, true]);
+  assert.deepEqual(steps.slice(4).map((step) => step.statusLabel), [
+    'Access restricted',
+    'Access restricted',
+  ]);
+  assert.deepEqual(steps.slice(4).map((step) => step.available), [false, false]);
+  assert.deepEqual(steps.slice(4).map((step) => step.onSelect), [undefined, undefined]);
+  for (const step of steps.slice(4)) {
+    assert.match(step.description, /verification remains approved/i);
+    assert.doesNotMatch(step.description, /unlock(?:s|ed)? after .*approv|approval required/i);
+  }
+});
+
 test('wrappers navigate only available destinations and manual reopening depends only on open', () => {
   for (const source of [clientGuide, professionalGuide]) {
     assert.match(source, /if \(!step\.available \|\| !step\.destination\) return/);
@@ -118,5 +166,31 @@ test('wrappers navigate only available destinations and manual reopening depends
     assert.match(source, /onClose\?\.\(\)/);
     assert.match(source, /open=\{open\}/);
     assert.doesNotMatch(source, /shouldShowPortalGuide|localStorage|getPortalGuideStorageKey/);
+  }
+});
+
+test('portal shells own SSR-safe versioned first-run state and preserve manual reopening', () => {
+  for (const [page, role, modal] of [
+    [clientPage, 'client', 'ClientWorkflowOnboardingModal'],
+    [professionalPage, 'professional', 'ProfessionalWorkflowOnboardingModal'],
+  ]) {
+    assert.match(page, /const guideStorage = typeof window === 'undefined' \? null : window\.localStorage/);
+    assert.match(page, new RegExp(`shouldShowPortalGuide\\('${role}', user, guideStorage\\)`));
+    assert.match(page, new RegExp(`markPortalGuideSeen\\('${role}', user, guideStorage\\)`));
+    assert.match(page, /onGuide=\{\(\) => setShowWorkflowOnboarding\(true\)\}/);
+    assert.equal([...page.matchAll(new RegExp(`<${modal}\\b`, 'g'))].length, 1);
+  }
+});
+
+test('valid guide navigation marks the current guide seen and preserves unrelated query state', () => {
+  for (const [page, role] of [
+    [clientPage, 'client'],
+    [professionalPage, 'professional'],
+  ]) {
+    assert.match(page, /const navigateFromGuide = useCallback/);
+    assert.match(page, /const nextParams = new URLSearchParams\(searchParams\)/);
+    assert.match(page, /nextParams\.set\('tab', destination\.tab\)/);
+    assert.match(page, new RegExp(`markPortalGuideSeen\\('${role}', user, guideStorage\\)`));
+    assert.match(page, /setShowWorkflowOnboarding\(false\)/);
   }
 });
