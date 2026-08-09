@@ -368,6 +368,7 @@ const nameChangeFocusEntrySource = `
   import React from 'react';
   import { createRoot } from 'react-dom/client';
   import { ClientNameChangeReview } from '/src/components/ClientNameChangeReview.jsx';
+  import { useBackendResource } from '/src/hooks/useBackendResource.js';
 
   const request = {
     client: { company: 'Northstar Studio', email: 'client@example.com' },
@@ -397,14 +398,18 @@ const nameChangeFocusEntrySource = `
     };
 
     function Harness() {
-      const [data, setData] = React.useState({ pendingCount: 1, requests: [request] });
-      const refetch = React.useCallback(async () => {
+      const loadCountRef = React.useRef(0);
+      const initialData = React.useMemo(() => ({ pendingCount: 1, requests: [request] }), []);
+      const loadResource = React.useCallback(async () => {
+        loadCountRef.current += 1;
+        if (loadCountRef.current === 1) return initialData;
         if (mode === 'stale') throw new Error('The canonical queue is unavailable.');
-        setData({ pendingCount: 0, requests: [{ ...request, status: 'approved', reviewedAt: '2026-07-17T03:00:00.000Z' }] });
-      }, [mode]);
+        return { pendingCount: 0, requests: [{ ...request, status: 'approved', reviewedAt: '2026-07-17T03:00:00.000Z' }] };
+      }, [initialData, mode]);
+      const nameChangeResource = useBackendResource(loadResource, initialData);
 
       return React.createElement(ClientNameChangeReview, {
-        nameChangeResource: { data, error: null, isLoading: false, refetch },
+        nameChangeResource,
       });
     }
 
@@ -421,6 +426,8 @@ const accountMenuFocusEntrySource = `
   import { createRoot } from 'react-dom/client';
   import { MemoryRouter } from 'react-router-dom';
   import { DashboardAccountMenu } from '/src/components/DashboardAccountMenu.jsx';
+  import { AITalentMatchmaker } from '/src/pages/ClientPages.jsx';
+  import '/src/index.css';
 
   const notificationState = {
     error: '',
@@ -432,26 +439,40 @@ const accountMenuFocusEntrySource = `
     unreadCount: 2,
   };
 
-  window.__mountDashboardAccountMenu = () => {
+  window.__mountDashboardAccountMenu = ({ withMatchmaker = false } = {}) => {
+    window.__accountMenuRoot?.unmount();
     document.body.replaceChildren(document.createElement('div'));
     window.__accountMenuRoot = createRoot(document.body.firstElementChild);
     window.__accountMenuRoot.render(React.createElement(
       MemoryRouter,
       null,
-      React.createElement(DashboardAccountMenu, {
-        accountTypeLabel: 'Verified account',
-        avatarUrl: '',
-        companyOrContext: 'PB Finance',
-        isDarkMode: false,
-        name: 'Aldwin Gotingco',
-        notificationState,
-        onGuide: () => {},
-        onLogout: () => {},
-        onNotificationOpened: () => {},
-        onProfile: () => {},
-        onThemeToggle: () => {},
-        role: 'client',
-      })
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(
+          'header',
+          { className: 'fixed inset-x-0 top-0 z-40 flex justify-end bg-surface p-2' },
+          React.createElement(DashboardAccountMenu, {
+            accountTypeLabel: 'Verified account',
+            avatarUrl: '',
+            companyOrContext: 'PB Finance',
+            isDarkMode: false,
+            name: 'Aldwin Gotingco',
+            notificationState,
+            onGuide: () => {},
+            onLogout: () => {},
+            onNotificationOpened: () => {},
+            onProfile: () => {},
+            onThemeToggle: () => {},
+            role: 'client',
+          })
+        ),
+        withMatchmaker
+          ? React.createElement(AITalentMatchmaker, {
+            clientPermissions: { label: 'Verified', matchmakerLevel: 'basic' },
+          })
+          : null
+      )
     ));
   };
 `;
@@ -548,8 +569,8 @@ test('known decisions remain above resource failures with decision-specific sema
   assert.match(nameChangeReview, /decisionOutcome/);
   assert.match(nameChangeReview, /setDecisionOutcome\(getNameChangeDecisionOutcome\(decision\)\)/);
   assert.match(nameChangeReview, /<FeedbackMessage tone=\{decisionOutcome\.tone\}>/);
-  assert.match(nameChangeReview, /persistentFeedback[\s\S]*if \(error\)/);
-  assert.match(nameChangeReview, /if \(error\)[\s\S]*persistentFeedback[\s\S]*Unable to load name change requests/);
+  assert.match(nameChangeReview, /persistentFeedback[\s\S]*if \(error && sortedRequests\.length === 0\)/);
+  assert.match(nameChangeReview, /error && sortedRequests\.length > 0[\s\S]*if \(error && sortedRequests\.length === 0\)[\s\S]*persistentFeedback[\s\S]*Unable to load name change requests/);
   assert.match(nameChangeReview, /setDecisionOutcome\(getStaleNameChangeDecisionOutcome\(\)\)/);
 });
 
@@ -672,7 +693,7 @@ test('rendered name-change decisions keep focus in the stable region through pen
             if (request.url !== '/__name-change-focus-test.html') return next();
 
             response.setHeader('Content-Type', 'text/html');
-            response.end(`<!doctype html><html><body>
+            response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>
               <script type="module">
                 import RefreshRuntime from '/@react-refresh';
                 RefreshRuntime.injectIntoGlobalHook(window);
@@ -721,7 +742,7 @@ test('rendered name-change decisions keep focus in the stable region through pen
   }
 });
 
-test('notification subview moves focus to Back and restores the Notifications action', {
+test('account menu preserves notification focus and paints above the open Matchmaker', {
   skip: headlessChromeExecutable ? false : 'Headless Chrome/Chromium was not found. Set PB_TEST_CHROME_EXECUTABLE to its executable path.',
 }, async () => {
   let vite;
@@ -751,7 +772,7 @@ test('notification subview moves focus to Back and restores the Notifications ac
             if (request.url !== '/__account-menu-focus-test.html') return next();
 
             response.setHeader('Content-Type', 'text/html');
-            response.end(`<!doctype html><html><body>
+            response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>
               <script type="module">
                 import RefreshRuntime from '/@react-refresh';
                 RefreshRuntime.injectIntoGlobalHook(window);
@@ -812,6 +833,63 @@ test('notification subview moves focus to Back and restores the Notifications ac
       assert.equal(await browser.cdp.evaluate(`Boolean(document.querySelector('[aria-label="Account actions"]'))`), true);
       assert.equal(await browser.cdp.evaluate(`document.activeElement?.textContent.trim().startsWith('Notifications')`), true);
     });
+
+    await browser.cdp.send('Emulation.setDeviceMetricsOverride', {
+      deviceScaleFactor: 1,
+      height: 568,
+      mobile: true,
+      width: 320,
+    });
+    await browser.cdp.evaluate('window.__mountDashboardAccountMenu({ withMatchmaker: true })');
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate(`Boolean(document.querySelector('[aria-label="Open AI Matchmaker"]'))`), true);
+    });
+    await browser.cdp.evaluate(`
+      (() => {
+        document.querySelector('[aria-label="Open AI Matchmaker"]').click();
+        [...document.querySelectorAll('button')]
+          .find((button) => button.getAttribute('aria-label')?.startsWith('Open account menu'))
+          .click();
+        return true;
+      })()
+    `);
+    await waitFor(async () => {
+      assert.equal(await browser.cdp.evaluate(`Boolean(document.querySelector('[aria-label="Account actions"]'))`), true);
+      assert.equal(await browser.cdp.evaluate(`
+        (() => {
+          const matchmaker = document.querySelector('div[aria-hidden="false"]');
+          if (!matchmaker) return false;
+          const rect = matchmaker.getBoundingClientRect();
+          return rect.width > 250 && rect.height > 300;
+        })()
+      `), true);
+    });
+    const stacking = await browser.cdp.evaluate(`
+      (() => {
+        const trigger = [...document.querySelectorAll('button')]
+          .find((button) => button.getAttribute('aria-label')?.includes('account menu'));
+        const panel = document.getElementById(trigger.getAttribute('aria-controls'));
+        const matchmaker = document.querySelector('div[aria-hidden="false"]');
+        const panelRect = panel.getBoundingClientRect();
+        const matchmakerRect = matchmaker.getBoundingClientRect();
+        const left = Math.max(panelRect.left, matchmakerRect.left);
+        const right = Math.min(panelRect.right, matchmakerRect.right);
+        const top = Math.max(panelRect.top, matchmakerRect.top);
+        const bottom = Math.min(panelRect.bottom, matchmakerRect.bottom);
+        const target = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+
+        return {
+          matchmakerRect: { bottom: matchmakerRect.bottom, left: matchmakerRect.left, right: matchmakerRect.right, top: matchmakerRect.top },
+          overlapHeight: bottom - top,
+          overlapWidth: right - left,
+          panelRect: { bottom: panelRect.bottom, left: panelRect.left, right: panelRect.right, top: panelRect.top },
+          panelOwnsTopElement: panel.contains(target),
+        };
+      })()
+    `);
+    assert.ok(stacking.overlapHeight > 0, JSON.stringify(stacking));
+    assert.ok(stacking.overlapWidth > 0, JSON.stringify(stacking));
+    assert.equal(stacking.panelOwnsTopElement, true, JSON.stringify(stacking));
   } finally {
     await cleanup();
   }

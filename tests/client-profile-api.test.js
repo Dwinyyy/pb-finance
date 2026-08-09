@@ -203,7 +203,7 @@ const createAdminDecisionFetch = () => {
   return { fetch, state };
 };
 
-const storageObjectPath = (pathname) => {
+const uploadedStorageObjectPath = (pathname) => {
   const prefix = '/storage/v1/object/profile-photos/';
 
   return pathname.startsWith(prefix)
@@ -214,6 +214,7 @@ const storageObjectPath = (pathname) => {
 const createClientPhotoFetch = ({ avatarUrl, updateSucceeds = true }) => {
   const initialProfile = canonicalProfile({ avatarUrl, id: CLIENT_ID, role: 'client' });
   const state = {
+    deleteRequests: [],
     deletedPaths: [],
     events: [],
     newPath: '',
@@ -231,19 +232,27 @@ const createClientPhotoFetch = ({ avatarUrl, updateSucceeds = true }) => {
       return jsonResponse({ id: 'profile-photos', public: true });
     }
 
+    if (url.pathname === '/storage/v1/object/profile-photos' && method === 'DELETE') {
+      const body = JSON.parse(String(init.body || '{}'));
+      const prefixes = Array.isArray(body.prefixes) ? body.prefixes : [];
+
+      state.deleteRequests.push({
+        contentType: new Headers(init.headers).get('Content-Type'),
+        pathname: url.pathname,
+        prefixes,
+      });
+      state.deletedPaths.push(...prefixes);
+      state.events.push(...prefixes.map((path) => `delete:${path}`));
+      return jsonResponse({});
+    }
+
     if (url.pathname.startsWith('/storage/v1/object/profile-photos/')) {
-      const path = storageObjectPath(url.pathname);
+      const path = uploadedStorageObjectPath(url.pathname);
 
       if (method === 'POST') {
         state.newPath = path;
         state.events.push(`upload:${path}`);
         return jsonResponse({ Key: path });
-      }
-
-      if (method === 'DELETE') {
-        state.deletedPaths.push(path);
-        state.events.push(`delete:${path}`);
-        return jsonResponse({});
       }
     }
 
@@ -351,6 +360,11 @@ test('client photo replacement deletes only the prior canonical object owned by 
     assert.equal(res.body.avatarUrl, supabase.state.patchedAvatarUrl, scenario.name);
 
     if (scenario.expectedDeletes.length) {
+      assert.deepEqual(supabase.state.deleteRequests, [{
+        contentType: 'application/json',
+        pathname: '/storage/v1/object/profile-photos',
+        prefixes: scenario.expectedDeletes,
+      }], scenario.name);
       assert.ok(
         supabase.state.events.indexOf('profile-patch')
           < supabase.state.events.indexOf(`delete:${scenario.expectedDeletes[0]}`),
@@ -382,6 +396,11 @@ test('failed client photo profile update removes the new object and preserves th
 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(supabase.state.deletedPaths, [supabase.state.newPath]);
+  assert.deepEqual(supabase.state.deleteRequests, [{
+    contentType: 'application/json',
+    pathname: '/storage/v1/object/profile-photos',
+    prefixes: [supabase.state.newPath],
+  }]);
   assert.ok(!supabase.state.deletedPaths.includes(ownedPath));
 });
 

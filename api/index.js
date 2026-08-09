@@ -1903,8 +1903,11 @@ const uploadProfilePhotoFile = async ({ body, userId }) => {
 };
 
 const deleteProfilePhotoFile = (path) => supabaseStorageRequest(
-  `/object/${PROFILE_PHOTO_BUCKET}/${encodeStoragePath(path)}`,
-  { method: 'DELETE' }
+  `/object/${PROFILE_PHOTO_BUCKET}`,
+  {
+    body: { prefixes: [path] },
+    method: 'DELETE',
+  }
 );
 
 const uploadClientVerificationFile = async ({ body, userId }) => {

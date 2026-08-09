@@ -24,6 +24,16 @@ test('client Matchmaker uses viewport-safe mobile insets and a capped dynamic he
   assert.doesNotMatch(clientPage, /fixed bottom-8 right-8 w-\[400px\] h-\[600px\]/);
 });
 
+test('client account controls remain above both Matchmaker surfaces when they overlap', () => {
+  const headerLayer = Number(clientPage.match(/<header className="[^"]*\bz-(\d+)\b/)?.[1]);
+  const matchmakerLayers = [...clientPage.matchAll(/className=\{`fixed[^`]*\bz-(\d+)\b/g)]
+    .map((match) => Number(match[1]));
+
+  assert.equal(headerLayer, 40);
+  assert.deepEqual(matchmakerLayers, [30, 30]);
+  assert.ok(matchmakerLayers.every((layer) => layer < headerLayer));
+});
+
 test('admin identity header can wrap and truncate without pushing controls off-screen', () => {
   assert.match(adminPage, /flex min-h-16[^"]*flex-wrap[^"]*gap-2[^"]*py-2/);
   assert.match(adminPage, /className="flex min-w-0 flex-1 items-center gap-4"/);

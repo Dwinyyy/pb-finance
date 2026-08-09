@@ -618,7 +618,7 @@ export function ClientPortal({
 }
 
 // --- AI MATCHMAKER COMPONENT ---
-function AITalentMatchmaker({ clientPermissions }) {
+export function AITalentMatchmaker({ clientPermissions }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputMsg, setInputMsg] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -683,7 +683,7 @@ function AITalentMatchmaker({ clientPermissions }) {
         type="button"
         onClick={() => setIsOpen(true)}
         aria-label="Open AI Matchmaker"
-        className={`fixed bottom-8 right-8 w-16 h-16 bg-slate-950 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-105 transition-transform z-50 ${isOpen ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
+        className={`fixed bottom-8 right-8 z-30 flex h-16 w-16 items-center justify-center rounded-full bg-slate-950 text-white shadow-2xl transition-transform hover:scale-105 ${isOpen ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
       >
         <Sparkles size={24} className="text-cyan-400" aria-hidden="true" />
       </button>
@@ -694,7 +694,7 @@ function AITalentMatchmaker({ clientPermissions }) {
         dragMomentum={false}
         inert={!isOpen}
         aria-hidden={!isOpen}
-        className={`fixed inset-x-4 bottom-4 flex h-[min(600px,calc(100dvh-2rem))] w-auto max-h-[80dvh] flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl transition-all duration-300 origin-bottom-right z-50 dark:border-slate-800 dark:bg-slate-900 sm:left-auto sm:right-8 sm:bottom-8 sm:w-[400px] ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}
+        className={`fixed inset-x-4 bottom-4 z-30 flex h-[min(600px,calc(100dvh-2rem))] w-auto max-h-[80dvh] origin-bottom-right flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 sm:left-auto sm:right-8 sm:bottom-8 sm:w-[400px] ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}
       >
 
         {/* Chat Header */}

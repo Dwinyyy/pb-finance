@@ -255,6 +255,13 @@ export function ClientNameChangeReview({ nameChangeResource, onBusyChange }) {
           <FeedbackMessage tone="danger">{actionError}</FeedbackMessage>
         </div>
       )}
+      {error && sortedRequests.length > 0 && !actionError && (
+        <div role="alert">
+          <FeedbackMessage tone="danger">
+            {error.message || 'The canonical queue could not refresh. Retry the queue.'}
+          </FeedbackMessage>
+        </div>
+      )}
     </>
   );
 
@@ -272,7 +279,7 @@ export function ClientNameChangeReview({ nameChangeResource, onBusyChange }) {
     );
   }
 
-  if (error) {
+  if (error && sortedRequests.length === 0) {
     return (
       <div className="space-y-6">
         {persistentFeedback}
