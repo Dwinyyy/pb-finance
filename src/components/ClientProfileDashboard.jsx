@@ -365,9 +365,10 @@ export function ClientProfileDashboard({
 
                   <form onSubmit={handleSave} className="space-y-5" noValidate>
                     <FormField id="client-full-name" label="Full name" error={fieldErrors.fullName} required>
-                      {(fieldProps) => (
+                      {({ describedBy, ...fieldProps }) => (
                         <input
                           {...fieldProps}
+                          data-description-id={describedBy}
                           id="client-full-name"
                           value={draft.fullName}
                           readOnly={hasPendingNameRequest}
@@ -376,9 +377,10 @@ export function ClientProfileDashboard({
                       )}
                     </FormField>
                     <FormField id="client-company" label="Display company" error={fieldErrors.company} required>
-                      {(fieldProps) => (
+                      {({ describedBy, ...fieldProps }) => (
                         <input
                           {...fieldProps}
+                          data-description-id={describedBy}
                           id="client-company"
                           value={draft.company}
                           onChange={(event) => updateDraft('company', event.target.value)}
@@ -394,9 +396,10 @@ export function ClientProfileDashboard({
                         hint="A 1 to 1,000 character explanation is required. Your active name stays unchanged until an admin approves it."
                         required
                       >
-                        {(fieldProps) => (
+                        {({ describedBy, ...fieldProps }) => (
                           <textarea
                             {...fieldProps}
+                            data-description-id={describedBy}
                             id="client-name-change-reason"
                             rows={4}
                             value={draft.requestReason}

@@ -680,10 +680,12 @@ function AITalentMatchmaker({ clientPermissions }) {
     <>
       {/* Floating Action Button */}
       <button
+        type="button"
         onClick={() => setIsOpen(true)}
+        aria-label="Open AI Matchmaker"
         className={`fixed bottom-8 right-8 w-16 h-16 bg-slate-950 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-105 transition-transform z-50 ${isOpen ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
       >
-        <Sparkles size={24} className="text-cyan-400" />
+        <Sparkles size={24} className="text-cyan-400" aria-hidden="true" />
       </button>
 
       {/* AI Chat Window */}

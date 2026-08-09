@@ -127,13 +127,25 @@ test('shared controls server-render their accessible state', async () => {
   });
 
   try {
-    const [formFieldModule, toggleModule, segmentedModule, buttonModule, surfaceCardModule] = await Promise.all([
+    const [brandMarkModule, formFieldModule, toggleModule, segmentedModule, buttonModule, surfaceCardModule] = await Promise.all([
+      vite.ssrLoadModule('/src/components/ui/BrandMark.jsx'),
       vite.ssrLoadModule('/src/components/ui/FormField.jsx'),
       vite.ssrLoadModule('/src/components/ui/Toggle.jsx'),
       vite.ssrLoadModule('/src/components/ui/SegmentedControl.jsx'),
       vite.ssrLoadModule('/src/components/ui/Button.jsx'),
       vite.ssrLoadModule('/src/components/ui/SurfaceCard.jsx'),
     ]);
+
+    for (const props of [
+      { label: 'PB Finance' },
+      { compact: true, label: 'PB Finance home' },
+    ]) {
+      const brandMark = renderToStaticMarkup(createElement(brandMarkModule.BrandMark, props));
+      assert.match(brandMark, /^<span[^>]*\srole="img"/);
+      assert.match(brandMark, new RegExp(`^<span[^>]*\\saria-label="${props.label}"`));
+      assert.equal([...brandMark.matchAll(/aria-label=/g)].length, 1);
+      assert.match(brandMark, /<span aria-hidden="true"/);
+    }
 
     const formField = renderToStaticMarkup(createElement(formFieldModule.FormField, {
       id: 'email',

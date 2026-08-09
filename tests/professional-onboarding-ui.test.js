@@ -361,7 +361,7 @@ test('professional permission and profile-save helpers preserve exact output', a
   }
 });
 
-test('professional portal server-renders accessible signature state at 320px-safe markup boundaries', async () => {
+test('professional portal server-renders accessible signature state and metric text at full semantic contrast', async () => {
   const vite = await createServer({
     root: projectRoot,
     appType: 'custom',
@@ -396,6 +396,18 @@ test('professional portal server-renders accessible signature state at 320px-saf
     assert.match(html, /Verified Client/);
     assert.match(html, /Professional Dashboard/);
     assert.match(html, /overflow-x-auto/);
+
+    const metricLabelClassName = html.match(
+      /<div class="([^"]*text-\[10px\][^"]*)"><svg[\s\S]*?<\/svg>Profile<\/div>/,
+    )?.[1];
+    const metricDetailClassName = html.match(
+      /<div class="([^"]*mt-1 text-xs font-bold[^"]*)">\d+\/\d+ profile fields<\/div>/,
+    )?.[1];
+
+    assert.ok(metricLabelClassName, 'profile metric label must render');
+    assert.ok(metricDetailClassName, 'profile metric detail must render');
+    assert.doesNotMatch(metricLabelClassName, /(?:^|\s)opacity-\d+(?:\s|$)/);
+    assert.doesNotMatch(metricDetailClassName, /(?:^|\s)opacity-\d+(?:\s|$)/);
   } finally {
     await vite.close();
   }

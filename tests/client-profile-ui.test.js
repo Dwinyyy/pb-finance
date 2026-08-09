@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createServer } from 'vite';
 
 const profile = readFileSync(
   new URL('../src/components/ClientProfileDashboard.jsx', import.meta.url),
   'utf8',
 );
 const clientPage = readFileSync(new URL('../src/pages/ClientPages.jsx', import.meta.url), 'utf8');
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 const between = (source, start, end) => {
   const startIndex = source.indexOf(start);
@@ -27,6 +32,68 @@ test('client profile composes the account and existing verification workspaces',
     assert.match(profile, new RegExp(`<${primitive}\\b`));
   }
   assert.doesNotMatch(profile, /#[0-9a-f]{3,8}/i);
+});
+
+test('client native form controls strip FormField helpers while preserving descriptions', async () => {
+  assert.equal(
+    [...profile.matchAll(/\{\(\{ describedBy, \.\.\.fieldProps \}\) => \(/g)].length,
+    3,
+    'each client input or textarea must remove the helper-only describedBy prop before spreading',
+  );
+
+  const vite = await createServer({
+    root: projectRoot,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+
+  try {
+    const [{ ClientProfileDashboard }, { FormField }] = await Promise.all([
+      vite.ssrLoadModule('/src/components/ClientProfileDashboard.jsx'),
+      vite.ssrLoadModule('/src/components/ui/FormField.jsx'),
+    ]);
+    const warnings = [];
+    const originalConsoleError = console.error;
+    let profileMarkup;
+
+    try {
+      console.error = (...args) => warnings.push(args.map(String).join(' '));
+      profileMarkup = renderToStaticMarkup(createElement(ClientProfileDashboard, {
+        section: 'account',
+        user: {
+          company: 'Northstar Studio',
+          email: 'client@example.com',
+          id: 'client-1',
+          name: 'Avery Chen',
+          role: 'client',
+        },
+      }));
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    assert.doesNotMatch(profileMarkup, /\sdescribedBy=/);
+    assert.equal([...profileMarkup.matchAll(/data-description-id="client-(?:full-name|company)-description"/g)].length, 2);
+    assert.equal(warnings.some((warning) => warning.includes('does not recognize the') && warning.includes('describedBy')), false);
+
+    const describedControlMarkup = renderToStaticMarkup(createElement(FormField, {
+      hint: 'Shown to clients on your PB Finance account.',
+      id: 'client-test-control',
+      label: 'Client test control',
+      children: ({ describedBy, ...fieldProps }) => createElement('input', {
+        ...fieldProps,
+        id: 'client-test-control',
+        'data-description-id': describedBy,
+      }),
+    }));
+
+    assert.match(describedControlMarkup, /aria-describedby="client-test-control-description"/);
+    assert.match(describedControlMarkup, /data-description-id="client-test-control-description"/);
+    assert.doesNotMatch(describedControlMarkup, /\sdescribedBy=/);
+  } finally {
+    await vite.close();
+  }
 });
 
 test('account loading and mutations preserve a dirty draft on failures', () => {

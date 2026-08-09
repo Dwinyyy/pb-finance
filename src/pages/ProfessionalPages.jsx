@@ -658,12 +658,12 @@ function DashboardMetric({ detail, icon, label, value, variant = 'slate' }) {
 
   return (
     <SurfaceCard as="div" className={`p-4 ${variantStyles[variant] || variantStyles.slate}`}>
-      <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider opacity-80">
+      <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
         <MetricIcon size={14} aria-hidden="true" />
         {label}
       </div>
       <div className="text-xl font-black leading-tight tracking-tight">{value}</div>
-      {detail && <div className="mt-1 text-xs font-bold opacity-75">{detail}</div>}
+      {detail && <div className="mt-1 text-xs font-bold">{detail}</div>}
     </SurfaceCard>
   );
 }

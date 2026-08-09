@@ -69,6 +69,18 @@ test('Discover layout shrinks without exposing closed matchmaker controls', () =
   assert.match(matchmaker, /aria-hidden=\{!isOpen\}/);
 });
 
+test('Matchmaker floating trigger exposes an explicit accessible button name', () => {
+  const triggerStart = matchmaker.indexOf('{/* Floating Action Button */}');
+  const triggerEnd = matchmaker.indexOf('</button>', triggerStart);
+  const trigger = matchmaker.slice(triggerStart, triggerEnd + '</button>'.length);
+
+  assert.notEqual(triggerStart, -1, 'floating Matchmaker trigger is missing');
+  assert.notEqual(triggerEnd, -1, 'floating Matchmaker trigger button is incomplete');
+  assert.match(trigger, /<button[\s\S]*?type="button"/);
+  assert.match(trigger, /aria-label="Open AI Matchmaker"/);
+  assert.match(trigger, /<Sparkles\b[^>]*aria-hidden="true"/);
+});
+
 test('shared and native client controls meet the 44px target contract', () => {
   assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center"/);
   assert.match(notificationBell, /className="relative flex h-11 w-11 items-center justify-center text-text-muted/);
