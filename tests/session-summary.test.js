@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { __testing as apiTesting } from '../api/index.js';
 import { toActiveSessionSummary } from '../server/session.js';
 import { mergeSessionSummary, normalizeSessionSummary } from '../src/utils/sessionSummary.js';
 
@@ -245,7 +246,8 @@ test('client and professional shells refresh only for identity-affecting notific
   ]) {
     assert.match(clientPageSource, new RegExp(type));
   }
-  assert.match(clientPageSource, /onRealtimeNotification:[\s\S]*refreshSessionUser\(\)/);
+  assert.match(clientPageSource, /const handleRealtimeNotification[\s\S]*CLIENT_IDENTITY_NOTIFICATION_TYPES\.has[\s\S]*refreshSessionUser\(\)/);
+  assert.match(clientPageSource, /onRealtimeNotification:\s*handleRealtimeNotification/);
 
   for (const type of [
     'profile_status_updated',
@@ -255,7 +257,8 @@ test('client and professional shells refresh only for identity-affecting notific
   ]) {
     assert.match(professionalPageSource, new RegExp(type));
   }
-  assert.match(professionalPageSource, /onRealtimeNotification:[\s\S]*refreshSessionUser\(\)/);
+  assert.match(professionalPageSource, /const handleRealtimeNotification[\s\S]*PROFESSIONAL_IDENTITY_NOTIFICATION_TYPES\.has[\s\S]*refreshSessionUser\(\)/);
+  assert.match(professionalPageSource, /onRealtimeNotification:\s*handleRealtimeNotification/);
 });
 
 test('profile surfaces update App only with server-provided session summaries', () => {
@@ -290,4 +293,168 @@ test('client mutation summaries are server-scoped so save and photo completions 
     saveRoute.slice(saveRoute.indexOf('sessionSummary:')),
     /\['id', 'avatarUrl'\]/
   );
+});
+
+test('approved professional draft identity remains pending in every non-submit save path', () => {
+  const currentProfile = {
+    identity_verification_status: 'approved',
+    pending_profile: {},
+    professional_tier: 'verified',
+    profile_visibility: 'visible',
+    review_status: null,
+    status: 'approved',
+    titles: ['Approved Controller'],
+    user_id: 'professional-1',
+  };
+  const profilePayload = {
+    bio: 'Updated public bio',
+    full_name: 'Pending Professional Name',
+    titles: ['Pending Draft Title'],
+  };
+  const owner = {
+    full_name: 'Approved Professional Name',
+    title: 'Approved Controller',
+  };
+  const viewer = { clientTier: 'basic', id: 'client-1', role: 'client' };
+
+  for (const shouldReflectCredentialDraft of [false, true]) {
+    const patch = apiTesting.buildApprovedProfessionalDraftPatch({
+      currentProfile,
+      now: '2026-07-17T00:00:00.000Z',
+      profilePayload,
+      shouldReflectCredentialDraft,
+    });
+    const savedProfile = { ...currentProfile, ...patch };
+    const mapped = apiTesting.mapTalentProfileForViewer(savedProfile, owner, viewer);
+
+    assert.equal(Object.hasOwn(patch, 'titles'), false);
+    assert.equal(savedProfile.pending_profile.full_name, 'Pending Professional Name');
+    assert.deepEqual(savedProfile.pending_profile.titles, ['Pending Draft Title']);
+    assert.equal(mapped.name, 'Approved Professional Name');
+    assert.equal(mapped.title, 'Approved Controller');
+  }
+});
+
+test('professional approval promotes pending identity and a reviewed no-pending source', () => {
+  const reviewedIdentity = apiTesting.getApprovedProfessionalIdentity({
+    full_name: 'Reviewed Professional Name',
+    pending_profile: {},
+    titles: ['Reviewed Accountant'],
+  });
+
+  assert.deepEqual(reviewedIdentity, {
+    fullName: 'Reviewed Professional Name',
+    titles: ['Reviewed Accountant'],
+  });
+
+  const pendingIdentity = apiTesting.toPendingProfessionalIdentity({
+    full_name: 'Submitted Professional Name',
+    titles: ['Submitted Controller'],
+  });
+  const approvedIdentity = apiTesting.getApprovedProfessionalIdentity({
+    full_name: 'Old Reviewed Name',
+    pending_profile: pendingIdentity,
+    titles: ['Old Reviewed Title'],
+  });
+
+  assert.deepEqual(pendingIdentity, {
+    full_name: 'Submitted Professional Name',
+    titles: ['Submitted Controller'],
+  });
+  assert.deepEqual(approvedIdentity, {
+    fullName: 'Submitted Professional Name',
+    titles: ['Submitted Controller'],
+  });
+});
+
+test('session epoch ignores an auth refresh that resolves after logout and same-user re-login', async () => {
+  const callbackStart = appSource.indexOf('const handleUserUpdated =');
+  const callbackEnd = appSource.indexOf('const toggleDarkMode =', callbackStart);
+  const callbackSource = appSource.slice(callbackStart, callbackEnd);
+  const logoutStart = appSource.indexOf('const handleLogout =');
+  const logoutEnd = appSource.indexOf('  return (', logoutStart);
+  const logoutSource = appSource.slice(logoutStart, logoutEnd);
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((done) => { resolve = done; });
+    return { promise, resolve };
+  };
+  const staleRequest = deferred();
+  const currentRequest = deferred();
+  const requests = [staleRequest.promise, currentRequest.promise];
+  const backendApi = {
+    auth: {
+      logout: async () => {},
+      me: () => requests.shift(),
+    },
+  };
+  const sessionEpochRef = { current: 0 };
+  const sessionRefreshPromiseRef = { current: null };
+  const userRef = {
+    current: { id: 'same-user', name: 'Before logout', professionalTier: 'verified' },
+  };
+  let renderedUser = userRef.current;
+  const storage = new Map([
+    ['pb_auth_token', 'old-token'],
+    ['pb_user', JSON.stringify(renderedUser)],
+  ]);
+  const localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    removeItem: (key) => storage.delete(key),
+    setItem: (key, value) => storage.set(key, value),
+  };
+  const buildCallbacks = new Function(
+    'backendApi',
+    'clearAuthSession',
+    'handleSessionError',
+    'isBackendConfigured',
+    'localStorage',
+    'mergeSessionSummary',
+    'sessionEpochRef',
+    'sessionRefreshPromiseRef',
+    'setUser',
+    'useCallback',
+    'userRef',
+    `${callbackSource}\n${logoutSource}\nreturn { handleLogout, refreshSessionUser };`,
+  );
+  const { handleLogout, refreshSessionUser } = buildCallbacks(
+    backendApi,
+    () => localStorage.removeItem('pb_auth_token'),
+    () => {},
+    () => true,
+    localStorage,
+    mergeSessionSummary,
+    sessionEpochRef,
+    sessionRefreshPromiseRef,
+    (nextUser) => { renderedUser = nextUser; },
+    (callback) => callback,
+    userRef,
+  );
+
+  const staleRefresh = refreshSessionUser();
+  handleLogout();
+
+  const currentUser = {
+    id: 'same-user',
+    name: 'Current login',
+    professionalTier: 'unverified',
+  };
+  userRef.current = currentUser;
+  renderedUser = currentUser;
+  localStorage.setItem('pb_auth_token', 'new-token');
+  const currentRefresh = refreshSessionUser();
+
+  currentRequest.resolve({ user: currentUser });
+  await currentRefresh;
+  staleRequest.resolve({
+    user: {
+      id: 'same-user',
+      name: 'Stale pre-logout response',
+      professionalTier: 'verified',
+    },
+  });
+  await staleRefresh;
+
+  assert.deepEqual(renderedUser, currentUser);
+  assert.deepEqual(JSON.parse(localStorage.getItem('pb_user')), currentUser);
 });

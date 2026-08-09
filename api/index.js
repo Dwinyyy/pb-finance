@@ -958,6 +958,60 @@ const toProfilePatch = (profile, fallback = {}) => ({
   years_experience: toNumber(valueOrFallback(profile, fallback, 'years_experience')),
 });
 
+const toPendingProfessionalIdentity = (profilePayload, pendingProfile = {}) => {
+  const profile = cleanRecord(profilePayload);
+  const pendingIdentity = { ...cleanRecord(pendingProfile) };
+
+  if (hasOwn(profile, 'full_name')) {
+    pendingIdentity.full_name = cleanString(profile.full_name, 160);
+  }
+
+  if (hasOwn(profile, 'titles') || hasOwn(profile, 'title')) {
+    pendingIdentity.titles = cleanProfessionalTitles(profile.titles ?? profile.title);
+  }
+
+  return pendingIdentity;
+};
+
+const getApprovedProfessionalIdentity = (profile = {}) => {
+  const currentProfile = cleanRecord(profile);
+  const approvedSource = hasPendingProfile(currentProfile)
+    ? { ...currentProfile, ...cleanRecord(currentProfile.pending_profile) }
+    : currentProfile;
+
+  return {
+    fullName: cleanString(approvedSource.full_name, 160),
+    titles: cleanProfessionalTitles(
+      approvedSource.titles ?? approvedSource.title,
+      cleanProfessionalTitles(currentProfile.titles)
+    ),
+  };
+};
+
+const buildApprovedProfessionalDraftPatch = ({
+  currentProfile = {},
+  now = new Date().toISOString(),
+  profilePayload = {},
+  shouldReflectCredentialDraft = false,
+} = {}) => {
+  if (!shouldReflectCredentialDraft) {
+    return {
+      pending_profile: asDraftPendingProfile(profilePayload),
+      review_status: currentProfile.review_status || null,
+      review_submitted_at: currentProfile.review_submitted_at || null,
+    };
+  }
+
+  const { titles: _pendingTitles, ...activeProfilePatch } = toProfilePatch(profilePayload, currentProfile);
+
+  return {
+    ...activeProfilePatch,
+    pending_profile: toPendingProfessionalIdentity(profilePayload, currentProfile.pending_profile),
+    review_status: 'pending_review',
+    review_submitted_at: currentProfile.review_submitted_at || now,
+  };
+};
+
 const isClientVisibleCredential = (credential) => {
   const record = cleanCredentialFileRecord(credential);
 
@@ -3958,14 +4012,10 @@ const handlers = {
     }
 
     const now = new Date().toISOString();
-    const approvedProfileSource = hasPendingChanges
-      ? { ...existingProfile, ...pendingProfile }
-      : existingProfile;
-    const approvedFullName = cleanString(approvedProfileSource.full_name, 160);
-    const approvedTitles = cleanProfessionalTitles(
-      approvedProfileSource.titles ?? approvedProfileSource.title,
-      cleanProfessionalTitles(existingProfile.titles)
-    );
+    const {
+      fullName: approvedFullName,
+      titles: approvedTitles,
+    } = getApprovedProfessionalIdentity(existingProfile);
 
     if (status === 'approved') {
       await patchRows(req, `/profiles?id=eq.${professionalId}`, {
@@ -5367,19 +5417,11 @@ const handlers = {
             review_status: 'pending_review',
             review_submitted_at: new Date().toISOString(),
           }
-          : shouldReflectCredentialDraft
-            ? {
-              ...toProfilePatch(profilePayload, currentProfile),
-              pending_profile: {},
-              review_status: 'pending_review',
-              review_submitted_at: currentProfile.review_submitted_at || new Date().toISOString(),
-            }
-            : {
-              ...(titlesChanged ? { titles } : {}),
-              pending_profile: asDraftPendingProfile(profilePayload),
-              review_status: currentProfile.review_status || null,
-              review_submitted_at: currentProfile.review_submitted_at || null,
-            }
+          : buildApprovedProfessionalDraftPatch({
+            currentProfile,
+            profilePayload,
+            shouldReflectCredentialDraft,
+          })
       );
     } else {
       rows = await writeRows(
@@ -5389,7 +5431,7 @@ const handlers = {
           ? {
             ...toProfilePatch(profilePayload),
             identity_verification_documents: markIdentityVerificationDocumentsSubmitted(currentProfile?.identity_verification_documents),
-            pending_profile: {},
+            pending_profile: toPendingProfessionalIdentity(profilePayload),
             review_status: null,
             review_submitted_at: new Date().toISOString(),
             status: 'pending_review',
@@ -5398,7 +5440,7 @@ const handlers = {
           : shouldReflectCredentialDraft
             ? {
               ...toProfilePatch(profilePayload, currentProfile || {}),
-              pending_profile: {},
+              pending_profile: toPendingProfessionalIdentity(profilePayload, currentProfile?.pending_profile),
               review_status: currentProfile?.review_status || null,
               review_submitted_at: currentProfile?.review_submitted_at || new Date().toISOString(),
               status: currentProfile?.status || 'pending_review',
@@ -6214,6 +6256,8 @@ const checkRateLimit = (req, res) => {
 };
 
 export const __testing = {
+  buildApprovedProfessionalDraftPatch,
+  getApprovedProfessionalIdentity,
   getDuplicateRequiredCredentialBlocker,
   getDocumentExpirationActions,
   getDocumentExpirationEventKey,
@@ -6222,6 +6266,7 @@ export const __testing = {
   mapTalentProfilePreviewForTier,
   mapTalentProfileForViewer,
   scrubTalentProfileForViewer,
+  toPendingProfessionalIdentity,
   toClientVisibleWorkPreferences,
   verifyRequiredCredentialDigests,
 };

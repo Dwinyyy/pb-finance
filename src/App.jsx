@@ -774,6 +774,7 @@ export default function App() {
   });
   const userRef = useRef(user);
   const sessionRefreshPromiseRef = useRef(null);
+  const sessionEpochRef = useRef(0);
   userRef.current = user;
   const [authModal, setAuthModal] = useState({ isOpen: false, view: 'login' });
   const [authError, setAuthError] = useState('');
@@ -817,9 +818,18 @@ export default function App() {
       return sessionRefreshPromiseRef.current || Promise.resolve(userRef.current);
     }
 
+    const refreshEpoch = sessionEpochRef.current;
+    const refreshUserId = userRef.current.id;
     let refreshPromise;
     refreshPromise = backendApi.auth.me()
       .then((result) => {
+        if (
+          sessionEpochRef.current !== refreshEpoch
+          || userRef.current?.id !== refreshUserId
+        ) {
+          return userRef.current;
+        }
+
         if (result?.user) handleUserUpdated(result.user);
         return userRef.current;
       })
@@ -986,6 +996,7 @@ export default function App() {
   useEffect(() => {
     const handleAuthUpdate = () => {
       if (!localStorage.getItem('pb_auth_token')) {
+        sessionEpochRef.current += 1;
         userRef.current = null;
         sessionRefreshPromiseRef.current = null;
         setUser(null);
@@ -1704,6 +1715,7 @@ export default function App() {
       backendApi.auth.logout().catch(() => {});
     }
 
+    sessionEpochRef.current += 1;
     userRef.current = null;
     sessionRefreshPromiseRef.current = null;
     setUser(null);
