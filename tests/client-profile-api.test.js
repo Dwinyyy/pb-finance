@@ -13,6 +13,7 @@ const supabaseSource = readFileSync(new URL('../server/supabase.js', import.meta
 const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
 const CLIENT_ID = '22222222-2222-4222-8222-222222222222';
 const NAME_REQUEST_ID = '33333333-3333-4333-8333-333333333333';
+const PROFESSIONAL_ID = '44444444-4444-4444-8444-444444444444';
 const SUPABASE_URL = 'https://project.example.supabase.co';
 
 const jsonResponse = (body, status = 200) => ({
@@ -288,6 +289,80 @@ const createClientPhotoFetch = ({ avatarUrl, updateSucceeds = true }) => {
   return { fetch, state };
 };
 
+const createProfessionalCpaProfileFetch = () => {
+  const owner = canonicalProfile({ id: PROFESSIONAL_ID, role: 'professional' });
+  const professionalProfile = {
+    identity_verification_documents: {},
+    identity_verification_status: 'approved',
+    pending_profile: {},
+    professional_tier: 'verified',
+    profile_visibility: 'visible',
+    review_status: null,
+    status: 'approved',
+    titles: ['Controller'],
+    user_id: PROFESSIONAL_ID,
+    work_preferences: {},
+  };
+  const state = {
+    professionalPatchAuthorization: '',
+    profilePatchAuthorization: '',
+    profilePatchBody: null,
+    profilePatchTarget: '',
+  };
+  const fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || 'GET').toUpperCase();
+    const authorization = new Headers(init.headers).get('Authorization') || '';
+
+    if (url.pathname === '/auth/v1/user') {
+      return jsonResponse(authUser(PROFESSIONAL_ID, 'admin'));
+    }
+
+    if (url.pathname === '/rest/v1/profiles' && method === 'PATCH') {
+      state.profilePatchAuthorization = authorization;
+      state.profilePatchBody = JSON.parse(String(init.body || '{}'));
+      state.profilePatchTarget = url.searchParams.get('id') || '';
+
+      if (authorization !== 'Bearer service-role-key') {
+        return jsonResponse({ message: 'permission denied for table profiles' }, 403);
+      }
+
+      return jsonResponse([]);
+    }
+
+    if (url.pathname === '/rest/v1/profiles') {
+      return jsonResponse([owner]);
+    }
+
+    if (url.pathname === '/rest/v1/professional_tier_permissions') {
+      return jsonResponse([{
+        can_access_dashboard: true,
+        can_appear_in_talent_pool: true,
+        can_comment_on_job_posts: true,
+        can_contact_clients_from_jobs: true,
+        can_toggle_profile_visibility: true,
+        can_view_full_client_profiles: true,
+        label: 'Verified',
+        tier: 'verified',
+      }]);
+    }
+
+    if (url.pathname === '/rest/v1/professional_profiles' && method === 'PATCH') {
+      state.professionalPatchAuthorization = authorization;
+      const body = JSON.parse(String(init.body || '{}'));
+      return jsonResponse([{ ...professionalProfile, ...body }]);
+    }
+
+    if (url.pathname === '/rest/v1/professional_profiles') {
+      return jsonResponse([professionalProfile]);
+    }
+
+    throw new Error(`Unexpected request: ${method} ${url.pathname}${url.search}`);
+  };
+
+  return { fetch, state };
+};
+
 test('admin name decision responds from the committed RPC row without fallible post-commit reads', async () => {
   const supabase = createAdminDecisionFetch();
   const req = createRequest({
@@ -315,6 +390,36 @@ test('admin name decision responds from the committed RPC row without fallible p
   assert.equal(supabase.state.rpcCommitted, true);
   assert.deepEqual(supabase.state.postCommitReads, []);
   assert.equal(supabase.state.notificationAttempted, true);
+});
+
+test('professional CPA triage writes server-owned profile fields with the service role', async () => {
+  const supabase = createProfessionalCpaProfileFetch();
+  const req = createRequest({
+    body: {
+      clientId: CLIENT_ID,
+      id: CLIENT_ID,
+      manualTriageStatus: 'clear',
+      role: 'admin',
+      titles: ['Certified Public Accountant'],
+      userId: CLIENT_ID,
+    },
+    method: 'PATCH',
+    path: '/talent/me',
+  });
+  const res = createResponse();
+
+  await withHandlerEnvironment(supabase.fetch, () => handler(req, res));
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(supabase.state.professionalPatchAuthorization, 'Bearer access-token');
+  assert.equal(supabase.state.profilePatchAuthorization, 'Bearer service-role-key');
+  assert.equal(supabase.state.profilePatchTarget, `eq.${PROFESSIONAL_ID}`);
+  assert.deepEqual(supabase.state.profilePatchBody, {
+    manual_triage_domain: 'Credentials',
+    manual_triage_reason: 'PRC License Verification Required (https://online.prc.gov.ph/Verification)',
+    manual_triage_required: true,
+    manual_triage_status: 'required',
+  });
 });
 
 test('client photo replacement deletes only the prior canonical object owned by the active client', async () => {

@@ -5538,7 +5538,10 @@ const handlers = {
     let rows;
 
     if (Object.keys(ownerProfilePatch).length > 0 && (submitForReview || (currentProfile?.status === 'approved' && titlesChanged))) {
-      await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, { prefer: 'return=minimal' });
+      await patchRows(req, `/profiles?id=eq.${user.id}`, ownerProfilePatch, {
+        prefer: 'return=minimal',
+        useServiceRole: true,
+      });
     }
 
     if (currentProfile?.status === 'approved') {
